@@ -67,6 +67,16 @@ class ObservedBoosterPack:
 
 
 @dataclass(frozen=True)
+class ObservedShopItem:
+    """Any visible shop item the policy may need to consider."""
+
+    kind: str
+    name: str
+    key: str | None = None
+    cost: int | None = None
+
+
+@dataclass(frozen=True)
 class ObservedBlindChoice:
     """Blind choice available during blind selection."""
 
@@ -91,6 +101,9 @@ class GameObservation:
     hand_cards: tuple[ObservedCard, ...] = ()
     source: str = "unknown"
     state_id: int | None = None
+    ante: int | None = None
+    round_count: int | None = None
+    stake: str | None = None
     blind_name: str | None = None
     blind_key: str | None = None
     blind_choices: tuple[ObservedBlindChoice, ...] = ()
@@ -100,8 +113,14 @@ class GameObservation:
     consumables_inventory: tuple[ObservedConsumable, ...] = ()
     consumables_shop: tuple[ObservedConsumable, ...] = ()
     consumable_capacity: int | None = None
+    reroll_cost: int | None = None
+    shop_items: tuple[ObservedShopItem, ...] = ()
+    shop_packs: tuple[ObservedBoosterPack, ...] = ()
     tags: tuple[ObservedTag, ...] = ()
     booster_packs: tuple[ObservedBoosterPack, ...] = ()
+    skip_tag_claimed: bool = False
+    skip_tag: ObservedTag | None = None
+    interaction_phase: str | None = None
     cards_in_hand: int | None = None
     jokers_count: int | None = None
     notes: tuple[str, ...] = ()

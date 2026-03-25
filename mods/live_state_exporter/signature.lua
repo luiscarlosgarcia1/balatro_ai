@@ -38,10 +38,15 @@ function Signature.make(snapshot)
   local state = safe_table(snapshot.state) or {}
   local parts = {
     string_part(state.phase),
+    string_part(state.interaction_phase),
     string_part(state.state_id),
+    string_part(state.ante),
+    string_part(state.round_count),
+    string_part(state.stake),
     string_part(state.money),
     string_part(state.hands_left),
     string_part(state.discards_left),
+    string_part(state.reroll_cost),
     string_part(state.blind_name),
     string_part(state.blind_key),
     string_part(safe_table(state.deck) and state.deck.key),
@@ -50,6 +55,8 @@ function Signature.make(snapshot)
     string_part(state.cards_in_hand),
     string_part(state.jokers_count),
     string_part(state.consumable_capacity),
+    string_part(state.skip_tag_claimed),
+    string_part(safe_table(state.skip_tag) and state.skip_tag.key),
   }
 
   add_named_items(parts, state.hand_cards, "name")
@@ -57,6 +64,8 @@ function Signature.make(snapshot)
   add_named_items(parts, state.vouchers, "key")
   add_named_items(parts, state.consumables_inventory, "key")
   add_named_items(parts, state.consumables_shop, "key")
+  add_named_items(parts, state.shop_items, "key")
+  add_named_items(parts, state.shop_packs, "key")
   add_named_items(parts, state.tags, "key")
   add_named_items(parts, state.booster_packs, "key")
   add_named_items(parts, state.blind_choices, "key")

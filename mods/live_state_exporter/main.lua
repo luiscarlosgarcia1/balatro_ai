@@ -715,26 +715,184 @@ local function summarize_deck(game)
   }
 end
 
-local function infer_phase(root, game)
-  local blind = safe_table(game.blind) or {}
-  local current_round = safe_table(game.current_round) or {}
-  local round_resets = safe_table(game.round_resets) or {}
-  local round_blind = safe_table(round_resets.blind) or {}
-
-  if blind.in_blind then
-    return "play_hand"
+local function summarize_stake(game, root)
+  local stake_index = safe_number(game.stake)
+  if not stake_index then
+    return nil
   end
 
-  if round_blind.name and current_round.hands_left ~= nil and current_round.discards_left ~= nil then
-    return "blind_select"
+  local stake_pool = safe_table(root and root.P_CENTER_POOLS) and safe_table(root.P_CENTER_POOLS.Stake) or {}
+  local stake = stake_pool[stake_index]
+  if type(stake) ~= "table" then
+    return {
+      name = "Stake " .. tostring(stake_index),
+      key = nil,
+      index = stake_index,
+    }
+  end
+
+  return {
+    name = safe_tostring(first_non_nil(stake.name, stake.key)) or ("Stake " .. tostring(stake_index)),
+    key = safe_tostring(stake.key),
+    index = stake_index,
+  }
+end
+
+local function summarize_shop_item(card, area_kind)
+  if type(card) ~= "table" then
+    return nil
+  end
+
+  local ability = safe_table(card.ability) or {}
+  local item_cost = safe_number(first_non_nil(card.cost, card.base_cost, ability.cost))
+
+  if area_kind == "voucher" then
+    local voucher = summarize_voucher(ability, safe_tostring(first_non_nil(card.key, ability.key)))
+    if voucher then
+      return {
+        kind = "voucher",
+        name = voucher.name,
+        key = voucher.key,
+        cost = item_cost,
+      }
+    end
+  end
+
+  if area_kind == "pack" then
+    local pack = summarize_booster_pack(card)
+    if pack then
+      return {
+        kind = "pack",
+        name = pack.name,
+        key = pack.key,
+        cost = pack.cost,
+      }
+    end
+  end
+
+  local consumable = summarize_consumable(card)
+  if consumable then
+    return {
+      kind = "consumable",
+      name = consumable.name,
+      key = consumable.key,
+      cost = consumable.cost,
+    }
+  end
+
+  local joker = summarize_joker(card)
+  if joker then
+    return {
+      kind = "joker",
+      name = joker.name,
+      key = joker.key,
+      cost = item_cost,
+    }
+  end
+
+  local label = safe_tostring(first_non_nil(card.label, ability.name, card.name, card.key))
+  if not label then
+    return nil
+  end
+
+  return {
+    kind = area_kind or string.lower(safe_tostring(first_non_nil(ability.set, card.set)) or "shop"),
+    name = trim_text(label, EXPORT_MAX_STRING),
+    key = safe_tostring(first_non_nil(ability.key, card.key)),
+    cost = item_cost,
+  }
+end
+
+local function collect_shop_items(root)
+  local result = {}
+  local seen = {}
+  local areas = {
+    { area = root and rawget(root, "shop_jokers"), kind = "joker" },
+    { area = root and rawget(root, "shop_vouchers"), kind = "voucher" },
+    { area = root and rawget(root, "shop_booster"), kind = "pack" },
+  }
+
+  for _, entry in ipairs(areas) do
+    for _, card in ipairs(card_list_from_area(entry.area)) do
+      local summary = summarize_shop_item(card, entry.kind)
+      if summary then
+        local unique_key = (summary.kind or "item") .. "::" .. (summary.key or summary.name)
+        push_unique(result, seen, unique_key, summary)
+      end
+    end
+  end
+
+  return result
+end
+
+local function collect_shop_packs(root)
+  local result = {}
+  local seen = {}
+  for _, card in ipairs(card_list_from_area(root and rawget(root, "shop_booster"))) do
+    if #result >= EXPORT_MAX_PACKS then
+      break
+    end
+    local summary = summarize_booster_pack(card)
+    if summary then
+      push_unique(result, seen, summary.key or summary.name, summary)
+    end
+  end
+  return result
+end
+
+local function collect_skip_tag_claim(root, game)
+  local round_resets = safe_table(game.round_resets) or {}
+  local blind_states = safe_table(round_resets.blind_states) or {}
+  local blind_tags = safe_table(round_resets.blind_tags) or {}
+  local last_claimed = nil
+
+  for _, slot in ipairs({ "Small", "Big", "Boss" }) do
+    if blind_states[slot] == "Skipped" then
+      last_claimed = summarize_tag(nil, blind_tags[slot])
+    end
+  end
+
+  if last_claimed then
+    return true, last_claimed
+  end
+  return false, nil
+end
+
+local function infer_phase(root, game)
+  local current_state = root and root.STATE
+  local states = root and root.STATES
+  local blind = safe_table(game.blind) or {}
+  local pack_state_map = states and {
+    [states.TAROT_PACK] = "tarot_pack",
+    [states.PLANET_PACK] = "planet_pack",
+    [states.SPECTRAL_PACK] = "spectral_pack",
+    [states.STANDARD_PACK] = "standard_pack",
+    [states.BUFFOON_PACK] = "buffoon_pack",
+    [states.SMODS_BOOSTER_OPENED] = "modded_booster_pack",
+  } or nil
+
+  if states and current_state == states.BLIND_SELECT then
+    return "blind_select", nil
+  end
+
+  if pack_state_map and pack_state_map[current_state] then
+    return "pack_reward", pack_state_map[current_state]
+  end
+
+  if states and current_state == states.SHOP then
+    return "shop", nil
+  end
+
+  if blind.in_blind then
+    return "play_hand", nil
   end
 
   local state_id = first_non_nil(root and root.STATE, game.state, game.current_round_state)
   if state_id ~= nil then
-    return "state_" .. tostring(state_id)
+    return "state_" .. tostring(state_id), nil
   end
 
-  return "unknown"
+  return "unknown", nil
 end
 
 local function snapshot_game()
@@ -752,17 +910,22 @@ local function snapshot_game()
   local round_resets = safe_table(game.round_resets) or {}
   local consumeables_area = first_non_nil(root and rawget(root, "consumeables"), root and rawget(root, "consumables"))
   local consumables_inventory = collect_consumables_from_area(consumeables_area, EXPORT_MAX_CONSUMABLES)
-  local consumables_shop = collect_consumables_from_area(first_non_nil(root and rawget(root, "shop_jokers"), root and rawget(root, "shop_cards"), root and rawget(root, "shop_consumables")), EXPORT_MAX_CONSUMABLES)
+  local consumables_shop = collect_consumables_from_area(root and rawget(root, "shop_jokers"), EXPORT_MAX_CONSUMABLES)
+  local shop_items = collect_shop_items(root)
+  local shop_packs = collect_shop_packs(root)
   local deck = summarize_deck(game)
+  local stake = summarize_stake(game, root)
   local vouchers = collect_used_vouchers(game, root)
   local tags = collect_tags(game, root)
   local booster_packs = collect_booster_packs(game, root)
   local blind_choices = collect_blind_choices(game)
+  local skip_tag_claimed, skip_tag = collect_skip_tag_claim(root, game)
   local consumable_capacity = safe_number(first_non_nil(
     safe_table(consumeables_area) and safe_table(consumeables_area.config) and consumeables_area.config.card_limit,
     safe_table(consumeables_area) and safe_table(consumeables_area.config) and consumeables_area.config.temp_limit,
     safe_table(game.starting_params) and game.starting_params.consumable_slots
   ))
+  local phase, interaction_phase = infer_phase(root, game)
 
   return {
     meta = {
@@ -771,11 +934,18 @@ local function snapshot_game()
     },
     state = {
       source = "live_state_exporter",
-      phase = infer_phase(root, game),
+      phase = phase,
+      interaction_phase = interaction_phase,
       state_id = safe_number(first_non_nil(root and root.STATE, game.state, game.current_round_state)),
+      ante = safe_number(round_resets.ante),
+      round_count = safe_number(game.round),
+      stake = stake and stake.name or nil,
+      stake_key = stake and stake.key or nil,
+      stake_index = stake and stake.index or nil,
       money = safe_number(first_non_nil(game.dollars, game.money)),
       hands_left = safe_number(first_non_nil(current_round.hands_left, round_resets.hands, game.hands_left, game.hands)),
       discards_left = safe_number(first_non_nil(current_round.discards_left, round_resets.discards, game.discards_left, game.discards)),
+      reroll_cost = safe_number(current_round.reroll_cost),
       blind_name = safe_tostring(first_non_nil(blind.name, game.blind_name)),
       blind_key = safe_tostring(first_non_nil(blind.config_blind, blind.key, game.blind_key)),
       blind_choices = blind_choices,
@@ -790,8 +960,12 @@ local function snapshot_game()
       consumables_inventory = consumables_inventory,
       consumables_shop = consumables_shop,
       consumable_capacity = consumable_capacity,
+      shop_items = shop_items,
+      shop_packs = shop_packs,
       tags = tags,
       booster_packs = booster_packs,
+      skip_tag_claimed = skip_tag_claimed,
+      skip_tag = skip_tag,
       notes = {
         "exporter=live_state_exporter",
       },

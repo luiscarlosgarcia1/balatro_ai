@@ -73,6 +73,82 @@ class LiveObserverContractTests(unittest.TestCase):
             self.assertEqual(observation.consumables_shop[0].kind, "planet")
             self.assertEqual(observation.consumables_shop[0].cost, 3)
 
+    def test_observe_normalizes_run_metadata_shop_items_and_pack_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            live_state_path = root / "ai" / "live_state.json"
+            live_state_path.parent.mkdir(parents=True, exist_ok=True)
+            live_state_path.write_text(
+                json.dumps(
+                    {
+                        "state": {
+                            "source": "live_state_exporter",
+                            "phase": "shop",
+                            "interaction_phase": "pack_reward",
+                            "ante": 3,
+                            "round_count": 17,
+                            "stake": "Gold Stake",
+                            "reroll_cost": 5,
+                            "money": 14,
+                            "hands_left": 4,
+                            "discards_left": 2,
+                            "score_to_beat": 800,
+                            "current_score": 150,
+                            "shop_items": [
+                                {
+                                    "kind": "joker",
+                                    "name": "Vampire",
+                                    "key": "j_vampire",
+                                    "cost": 7,
+                                },
+                                {
+                                    "kind": "consumable",
+                                    "name": "The Sun",
+                                    "key": "c_sun",
+                                    "cost": 3,
+                                },
+                            ],
+                            "shop_packs": [
+                                {
+                                    "name": "Arcana Pack",
+                                    "key": "p_arcana_normal_1",
+                                    "kind": "arcana",
+                                    "cost": 4,
+                                },
+                                {
+                                    "name": "Celestial Pack",
+                                    "key": "p_celestial_normal_1",
+                                    "kind": "celestial",
+                                    "cost": 4,
+                                },
+                            ],
+                            "skip_tag": {
+                                "name": "Economy Tag",
+                                "key": "tag_economy",
+                            },
+                            "skip_tag_claimed": True,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            observer = BalatroSaveObserver(paths=BalatroPaths(root=root, profile=2))
+            observation = observer.observe()
+
+            self.assertEqual(observation.ante, 3)
+            self.assertEqual(observation.round_count, 17)
+            self.assertEqual(observation.stake, "Gold Stake")
+            self.assertEqual(observation.reroll_cost, 5)
+            self.assertEqual(observation.interaction_phase, "pack_reward")
+            self.assertTrue(observation.skip_tag_claimed)
+            self.assertEqual(observation.skip_tag.name, "Economy Tag")
+            self.assertEqual(observation.shop_items[0].kind, "joker")
+            self.assertEqual(observation.shop_items[0].name, "Vampire")
+            self.assertEqual(observation.shop_items[1].kind, "consumable")
+            self.assertEqual(len(observation.shop_packs), 2)
+            self.assertEqual(observation.shop_packs[1].name, "Celestial Pack")
+
     def test_format_observation_shows_deck_vouchers_and_consumables(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -133,6 +209,69 @@ class LiveObserverContractTests(unittest.TestCase):
             self.assertIn("shop_consumables:", formatted)
             self.assertIn("The Fool", formatted)
             self.assertIn("Mercury", formatted)
+
+    def test_format_observation_shows_run_metadata_shop_items_and_pack_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            live_state_path = root / "ai" / "live_state.json"
+            live_state_path.parent.mkdir(parents=True, exist_ok=True)
+            live_state_path.write_text(
+                json.dumps(
+                    {
+                        "state": {
+                            "source": "live_state_exporter",
+                            "phase": "shop",
+                            "interaction_phase": "pack_reward",
+                            "ante": 3,
+                            "round_count": 17,
+                            "stake": "Gold Stake",
+                            "reroll_cost": 5,
+                            "money": 14,
+                            "hands_left": 4,
+                            "discards_left": 2,
+                            "score_to_beat": 800,
+                            "current_score": 150,
+                            "shop_items": [
+                                {
+                                    "kind": "joker",
+                                    "name": "Vampire",
+                                    "key": "j_vampire",
+                                    "cost": 7,
+                                }
+                            ],
+                            "shop_packs": [
+                                {
+                                    "name": "Arcana Pack",
+                                    "key": "p_arcana_normal_1",
+                                    "kind": "arcana",
+                                    "cost": 4,
+                                }
+                            ],
+                            "skip_tag": {
+                                "name": "Economy Tag",
+                                "key": "tag_economy",
+                            },
+                            "skip_tag_claimed": True,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            observer = BalatroSaveObserver(paths=BalatroPaths(root=root, profile=2))
+            formatted = format_observation(observer.observe())
+
+            self.assertIn("interaction_phase: pack_reward", formatted)
+            self.assertIn("ante: 3", formatted)
+            self.assertIn("round_count: 17", formatted)
+            self.assertIn("stake: Gold Stake", formatted)
+            self.assertIn("reroll_cost: 5", formatted)
+            self.assertIn("skip_tag_claimed: True", formatted)
+            self.assertIn("skip_tag: Economy Tag", formatted)
+            self.assertIn("shop_items:", formatted)
+            self.assertIn("Vampire", formatted)
+            self.assertIn("shop_packs:", formatted)
+            self.assertIn("Arcana Pack", formatted)
 
     def test_observe_normalizes_gameplay_relevant_joker_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -222,7 +361,7 @@ class LiveObserverContractTests(unittest.TestCase):
             self.assertIn("edition=Foil", formatted)
             self.assertIn("mult=4", formatted)
 
-    def test_observe_normalizes_tags_and_booster_packs(self) -> None:
+    def test_observe_normalizes_tags_and_shop_packs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             live_state_path = root / "ai" / "live_state.json"
@@ -244,7 +383,7 @@ class LiveObserverContractTests(unittest.TestCase):
                                     "key": "tag_economy",
                                 }
                             ],
-                            "booster_packs": [
+                            "shop_packs": [
                                 {
                                     "name": "Arcana Pack",
                                     "key": "p_arcana_normal_1",
@@ -263,11 +402,11 @@ class LiveObserverContractTests(unittest.TestCase):
 
             self.assertEqual(observation.tags[0].name, "Economy Tag")
             self.assertEqual(observation.tags[0].key, "tag_economy")
-            self.assertEqual(observation.booster_packs[0].name, "Arcana Pack")
-            self.assertEqual(observation.booster_packs[0].kind, "arcana")
-            self.assertEqual(observation.booster_packs[0].cost, 4)
+            self.assertEqual(observation.shop_packs[0].name, "Arcana Pack")
+            self.assertEqual(observation.shop_packs[0].kind, "arcana")
+            self.assertEqual(observation.shop_packs[0].cost, 4)
 
-    def test_format_observation_shows_tags_and_booster_packs(self) -> None:
+    def test_format_observation_shows_tags_and_shop_packs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             live_state_path = root / "ai" / "live_state.json"
@@ -289,7 +428,7 @@ class LiveObserverContractTests(unittest.TestCase):
                                     "key": "tag_economy",
                                 }
                             ],
-                            "booster_packs": [
+                            "shop_packs": [
                                 {
                                     "name": "Arcana Pack",
                                     "key": "p_arcana_normal_1",
@@ -308,7 +447,7 @@ class LiveObserverContractTests(unittest.TestCase):
 
             self.assertIn("tags:", formatted)
             self.assertIn("Economy Tag", formatted)
-            self.assertIn("booster_packs:", formatted)
+            self.assertIn("shop_packs:", formatted)
             self.assertIn("Arcana Pack", formatted)
             self.assertIn("kind=arcana", formatted)
 
