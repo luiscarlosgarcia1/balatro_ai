@@ -16,6 +16,7 @@ Normalize blind and skip-tag state into compact machine-readable arrays. This sl
 ## Blocked by
 
 - Blocked by #30
+- Blocked by #31
 
 ## User stories addressed
 

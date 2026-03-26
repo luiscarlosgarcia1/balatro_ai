@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from ..models import GameObservation
+from ..models import GameObservation, ObservationPayload
 from .capture import LightweightCapturePlan
+from .canonical import serialize_observation
 from .live_parser import LiveObservationParser
 from .paths import BalatroPaths
 from .save_decoder import SavePayloadDecoder, SaveSnapshot
@@ -27,13 +28,13 @@ class BalatroSaveObserver:
         self.live_parser = live_parser or LiveObservationParser()
         self.save_parser = save_parser or SaveObservationParser()
 
-    def observe(self) -> GameObservation:
+    def observe(self) -> ObservationPayload:
         live_observation = self.read_live_observation()
         if live_observation is not None:
-            return live_observation
+            return serialize_observation(live_observation)
 
         snapshot = self.read_snapshot()
-        return self.save_parser.parse_snapshot(snapshot)
+        return serialize_observation(self.save_parser.parse_snapshot(snapshot))
 
     def read_live_observation(self) -> GameObservation | None:
         return self.live_parser.parse_file(self.paths.live_state_path)

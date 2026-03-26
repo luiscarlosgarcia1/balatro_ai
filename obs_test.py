@@ -5,7 +5,7 @@ import ctypes
 import json
 import struct
 import time
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -161,139 +161,129 @@ def current_input_stamp(paths: BalatroPaths) -> tuple[float | None, float | None
     return (live_mtime, save_mtime)
 
 
-def format_observation(observation) -> str:
+def format_observation(observation: dict[str, object]) -> str:
+    # Transitional legacy bridge: this remains a derived debug view downstream of the
+    # canonical payload and should not grow new legacy-specific branches.
+    score = observation.get("score") or {}
     lines = [
         "",
         "[observation]",
-        f"  source: {observation.source}",
-        f"  phase: {observation.phase}",
-        f"  state_id: {observation.state_id}",
-        f"  interaction_phase: {observation.interaction_phase or '-'}",
-        f"  blind: {observation.blind_name or '-'}",
-        f"  blind_key: {observation.blind_key or '-'}",
-        f"  deck: {observation.deck_name or '-'}",
-        f"  deck_key: {observation.deck_key or '-'}",
-        f"  money: {observation.money}",
-        f"  score: {observation.current_score}/{observation.score_to_beat}",
-        f"  hands_left: {observation.hands_left}",
-        f"  discards_left: {observation.discards_left}",
-        f"  ante: {observation.ante if observation.ante is not None else '-'}",
-        f"  round_count: {observation.round_count if observation.round_count is not None else '-'}",
-        f"  stake: {observation.stake or '-'}",
-        f"  reroll_cost: {observation.reroll_cost if observation.reroll_cost is not None else '-'}",
-        f"  consumable_capacity: {observation.consumable_capacity if observation.consumable_capacity is not None else '-'}",
-        f"  cards_in_hand: {observation.cards_in_hand if observation.cards_in_hand is not None else '-'}",
-        f"  jokers_count: {observation.jokers_count if observation.jokers_count is not None else '-'}",
-        f"  jokers: {', '.join(observation.jokers) if observation.jokers else '-'}",
-        f"  vouchers: {', '.join(voucher.name for voucher in observation.vouchers) if observation.vouchers else '-'}",
-        f"  skip_tag_claimed: {observation.skip_tag_claimed}",
-        f"  skip_tag: {observation.skip_tag.name if observation.skip_tag else '-'}",
-        f"  seen_at: {observation.seen_at.isoformat()}",
+        f"  source: {observation.get('source')}",
+        f"  state_id: {observation.get('state_id') if observation.get('state_id') is not None else '-'}",
+        f"  interaction_phase: {observation.get('interaction_phase') or '-'}",
+        f"  blind_key: {observation.get('blind_key') or '-'}",
+        f"  deck_key: {observation.get('deck_key') or '-'}",
+        f"  stake_id: {observation.get('stake_id') or '-'}",
+        f"  money: {observation.get('money')}",
+        f"  score: {score.get('current')}/{score.get('target')}",
+        f"  hands_left: {observation.get('hands_left')}",
+        f"  discards_left: {observation.get('discards_left')}",
+        f"  ante: {observation.get('ante') if observation.get('ante') is not None else '-'}",
+        f"  round_count: {observation.get('round_count') if observation.get('round_count') is not None else '-'}",
+        f"  reroll_cost: {observation.get('reroll_cost') if observation.get('reroll_cost') is not None else '-'}",
+        f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
+        f"  joker_count: {observation.get('joker_count') if observation.get('joker_count') is not None else '-'}",
     ]
-    if observation.shop_items:
-        lines.append("  shop_items:")
-        for item in observation.shop_items:
+    jokers = observation.get("jokers") or []
+    if jokers:
+        lines.append("  jokers:")
+        for joker in jokers:
+            if not isinstance(joker, dict):
+                continue
             extras = []
-            if item.cost is not None:
-                extras.append(f"cost={item.cost}")
+            if joker.get("edition"):
+                extras.append(f"edition={joker['edition']}")
+            modifiers = joker.get("modifiers")
+            if isinstance(modifiers, list):
+                extras.extend(str(value) for value in modifiers)
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {item.kind}: {item.name}{extra_text}")
-    if observation.consumables_inventory:
-        lines.append("  inventory_consumables:")
-        for consumable in observation.consumables_inventory:
-            suffix = f" cost={consumable.cost}" if consumable.cost is not None else ""
+            lines.append(f"    - {joker.get('name') or joker.get('key') or '?'}{extra_text}")
+    vouchers = observation.get("vouchers") or []
+    if vouchers:
+        lines.append("  vouchers:")
+        for voucher in vouchers:
+            if not isinstance(voucher, dict):
+                continue
+            lines.append(f"    - {voucher.get('name') or voucher.get('key') or '?'}")
+    consumables = observation.get("consumables") or []
+    if consumables:
+        lines.append("  consumables:")
+        for consumable in consumables:
+            if not isinstance(consumable, dict):
+                continue
+            suffix = f" cost={consumable['cost']}" if consumable.get("cost") is not None else ""
             lines.append(
-                f"    - {consumable.kind}: {consumable.name}{suffix}"
+                f"    - {consumable.get('kind')}: {consumable.get('name') or consumable.get('key') or '?'}{suffix}"
             )
-    if observation.consumables_shop:
-        lines.append("  shop_consumables:")
-        for consumable in observation.consumables_shop:
-            suffix = f" cost={consumable.cost}" if consumable.cost is not None else ""
-            lines.append(
-                f"    - {consumable.kind}: {consumable.name}{suffix}"
-            )
-    if observation.tags:
+    tags = observation.get("tags") or []
+    if tags:
         lines.append("  tags:")
-        for tag in observation.tags:
-            lines.append(f"    - {tag.name}")
-    if observation.blind_choices:
-        lines.append("  blind_choices:")
-        for blind_choice in observation.blind_choices:
+        for tag in tags:
+            if not isinstance(tag, dict):
+                continue
+            lines.append(f"    - {tag.get('name') or tag.get('key') or '?'}")
+    shop_items = observation.get("shop_items") or []
+    if shop_items:
+        lines.append("  shop_items:")
+        for item in shop_items:
+            if not isinstance(item, dict):
+                continue
             extras = []
-            if blind_choice.state:
-                extras.append(f"state={blind_choice.state}")
-            if blind_choice.tag:
-                extras.append(f"tag={blind_choice.tag}")
+            if item.get("cost") is not None:
+                extras.append(f"cost={item['cost']}")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
             lines.append(
-                f"    - {blind_choice.slot}: {blind_choice.key}{extra_text}"
+                f"    - {item.get('kind')}: {item.get('name') or item.get('key') or '?'}{extra_text}"
             )
-    if observation.shop_packs:
-        lines.append("  shop_packs:")
-        for pack in observation.shop_packs:
+    blinds = observation.get("blinds") or []
+    if blinds:
+        lines.append("  blinds:")
+        for blind_choice in blinds:
+            if not isinstance(blind_choice, dict):
+                continue
             extras = []
-            if pack.kind:
-                extras.append(f"kind={pack.kind}")
-            if pack.cost is not None:
-                extras.append(f"cost={pack.cost}")
+            if blind_choice.get("state"):
+                extras.append(f"state={blind_choice['state']}")
+            if blind_choice.get("tag"):
+                extras.append(f"tag={blind_choice['tag']}")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {pack.name}{extra_text}")
-    if observation.joker_details:
-        lines.append("  joker_details:")
-        for joker in observation.joker_details:
+            lines.append(
+                f"    - {blind_choice.get('slot')}: {blind_choice.get('key')}{extra_text}"
+            )
+    cards_in_hand = observation.get("cards_in_hand") or []
+    if cards_in_hand:
+        lines.append("  cards_in_hand:")
+        for card in cards_in_hand:
+            if not isinstance(card, dict):
+                continue
+            modifiers = card.get("modifiers")
+            mods = f" [{', '.join(str(value) for value in modifiers)}]" if isinstance(modifiers, list) and modifiers else ""
             extras = []
-            if joker.edition:
-                extras.append(f"edition={joker.edition}")
-            if joker.debuffed:
-                extras.append("debuffed")
-            extras.extend(joker.modifiers)
-            extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {joker.name}{extra_text}")
-    if observation.hand_cards:
-        lines.append("  hand_cards:")
-        for card in observation.hand_cards:
-            mods = f" [{', '.join(card.modifiers)}]" if card.modifiers else ""
-            extras = []
-            if card.enhancement:
-                extras.append(f"enh={card.enhancement}")
-            if card.edition:
-                extras.append(f"edition={card.edition}")
-            if card.seal:
-                extras.append(f"seal={card.seal}")
-            if card.facing:
-                extras.append(f"facing={card.facing}")
+            if card.get("enhancement"):
+                extras.append(f"enh={card['enhancement']}")
+            if card.get("edition"):
+                extras.append(f"edition={card['edition']}")
+            if card.get("seal"):
+                extras.append(f"seal={card['seal']}")
+            if card.get("facing"):
+                extras.append(f"facing={card['facing']}")
             extra_text = f" ({', '.join(extras)})" if extras else ""
             lines.append(
-                f"    - {card.code or '?'}: {card.name or '?'}{extra_text}{mods}"
+                f"    - {card.get('card_key') or '?'}: {card.get('name') or '?'}{extra_text}{mods}"
             )
-    if observation.notes:
+    notes = observation.get("notes") or []
+    if notes:
         lines.append("  notes:")
-        for note in observation.notes:
+        for note in notes:
             lines.append(f"    - {note}")
     return "\n".join(lines)
 
 
 def write_observation(run_dir: Path, sequence: int, observation) -> None:
-    payload = dataclass_to_plain(observation)
+    # Transitional legacy bridge: write the canonical payload exactly as observed rather
+    # than reintroducing old schema shaping in the harness.
     out_path = run_dir / f"observation_{sequence:04d}.json"
-    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def dataclass_to_plain(value):
-    if is_dataclass(value):
-        result = {}
-        for key, item in asdict(value).items():
-            result[key] = dataclass_to_plain(item)
-        return result
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, tuple):
-        return [dataclass_to_plain(item) for item in value]
-    if isinstance(value, list):
-        return [dataclass_to_plain(item) for item in value]
-    if isinstance(value, dict):
-        return {key: dataclass_to_plain(item) for key, item in value.items()}
-    return value
+    out_path.write_text(json.dumps(observation, indent=2), encoding="utf-8")
 
 
 def detect_backend_for_target(target: CaptureTarget | None) -> str | None:

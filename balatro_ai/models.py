@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any, TypeAlias
+
+
+ObservationPayload: TypeAlias = dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -88,7 +92,13 @@ class ObservedBlindChoice:
 
 @dataclass(frozen=True)
 class GameObservation:
-    """Structured snapshot of the current game state."""
+    """Structured snapshot of the current game state.
+
+    Transitional legacy bridge: this still carries several legacy/pre-canonical
+    fields so the parsers can ingest today's exporter/save shapes. Public callers
+    should use the canonical payload returned by `BalatroSaveObserver.observe()`
+    instead, and later phases should shrink this model as legacy bridges are removed.
+    """
 
     phase: str
     money: int
@@ -148,6 +158,6 @@ class ValidationResult:
 class StepRecord:
     """Single loop iteration for logging and later evaluation."""
 
-    observation: GameObservation
+    observation: ObservationPayload
     action: GameAction
     validation: ValidationResult

@@ -8,6 +8,9 @@ from .save_decoder import SaveSnapshot
 
 class SaveObservationParser:
     def parse_snapshot(self, snapshot: SaveSnapshot) -> GameObservation:
+        # Transitional legacy bridge: save fallback still extracts a legacy
+        # internal observation shape and relies on the canonical serializer to
+        # produce the public contract.
         payload = snapshot.active_payload
         blind_block = self._extract_block(payload, "BLIND") or ""
         game_block = self._extract_block(payload, "GAME") or ""
@@ -17,6 +20,8 @@ class SaveObservationParser:
         pseudorandom_block = self._extract_block(game_block, "pseudorandom") or ""
 
         state_id = self._extract_int(payload, "STATE")
+        # Transitional legacy bridge: these fields should stop being carried once
+        # the save path can populate canonical raw-id-first structures directly.
         blind_name = self._extract_top_level_string(blind_block, "name") or self._extract_string(blind_block, "name")
         blind_key = self._extract_top_level_string(blind_block, "config_blind") or self._extract_string(blind_block, "config_blind")
         money = self._extract_top_level_big_number(game_block, "dollars")
@@ -40,6 +45,8 @@ class SaveObservationParser:
         joker_names = self._extract_area_labels(card_areas_block, "jokers")
         hand_cards = self._extract_area_cards(card_areas_block, "hand")
 
+        # Transitional legacy bridge: save fallback still infers main gameplay
+        # state into the legacy internal `phase` field.
         phase = self._infer_phase(
             state_id=state_id,
             blind_in_progress=blind_in_progress,

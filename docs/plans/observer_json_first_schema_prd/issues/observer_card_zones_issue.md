@@ -19,6 +19,10 @@ Export and normalize the active card zones and selection state that the AI needs
 
 - Blocked by #30
 
+## Sequencing Note
+
+Exporter-first cleanup in #31 should reduce the live-path translation work in this slice, but this issue does not need a hard dependency on that refit unless its implementation starts changing live exporter field names directly.
+
 ## User stories addressed
 
 - User story 21

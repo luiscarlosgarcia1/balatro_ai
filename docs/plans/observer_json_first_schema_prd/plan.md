@@ -14,6 +14,7 @@
 - No long-term compatibility layer for the old schema; transitional code is acceptable only within the phase that replaces it.
 - Every parser/decoder/exporter touchpoint should include a lightweight cleanup pass for safely removable legacy code in that area.
 - Prefer simpler data flow over adapters: exporter gathers raw state, parser normalizes it, serializer enforces canonical order/shape, pretty output derives from that serializer.
+- Refit the live exporter and signature coverage immediately after the serializer baseline so later slices spend less effort translating legacy live payloads in Python.
 - Keep shared infrastructure that still serves the new design: live/save acquisition, save decoding, capture utilities, and signature testing.
 - Efficiency matters as a product requirement: avoid duplicate representations, unnecessary reformatting, repeated normalization passes, and stale helper layers that only supported the old contract.
 - The save fallback may remain less complete than the live exporter, but it must still emit the canonical top-level shape.
@@ -24,27 +25,31 @@
    Why now: creates the canonical serializer boundary and gives the first safe place to delete old schema/formatter logic.  
    Depends on: none.
 
-2. `observer_run_scalars_issue.md`  
+2. `observer_live_exporter_signature_refit_issue.md`  
+   Why now: moves the live path closer to canonical field names before the deeper schema slices land, so later issues delete live-side compatibility instead of building on it.  
+   Depends on: `observer_json_schema_baseline_issue.md`.
+
+3. `observer_run_scalars_issue.md`  
    Why now: replaces the scalar backbone and removes old scalar naming and formatting assumptions early.  
-   Depends on: `observer_json_schema_baseline_issue.md`.
+   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`.
 
-3. `observer_owned_objects_issue.md`  
+4. `observer_owned_objects_issue.md`  
    Why now: replaces the old owned-object structure and settles voucher separation before market refits.  
-   Depends on: `observer_json_schema_baseline_issue.md`.
+   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`.
 
-4. `observer_blinds_and_skips_issue.md`  
+5. `observer_blinds_and_skips_issue.md`  
    Why now: completes blind/tag normalization using the same compact array conventions.  
-   Depends on: `observer_json_schema_baseline_issue.md`, benefits from `observer_owned_objects_issue.md`.
+   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`, benefits from `observer_owned_objects_issue.md`.
 
-5. `observer_shop_market_issue.md`  
+6. `observer_shop_market_issue.md`  
    Why now: should land after voucher separation so the old market split can be removed cleanly.  
-   Depends on: `observer_json_schema_baseline_issue.md`, `observer_owned_objects_issue.md`.
+   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`, `observer_owned_objects_issue.md`.
 
-6. `observer_card_zones_issue.md`  
+7. `observer_card_zones_issue.md`  
    Why now: replaces the current hand-card summary path with the final card-zone contract.  
    Depends on: `observer_json_schema_baseline_issue.md`.
 
-7. `observer_pack_contents_issue.md`  
+8. `observer_pack_contents_issue.md`  
    Why now: finishes the modal/pack side after the final market and card object conventions exist.  
    Depends on: `observer_json_schema_baseline_issue.md`, `observer_shop_market_issue.md`, `observer_card_zones_issue.md`.
 
@@ -94,7 +99,40 @@ It gives the repo one authoritative contract early and creates the first safe pl
 - [obs_test.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/obs_test.py)
 - [tests/test_live_observer_contract.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/tests/test_live_observer_contract.py)
 
-## Phase 2: Scalar Backbone Replacement
+## Phase 2: Live Exporter And Signature Refit
+
+**Issues**: `observer_live_exporter_signature_refit_issue.md`
+
+### Goal
+
+Move the live Lua exporter and signature coverage closer to the canonical observer contract before the deeper schema slices land.
+
+### Why This Phase Now
+
+It removes live-side translation tax early, so later scalar, owned-object, blind, and market slices can spend more effort deleting compatibility and less effort compensating for old live field names.
+
+### Implementation Notes
+
+- Refit the live exporter to emit canonical-oriented field names where the baseline contract already settled the public shape.
+- Make `interaction_phase` the main gameplay phase field for the live path.
+- Update signature coverage to use canonical gameplay-relevant fields instead of legacy split names.
+- Remove or shrink Python live-path compatibility bridges that only exist because the exporter still emits old field names.
+- Keep save fallback less complete if needed; this phase is about the live path first.
+
+### Acceptance Criteria
+
+- [ ] Live exporter phase semantics no longer rely on public `phase`.
+- [ ] Signature coverage follows canonical gameplay-relevant fields.
+- [ ] Python live-path compatibility bridges are reduced where the live exporter now emits canonical data directly.
+
+### Read Before Starting
+
+- Source PRD
+- `observer_live_exporter_signature_refit_issue.md`
+- [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
+- [mods/live_state_exporter/signature.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/signature.lua)
+
+## Phase 3: Scalar Backbone Replacement
 
 **Issues**: `observer_run_scalars_issue.md`
 
@@ -124,7 +162,7 @@ The scalar backbone feeds every later slice and lets us remove old scalar aliase
 - [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
 - [mods/live_state_exporter/signature.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/signature.lua)
 
-## Phase 3: Owned State And Blind/Skip Replacement
+## Phase 4: Owned State And Blind/Skip Replacement
 
 **Issues**: `observer_owned_objects_issue.md`, `observer_blinds_and_skips_issue.md`
 
@@ -154,7 +192,7 @@ These slices share the same array-of-objects conventions and settle voucher/tag/
 - `observer_blinds_and_skips_issue.md`
 - [balatro_ai/observation/live_parser.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/balatro_ai/observation/live_parser.py)
 
-## Phase 4: Shop Market Replacement
+## Phase 5: Shop Market Replacement
 
 **Issues**: `observer_shop_market_issue.md`
 
@@ -184,7 +222,7 @@ Voucher separation is already settled, so the market can be simplified cleanly w
 - [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
 - [tests/test_live_observer_contract.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/tests/test_live_observer_contract.py)
 
-## Phase 5: Card Zones And Selection Replacement
+## Phase 6: Card Zones And Selection Replacement
 
 **Issues**: `observer_card_zones_issue.md`
 
@@ -214,7 +252,7 @@ This phase defines the final shared card object shape and deterministic ordering
 - [balatro_ai/observation/live_parser.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/balatro_ai/observation/live_parser.py)
 - [balatro_ai/observation/save_parser.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/balatro_ai/observation/save_parser.py)
 
-## Phase 6: Pack Contents And Final Legacy Purge
+## Phase 7: Pack Contents And Final Legacy Purge
 
 **Issues**: `observer_pack_contents_issue.md`
 

@@ -19,6 +19,7 @@ Export and normalize the core run-state scalars that the AI needs for tempo and 
 ## Blocked by
 
 - Blocked by #30
+- Blocked by #31
 
 ## User stories addressed
 

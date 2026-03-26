@@ -5,16 +5,16 @@ from typing import Iterable
 
 from .policy import DemoPolicy, RuleBasedValidator
 from .interfaces import Executor, Observer, Policy, Validator
-from .models import GameAction, GameObservation, StepRecord
+from .models import GameAction, ObservationPayload, StepRecord
 
 
 class ScriptedObserver:
     """Returns a fixed sequence of mock states for local development."""
 
-    def __init__(self, observations: Iterable[GameObservation]) -> None:
+    def __init__(self, observations: Iterable[ObservationPayload]) -> None:
         self._observations = iter(observations)
 
-    def observe(self) -> GameObservation:
+    def observe(self) -> ObservationPayload:
         return next(self._observations)
 
 
@@ -43,11 +43,12 @@ class EpisodeRunner:
             except StopIteration:
                 break
 
+            score = observation.get("score") or {}
             print(
                 "OBSERVE  "
-                f"phase={observation.phase} money={observation.money} "
-                f"hands={observation.hands_left} discards={observation.discards_left} "
-                f"score={observation.current_score}/{observation.score_to_beat}"
+                f"phase={observation.get('interaction_phase')} money={observation.get('money')} "
+                f"hands={observation.get('hands_left')} discards={observation.get('discards_left')} "
+                f"score={score.get('current')}/{score.get('target')}"
             )
             action = self.policy.choose_action(observation)
             validation = self.validator.validate(observation, action)
@@ -75,36 +76,114 @@ class EpisodeRunner:
 
 def create_demo_runner() -> EpisodeRunner:
     observations = [
-        GameObservation(
-            phase="blind_select",
-            money=4,
-            hands_left=4,
-            discards_left=3,
-            score_to_beat=300,
-            source="mock",
-            notes=("Small blind available.",),
-        ),
-        GameObservation(
-            phase="play_hand",
-            money=4,
-            hands_left=4,
-            discards_left=3,
-            score_to_beat=300,
-            current_score=90,
-            jokers=("Greedy Joker",),
-            source="mock",
-            blind_name="Small Blind",
-        ),
-        GameObservation(
-            phase="shop",
-            money=6,
-            hands_left=0,
-            discards_left=0,
-            score_to_beat=300,
-            current_score=420,
-            jokers=("Greedy Joker",),
-            source="mock",
-        ),
+        {
+            "source": "mock",
+            "state_id": 1,
+            "interaction_phase": "blind_select",
+            "blind_key": "bl_small",
+            "deck_key": None,
+            "stake_id": None,
+            "score": {"current": 0, "target": 300},
+            "money": 4,
+            "hands_left": 4,
+            "discards_left": 3,
+            "ante": None,
+            "round_count": None,
+            "joker_slots": None,
+            "joker_count": 0,
+            "jokers": [],
+            "consumable_slots": None,
+            "consumables": [],
+            "shop_vouchers": [],
+            "vouchers": [],
+            "skip_tags": [],
+            "tags": [],
+            "shop_items": [],
+            "shop_discounts": [],
+            "reroll_cost": None,
+            "interest": None,
+            "inflation": None,
+            "pack_contents": None,
+            "hand_size": None,
+            "cards_in_hand": [],
+            "selected_cards": [],
+            "highlighted_card": None,
+            "cards_in_deck": [],
+            "blinds": [],
+            "notes": ["Small blind available."],
+        },
+        {
+            "source": "mock",
+            "state_id": 2,
+            "interaction_phase": "play_hand",
+            "blind_key": "bl_small",
+            "deck_key": None,
+            "stake_id": None,
+            "score": {"current": 90, "target": 300},
+            "money": 4,
+            "hands_left": 4,
+            "discards_left": 3,
+            "ante": None,
+            "round_count": None,
+            "joker_slots": None,
+            "joker_count": 1,
+            "jokers": [{"name": "Greedy Joker"}],
+            "consumable_slots": None,
+            "consumables": [],
+            "shop_vouchers": [],
+            "vouchers": [],
+            "skip_tags": [],
+            "tags": [],
+            "shop_items": [],
+            "shop_discounts": [],
+            "reroll_cost": None,
+            "interest": None,
+            "inflation": None,
+            "pack_contents": None,
+            "hand_size": None,
+            "cards_in_hand": [],
+            "selected_cards": [],
+            "highlighted_card": None,
+            "cards_in_deck": [],
+            "blinds": [],
+            "notes": [],
+        },
+        {
+            "source": "mock",
+            "state_id": 3,
+            "interaction_phase": "shop",
+            "blind_key": None,
+            "deck_key": None,
+            "stake_id": None,
+            "score": {"current": 420, "target": 300},
+            "money": 6,
+            "hands_left": 0,
+            "discards_left": 0,
+            "ante": None,
+            "round_count": None,
+            "joker_slots": None,
+            "joker_count": 1,
+            "jokers": [{"name": "Greedy Joker"}],
+            "consumable_slots": None,
+            "consumables": [],
+            "shop_vouchers": [],
+            "vouchers": [],
+            "skip_tags": [],
+            "tags": [],
+            "shop_items": [],
+            "shop_discounts": [],
+            "reroll_cost": None,
+            "interest": None,
+            "inflation": None,
+            "pack_contents": None,
+            "hand_size": None,
+            "cards_in_hand": [],
+            "selected_cards": [],
+            "highlighted_card": None,
+            "cards_in_deck": [],
+            "blinds": [],
+            "notes": [],
+        },
     ]
     return EpisodeRunner(
         observer=ScriptedObserver(observations),

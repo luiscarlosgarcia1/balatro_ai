@@ -18,6 +18,10 @@ Add the dedicated `pack_contents` object for opened packs. This slice should exp
 - Blocked by #30
 - Blocked by #25
 
+## Sequencing Note
+
+Exporter-first cleanup in #31 should reduce the live-path translation work in this slice, but this issue only needs a hard dependency on that refit if its implementation starts changing live exporter field names directly.
+
 ## User stories addressed
 
 - User story 19

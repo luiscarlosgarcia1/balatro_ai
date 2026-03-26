@@ -35,6 +35,9 @@ class LiveObservationParser:
         if not isinstance(state, dict):
             return None
 
+        # Transitional legacy bridge: the live exporter still emits a legacy-ish
+        # mixed schema, so this parser continues accepting old field names and
+        # shapes before the canonical serializer rewrites them for public output.
         hand_cards = self._parse_hand_cards(state.get("hand_cards"))
         notes = state.get("notes")
         if not isinstance(notes, list):
@@ -49,10 +52,13 @@ class LiveObservationParser:
 
         blind_choices = self._parse_live_blind_choices(state.get("blind_choices"))
         vouchers = self._parse_live_vouchers(state.get("vouchers"))
+        # Transitional legacy bridge: these old split consumable fields should
+        # disappear once the exporter emits canonical owned/shop structures directly.
         consumables_inventory = self._parse_live_consumables(state.get("consumables_inventory"))
         consumables_shop = self._parse_live_consumables(state.get("consumables_shop"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
         tags = self._parse_live_tags(state.get("tags"))
+        # Transitional legacy bridge: old split pack list still feeds canonical shop_items.
         shop_packs = self._parse_live_booster_packs(state.get("shop_packs", state.get("booster_packs")))
         booster_packs = tuple(shop_packs)
         jokers, joker_details = self._parse_live_jokers(state.get("jokers"))
@@ -71,6 +77,8 @@ class LiveObservationParser:
             seen_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
 
         return GameObservation(
+            # Transitional legacy bridge: main phase still comes in through the
+            # legacy `phase` field and gets canonicalized later.
             phase=str(state.get("phase", state.get("state", "unknown"))),
             money=self._int_or_zero(state.get("money")),
             hands_left=self._int_or_zero(state.get("hands_left")),
@@ -101,6 +109,8 @@ class LiveObservationParser:
             booster_packs=tuple(booster_packs),
             skip_tag_claimed=skip_tag_claimed,
             skip_tag=skip_tag,
+            # Transitional legacy bridge: pack-specific subphase data may still
+            # arrive under older field names.
             interaction_phase=self._string_or_none(
                 state.get("interaction_phase", state.get("pack_phase", state.get("subphase")))
             ),

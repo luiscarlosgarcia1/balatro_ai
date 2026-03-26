@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from .models import GameAction, GameObservation, ValidationResult
+from .models import GameAction, ObservationPayload, ValidationResult
 
 
 class DemoPolicy:
     """A tiny heuristic policy to exercise the runtime."""
 
-    def choose_action(self, observation: GameObservation) -> GameAction:
-        if observation.phase == "shop":
-            if observation.money >= 5:
+    def choose_action(self, observation: ObservationPayload) -> GameAction:
+        phase = str(observation.get("interaction_phase") or "unknown")
+        money = int(observation.get("money") or 0)
+
+        if phase == "shop":
+            if money >= 5:
                 return GameAction(
                     kind="buy_joker",
                     target="economy_joker",
@@ -19,7 +22,7 @@ class DemoPolicy:
                 reason="Not enough money for a meaningful purchase.",
             )
 
-        if observation.phase == "play_hand":
+        if phase == "play_hand":
             return GameAction(
                 kind="play_best_hand",
                 reason="Advance the round with the strongest available hand.",
@@ -43,19 +46,21 @@ class RuleBasedValidator:
 
     def validate(
         self,
-        observation: GameObservation,
+        observation: ObservationPayload,
         action: GameAction,
     ) -> ValidationResult:
-        allowed = self._allowed_actions.get(observation.phase, {"continue"})
+        phase = str(observation.get("interaction_phase") or "unknown")
+        money = int(observation.get("money") or 0)
+        allowed = self._allowed_actions.get(phase, {"continue"})
         if action.kind not in allowed:
             return ValidationResult(
                 accepted=False,
                 notes=(
-                    f"Action '{action.kind}' is not valid during phase '{observation.phase}'.",
+                    f"Action '{action.kind}' is not valid during phase '{phase}'.",
                 ),
             )
 
-        if action.kind == "buy_joker" and observation.money < 5:
+        if action.kind == "buy_joker" and money < 5:
             return ValidationResult(
                 accepted=False,
                 notes=("Cannot buy a joker without enough money.",),

@@ -17,6 +17,7 @@ Refit the canonical shop market view so `shop_items` becomes the efficient raw-i
 ## Blocked by
 
 - Blocked by #30
+- Blocked by #31
 
 ## User stories addressed
 
