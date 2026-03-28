@@ -1087,19 +1087,19 @@ local function collect_shop_discounts(game)
   return nil
 end
 
-local function infer_pack_kind(interaction_phase)
-  local phase = normalize_token(interaction_phase)
-  if not phase then
+local function infer_pack_kind(pack_kind)
+  local normalized = normalize_token(pack_kind)
+  if not normalized then
     return nil
   end
-  return phase:gsub("_pack$", "")
+  return normalized:gsub("_pack$", "")
 end
 
 local collect_pack_reward_cards
 
-local function collect_pack_contents(root, game, interaction_phase)
+local function collect_pack_contents(root, game, open_pack_kind)
   local cards = collect_pack_reward_cards(root, game)
-  if #cards == 0 and not interaction_phase then
+  if #cards == 0 and not open_pack_kind then
     return nil
   end
 
@@ -1116,7 +1116,7 @@ local function collect_pack_contents(root, game, interaction_phase)
   end
 
   return {
-    open_pack_kind = infer_pack_kind(interaction_phase),
+    open_pack_kind = infer_pack_kind(open_pack_kind),
     pack_size = safe_number(game.pack_size),
     choose_limit = choose_limit,
     choices_remaining = choices_remaining,
@@ -1164,21 +1164,6 @@ collect_pack_reward_cards = function(root, game)
   return cards
 end
 
-local function collect_shop_packs(root)
-  local result = {}
-  local seen = {}
-  for _, card in ipairs(card_list_from_area(root and rawget(root, "shop_booster"))) do
-    if #result >= EXPORT_MAX_PACKS then
-      break
-    end
-    local summary = summarize_booster_pack(card)
-    if summary then
-      push_unique(result, seen, summary.key or summary.name, summary)
-    end
-  end
-  return result
-end
-
 local function collect_shop_vouchers(root)
   local result = {}
   local seen = {}
@@ -1220,12 +1205,12 @@ local function infer_phase(root, game)
   local states = root and root.STATES
   local blind = safe_table(game.blind) or {}
   local pack_state_map = states and {
-    [states.TAROT_PACK] = "tarot_pack",
-    [states.PLANET_PACK] = "planet_pack",
-    [states.SPECTRAL_PACK] = "spectral_pack",
-    [states.STANDARD_PACK] = "standard_pack",
-    [states.BUFFOON_PACK] = "buffoon_pack",
-    [states.SMODS_BOOSTER_OPENED] = "modded_booster_pack",
+    [states.TAROT_PACK] = "tarot",
+    [states.PLANET_PACK] = "planet",
+    [states.SPECTRAL_PACK] = "spectral",
+    [states.STANDARD_PACK] = "standard",
+    [states.BUFFOON_PACK] = "buffoon",
+    [states.SMODS_BOOSTER_OPENED] = "modded_booster",
   } or nil
 
   if states and current_state == states.BLIND_SELECT then
@@ -1275,7 +1260,6 @@ local function snapshot_game()
   local consumables_shop = collect_consumables_from_area(root and rawget(root, "shop_jokers"), EXPORT_MAX_CONSUMABLES)
   local shop_items = collect_shop_items(root)
   local shop_vouchers = collect_shop_vouchers(root)
-  local shop_packs = collect_shop_packs(root)
   local deck = summarize_deck(game)
   local stake = summarize_stake(game, root)
   local vouchers = collect_used_vouchers(game, root)
@@ -1302,8 +1286,8 @@ local function snapshot_game()
     hand_area and safe_table(hand_area.config) and hand_area.config.temp_limit,
     safe_table(game.starting_params) and game.starting_params.hand_size
   ))
-  local phase, interaction_phase = infer_phase(root, game)
-  local pack_contents = collect_pack_contents(root, game, interaction_phase)
+  local interaction_phase, open_pack_kind = infer_phase(root, game)
+  local pack_contents = collect_pack_contents(root, game, open_pack_kind)
 
   return {
     meta = {
@@ -1312,12 +1296,10 @@ local function snapshot_game()
     },
     state = {
       source = "live_state_exporter",
-      phase = phase,
       interaction_phase = interaction_phase,
       state_id = safe_number(first_non_nil(root and root.STATE, game.state, game.current_round_state)),
       ante = safe_number(round_resets.ante),
       round_count = safe_number(game.round),
-      stake = stake and stake.name or nil,
       stake_id = stake and first_non_nil(stake.key, stake.index) or nil,
       stake_key = stake and stake.key or nil,
       stake_index = stake and stake.index or nil,
@@ -1334,7 +1316,6 @@ local function snapshot_game()
       blind_name = safe_tostring(first_non_nil(blind.name, game.blind_name)),
       blind_key = safe_tostring(first_non_nil(blind.config_blind, blind.key, game.blind_key)),
       blinds = blind_choices,
-      blind_choices = blind_choices,
       deck = deck,
       deck_cards = deck_cards,
       cards_in_deck = deck_cards,
@@ -1347,13 +1328,10 @@ local function snapshot_game()
       jokers = jokers,
       hand_cards = hand_cards,
       shop_cards = shop_cards,
-      consumables_inventory = consumables_inventory,
       consumables = consumables_inventory,
       consumables_shop = consumables_shop,
-      consumable_capacity = consumable_capacity,
       skip_tags = skip_tags,
       shop_items = shop_items,
-      shop_packs = shop_packs,
       selected_cards = selected_cards,
       highlighted_card = highlighted_card,
       pack_contents = pack_contents,

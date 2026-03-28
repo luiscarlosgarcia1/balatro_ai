@@ -125,7 +125,6 @@ class GameObservation:
     consumable_capacity: int | None = None
     reroll_cost: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
-    shop_packs: tuple[ObservedBoosterPack, ...] = ()
     tags: tuple[ObservedTag, ...] = ()
     booster_packs: tuple[ObservedBoosterPack, ...] = ()
     skip_tag_claimed: bool = False
