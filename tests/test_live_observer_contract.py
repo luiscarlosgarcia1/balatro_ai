@@ -126,16 +126,23 @@ class LiveObserverContractTests(unittest.TestCase):
                 "hand_size": 8,
                 "vouchers": [
                     {
-                        "name": "Clearance Sale",
                         "key": "v_clearance_sale",
+                    }
+                ],
+                "shop_vouchers": [
+                    {
+                        "key": "v_overstock",
+                        "cost": 10,
                     }
                 ],
                 "consumable_slots": 2,
                 "consumables": [
                     {
                         "kind": "Tarot",
-                        "name": "The Fool",
                         "key": "c_fool",
+                        "edition": "Negative",
+                        "sell_price": 1,
+                        "stickers": ["eternal"],
                     }
                 ],
                 "shop_items": [
@@ -160,21 +167,23 @@ class LiveObserverContractTests(unittest.TestCase):
                 ],
                 "tags": [
                     {
-                        "name": "Economy Tag",
+                        "key": "tag_top_up",
+                    }
+                ],
+                "skip_tags": [
+                    {
+                        "slot": "Big",
                         "key": "tag_economy",
                     }
                 ],
-                "skip_tag": {
-                    "name": "Economy Tag",
-                    "key": "tag_economy",
-                },
                 "jokers": [
                     {
-                        "name": "Greedy Joker",
                         "key": "j_greedy_joker",
+                        "rarity": "Common",
                         "edition": "Foil",
                         "debuffed": False,
-                        "modifiers": ["mult=4", "rental"],
+                        "sell_price": 2,
+                        "stickers": ["rental"],
                     }
                 ],
                 "hand_cards": [
@@ -191,7 +200,7 @@ class LiveObserverContractTests(unittest.TestCase):
                         "slot": "Small",
                         "key": "bl_small",
                         "state": "Current",
-                        "tag": "tag_economy",
+                        "tag_key": "tag_economy",
                     }
                 ],
                 "notes": ["exporter=live_state_exporter", "screenshot_status=true"],
@@ -209,21 +218,35 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["inflation"], 2)
         self.assertEqual(observation["reroll_cost"], 5)
         self.assertEqual(observation["vouchers"][0]["key"], "v_clearance_sale")
+        self.assertNotIn("name", observation["vouchers"][0])
+        self.assertEqual(observation["shop_vouchers"], [{"key": "v_overstock", "cost": 10}])
         self.assertEqual(observation["consumables"][0]["kind"], "tarot")
-        self.assertEqual(observation["consumables"][0]["name"], "The Fool")
+        self.assertEqual(observation["consumables"][0]["key"], "c_fool")
+        self.assertEqual(observation["consumables"][0]["edition"], "negative")
+        self.assertEqual(observation["consumables"][0]["sell_price"], 1)
+        self.assertEqual(observation["consumables"][0]["stickers"], ["eternal"])
+        self.assertNotIn("name", observation["consumables"][0])
         self.assertEqual(observation["jokers"][0]["key"], "j_greedy_joker")
+        self.assertEqual(observation["jokers"][0]["rarity"], "common")
         self.assertEqual(observation["jokers"][0]["edition"], "foil")
-        self.assertEqual(observation["jokers"][0]["modifiers"], ["mult=4", "rental"])
-        self.assertEqual(observation["tags"][0]["key"], "tag_economy")
+        self.assertEqual(observation["jokers"][0]["sell_price"], 2)
+        self.assertEqual(observation["jokers"][0]["stickers"], ["rental"])
+        self.assertNotIn("name", observation["jokers"][0])
+        self.assertEqual(observation["tags"][0]["key"], "tag_top_up")
+        self.assertNotIn("name", observation["tags"][0])
         self.assertEqual(observation["skip_tags"][0]["key"], "tag_economy")
+        self.assertEqual(observation["skip_tags"][0]["slot"], "big")
+        self.assertNotIn("name", observation["skip_tags"][0])
         self.assertEqual(observation["blinds"][0]["slot"], "small")
         self.assertEqual(observation["blinds"][0]["state"], "current")
+        self.assertEqual(observation["blinds"][0]["tag_key"], "tag_economy")
         self.assertEqual(observation["cards_in_hand"][0]["card_key"], "s_a")
         self.assertEqual(observation["cards_in_hand"][0]["enhancement"], "bonus")
         self.assertEqual(observation["shop_items"][0]["kind"], "joker")
         self.assertEqual(observation["shop_items"][1]["kind"], "consumable")
         self.assertEqual(observation["shop_items"][2]["kind"], "pack")
         self.assertEqual(observation["shop_items"][2]["key"], "p_arcana_normal_1")
+        self.assertNotIn({"key": "v_overstock", "cost": 10}, observation["shop_items"])
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(any(note.startswith("seen_at=") for note in observation["notes"]))
 
@@ -468,6 +491,140 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(play_hand["blind_key"], "bl_big")
         self.assertEqual(shop["blind_key"], "bl_big")
 
+    def test_observe_orders_skip_tags_and_blinds_with_canonical_claim_fields(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "blind_select",
+                "blind_key": "bl_small",
+                "score": {"current": 0, "target": 300},
+                "money": 4,
+                "hands_left": 4,
+                "discards_left": 4,
+                "skip_tags": [
+                    {"slot": "Boss", "key": "tag_boss"},
+                    {"slot": "Small", "key": "tag_small", "claimed": True},
+                    {"slot": "Big", "key": "tag_big"},
+                ],
+                "blinds": [
+                    {"slot": "Boss", "key": "bl_head", "state": "Upcoming"},
+                    {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_small", "tag_claimed": True},
+                    {"slot": "Big", "key": "bl_big", "state": "Select", "tag_key": "tag_big"},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["skip_tags"],
+            [
+                {"slot": "small", "key": "tag_small", "claimed": True},
+                {"slot": "big", "key": "tag_big"},
+                {"slot": "boss", "key": "tag_boss"},
+            ],
+        )
+        self.assertEqual(
+            observation["blinds"],
+            [
+                {"slot": "small", "key": "bl_small", "state": "skipped", "tag_key": "tag_small", "tag_claimed": True},
+                {"slot": "big", "key": "bl_big", "state": "select", "tag_key": "tag_big"},
+                {"slot": "boss", "key": "bl_head", "state": "upcoming"},
+            ],
+        )
+
+    def test_observe_keeps_skip_tags_distinct_from_empty_active_tags(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "blind_select",
+                "blind_key": "bl_big",
+                "score": {"current": 0, "target": 300},
+                "money": 4,
+                "hands_left": 4,
+                "discards_left": 4,
+                "skip_tags": [
+                    {"slot": "Small", "key": "tag_foil"},
+                    {"slot": "Big", "key": "tag_uncommon"},
+                ],
+                "tags": [],
+                "blinds": [
+                    {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_foil", "tag_claimed": True},
+                    {"slot": "Big", "key": "bl_big", "state": "Select", "tag_key": "tag_uncommon"},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["skip_tags"],
+            [
+                {"slot": "small", "key": "tag_foil"},
+                {"slot": "big", "key": "tag_uncommon"},
+            ],
+        )
+        self.assertEqual(observation["tags"], [])
+
+    def test_observe_separates_active_tags_from_claimable_skip_tags(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "blind_key": "bl_big",
+                "score": {"current": 0, "target": 300},
+                "money": 5,
+                "hands_left": 4,
+                "discards_left": 4,
+                "skip_tags": [
+                    {"slot": "Big", "key": "tag_economy"},
+                ],
+                "tags": [
+                    {"key": "tag_top_up"},
+                    {"key": "tag_buffoon"},
+                ],
+                "blinds": [
+                    {"slot": "Small", "key": "bl_small", "state": "Defeated"},
+                    {"slot": "Big", "key": "bl_big", "state": "Upcoming", "tag_key": "tag_economy"},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(observation["skip_tags"], [{"slot": "big", "key": "tag_economy"}])
+        self.assertEqual(
+            observation["tags"],
+            [
+                {"key": "tag_top_up"},
+                {"key": "tag_buffoon"},
+            ],
+        )
+
+    def test_observe_does_not_backfill_phase4_arrays_from_removed_aliases(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "blind_select",
+                "blind_key": "bl_small",
+                "score": {"current": 0, "target": 300},
+                "money": 4,
+                "hands_left": 4,
+                "discards_left": 4,
+                "consumables_inventory": [
+                    {"kind": "Tarot", "key": "c_fool"},
+                ],
+                "blind_choices": [
+                    {"slot": "Small", "key": "bl_small", "state": "Select"},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(observation["consumables"], [])
+        self.assertEqual(observation["blinds"], [])
+
     def test_format_observation_renders_from_canonical_payload(self) -> None:
         observation = {
             "source": "live_state_exporter",
@@ -487,9 +644,9 @@ class LiveObserverContractTests(unittest.TestCase):
             "jokers": [
                 {
                     "key": "j_greedy_joker",
-                    "name": "Greedy Joker",
+                    "rarity": "common",
                     "edition": "foil",
-                    "modifiers": ["mult=4"],
+                    "stickers": ["rental"],
                 }
             ],
             "consumable_slots": 2,
@@ -497,15 +654,15 @@ class LiveObserverContractTests(unittest.TestCase):
                 {
                     "key": "c_fool",
                     "kind": "tarot",
-                    "name": "The Fool",
+                    "sell_price": 1,
                 }
             ],
-            "shop_vouchers": [],
-            "vouchers": [{"key": "v_clearance_sale", "name": "Clearance Sale"}],
-            "skip_tags": [{"key": "tag_economy", "name": "Economy Tag"}],
-            "tags": [{"key": "tag_economy", "name": "Economy Tag"}],
+            "shop_vouchers": [{"key": "v_overstock", "cost": 10}],
+            "vouchers": [{"key": "v_clearance_sale"}],
+            "skip_tags": [{"slot": "big", "key": "tag_economy"}],
+            "tags": [{"key": "tag_economy"}],
             "shop_items": [
-                {"key": "j_vampire", "kind": "joker", "name": "Vampire", "cost": 7},
+                {"key": "j_vampire", "kind": "joker", "cost": 7},
             ],
             "shop_discounts": [],
             "reroll_cost": 5,
@@ -523,7 +680,7 @@ class LiveObserverContractTests(unittest.TestCase):
             "selected_cards": [],
             "highlighted_card": None,
             "cards_in_deck": [],
-            "blinds": [{"slot": "small", "key": "bl_small", "state": "current"}],
+            "blinds": [{"slot": "small", "key": "bl_small", "state": "current", "tag_key": "tag_economy"}],
             "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
         }
 
@@ -537,12 +694,15 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("inflation: 2", formatted)
         self.assertIn("hand_size: 8", formatted)
         self.assertIn("consumables:", formatted)
+        self.assertIn("shop_vouchers:", formatted)
         self.assertIn("shop_items:", formatted)
         self.assertIn("cards_in_hand:", formatted)
-        self.assertIn("Greedy Joker", formatted)
+        self.assertIn("j_greedy_joker", formatted)
+        self.assertIn("v_overstock", formatted)
         self.assertNotIn("deck:", formatted)
         self.assertNotIn("current_score", formatted)
         self.assertNotIn("shop_packs", formatted)
+        self.assertNotIn("Greedy Joker", formatted)
 
     def test_format_observation_prints_each_shop_pack_once_from_live_observer(self) -> None:
         live_payload = {

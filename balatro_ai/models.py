@@ -27,8 +27,8 @@ class ObservedCard:
 class ObservedVoucher:
     """Compact voucher summary exposed to policy code."""
 
-    name: str
-    key: str | None = None
+    key: str
+    cost: int | None = None
 
 
 @dataclass(frozen=True)
@@ -36,8 +36,11 @@ class ObservedConsumable:
     """Consumable item that can be in inventory or visible in the shop."""
 
     kind: str
-    name: str
-    key: str | None = None
+    key: str
+    edition: str | None = None
+    sell_price: int | None = None
+    debuffed: bool = False
+    stickers: tuple[str, ...] = ()
     cost: int | None = None
 
 
@@ -45,19 +48,28 @@ class ObservedConsumable:
 class ObservedJoker:
     """Gameplay-relevant joker summary for policy decisions."""
 
-    name: str
-    key: str | None = None
+    key: str
+    rarity: str | None = None
     edition: str | None = None
+    sell_price: int | None = None
     debuffed: bool = False
-    modifiers: tuple[str, ...] = ()
+    stickers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ObservedTag:
     """Run-relevant tag summary."""
 
-    name: str
-    key: str | None = None
+    key: str
+
+
+@dataclass(frozen=True)
+class ObservedSkipTag:
+    """Claimable or claimed skip tag summary."""
+
+    slot: str
+    key: str
+    claimed: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,13 +93,14 @@ class ObservedShopItem:
 
 
 @dataclass(frozen=True)
-class ObservedBlindChoice:
+class ObservedBlind:
     """Blind choice available during blind selection."""
 
     slot: str
     key: str
-    state: str | None = None
-    tag: str | None = None
+    state: str
+    tag_key: str | None = None
+    tag_claimed: bool = False
 
 
 @dataclass(frozen=True)
@@ -105,8 +118,7 @@ class GameObservation:
     discards_left: int
     score_current: int | None = None
     score_target: int | None = None
-    jokers: tuple[str, ...] = ()
-    joker_details: tuple[ObservedJoker, ...] = ()
+    jokers: tuple[ObservedJoker, ...] = ()
     hand_cards: tuple[ObservedCard, ...] = ()
     source: str = "unknown"
     state_id: int | None = None
@@ -115,12 +127,12 @@ class GameObservation:
     stake_id: str | int | None = None
     ante: int | None = None
     round_count: int | None = None
-    blind_choices: tuple[ObservedBlindChoice, ...] = ()
+    blinds: tuple[ObservedBlind, ...] = ()
     joker_slots: int | None = None
     joker_count: int | None = None
+    shop_vouchers: tuple[ObservedVoucher, ...] = ()
     vouchers: tuple[ObservedVoucher, ...] = ()
-    consumables_inventory: tuple[ObservedConsumable, ...] = ()
-    consumables_shop: tuple[ObservedConsumable, ...] = ()
+    consumables: tuple[ObservedConsumable, ...] = ()
     consumable_slots: int | None = None
     reroll_cost: int | None = None
     interest: int | None = None
@@ -128,9 +140,8 @@ class GameObservation:
     hand_size: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
     tags: tuple[ObservedTag, ...] = ()
+    skip_tags: tuple[ObservedSkipTag, ...] = ()
     booster_packs: tuple[ObservedBoosterPack, ...] = ()
-    skip_tag_claimed: bool = False
-    skip_tag: ObservedTag | None = None
     notes: tuple[str, ...] = ()
     seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

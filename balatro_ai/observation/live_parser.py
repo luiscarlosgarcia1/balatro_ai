@@ -5,15 +5,23 @@ import json
 
 from ..models import (
     GameObservation,
-    ObservedBlindChoice,
+    ObservedBlind,
     ObservedBoosterPack,
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
     ObservedShopItem,
+    ObservedSkipTag,
     ObservedTag,
     ObservedVoucher,
 )
+
+
+_BLIND_SLOT_ORDER = {
+    "small": 0,
+    "big": 1,
+    "boss": 2,
+}
 
 
 class LiveObservationParser:
@@ -35,7 +43,7 @@ class LiveObservationParser:
         if not isinstance(state, dict):
             return None
 
-        hand_cards = self._parse_hand_cards(state.get("hand_cards"))
+        hand_cards = self._parse_hand_cards(state.get("cards_in_hand", state.get("hand_cards")))
         notes = state.get("notes")
         if not isinstance(notes, list):
             notes = []
@@ -44,19 +52,15 @@ class LiveObservationParser:
         if not isinstance(score_payload, dict):
             score_payload = {}
 
-        blind_choices = self._parse_live_blind_choices(state.get("blinds", state.get("blind_choices")))
+        blinds = self._parse_live_blinds(state.get("blinds"))
         vouchers = self._parse_live_vouchers(state.get("vouchers"))
-        consumables_inventory = self._parse_live_consumables(
-            state.get("consumables", state.get("consumables_inventory"))
-        )
-        consumables_shop = self._parse_live_consumables(state.get("consumables_shop"))
+        shop_vouchers = self._parse_live_vouchers(state.get("shop_vouchers"))
+        consumables = self._parse_live_consumables(state.get("consumables"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
         tags = self._parse_live_tags(state.get("tags"))
+        skip_tags = self._parse_live_skip_tags(state.get("skip_tags"))
         booster_packs = tuple(self._parse_live_booster_packs(state.get("booster_packs")))
-        jokers, joker_details = self._parse_live_jokers(state.get("jokers"))
-        skip_tag = self._parse_live_tag(state.get("skip_tag", state.get("claimed_skip_tag")))
-        skip_tag_claimed_raw = state.get("skip_tag_claimed", state.get("claimed_skip_tag"))
-        skip_tag_claimed = bool(skip_tag_claimed_raw) or skip_tag is not None
+        jokers = self._parse_live_jokers(state.get("jokers"))
 
         seen_at_raw = state.get("seen_at")
         seen_at = None
@@ -76,7 +80,6 @@ class LiveObservationParser:
             score_current=self._int_or_none(score_payload.get("current")),
             score_target=self._int_or_none(score_payload.get("target")),
             jokers=tuple(jokers),
-            joker_details=tuple(joker_details),
             hand_cards=tuple(hand_cards),
             source=str(state.get("source", "live_export")),
             state_id=self._int_or_none(state.get("state_id")),
@@ -85,12 +88,12 @@ class LiveObservationParser:
             stake_id=state.get("stake_id"),
             ante=self._int_or_none(state.get("ante")),
             round_count=self._int_or_none(state.get("round_count", state.get("round_number"))),
-            blind_choices=tuple(blind_choices),
+            blinds=tuple(blinds),
             joker_slots=self._int_or_none(state.get("joker_slots")),
             joker_count=self._int_or_none(state.get("joker_count")),
+            shop_vouchers=tuple(shop_vouchers),
             vouchers=tuple(vouchers),
-            consumables_inventory=tuple(consumables_inventory),
-            consumables_shop=tuple(consumables_shop),
+            consumables=tuple(consumables),
             consumable_slots=self._int_or_none(state.get("consumable_slots")),
             reroll_cost=self._int_or_none(state.get("reroll_cost")),
             interest=self._int_or_none(state.get("interest")),
@@ -98,9 +101,8 @@ class LiveObservationParser:
             hand_size=self._int_or_none(state.get("hand_size")),
             shop_items=tuple(shop_items),
             tags=tuple(tags),
+            skip_tags=tuple(skip_tags),
             booster_packs=tuple(booster_packs),
-            skip_tag_claimed=skip_tag_claimed,
-            skip_tag=skip_tag,
             notes=tuple(str(value) for value in notes if value is not None),
             seen_at=seen_at,
         )
@@ -117,7 +119,7 @@ class LiveObservationParser:
             hand_cards.append(
                 ObservedCard(
                     area=str(item.get("area", "hand")),
-                    code=self._string_or_none(item.get("code")),
+                    code=self._string_or_none(item.get("code", item.get("card_key"))),
                     name=self._string_or_none(item.get("name")),
                     facing=self._string_or_none(item.get("facing")),
                     enhancement=self._string_or_none(item.get("enhancement")),
@@ -137,39 +139,40 @@ class LiveObservationParser:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            name = self._string_or_none(item.get("name"))
-            if not name:
+            key = self._string_or_none(item.get("key"))
+            if not key:
                 continue
-            vouchers.append(ObservedVoucher(name=name, key=self._string_or_none(item.get("key"))))
+            vouchers.append(
+                ObservedVoucher(
+                    key=key,
+                    cost=self._int_or_none(item.get("cost")),
+                )
+            )
         return vouchers
 
-    def _parse_live_jokers(self, payload: object) -> tuple[list[str], list[ObservedJoker]]:
-        jokers: list[str] = []
-        joker_details: list[ObservedJoker] = []
+    def _parse_live_jokers(self, payload: object) -> list[ObservedJoker]:
+        jokers: list[ObservedJoker] = []
         if not isinstance(payload, list):
-            return jokers, joker_details
+            return jokers
 
         for item in payload:
-            if item is None:
+            if not isinstance(item, dict):
                 continue
-            if isinstance(item, dict):
-                label = self._string_or_none(item.get("name")) or self._string_or_none(item.get("label"))
-                if not label:
-                    continue
-                jokers.append(label)
-                modifiers = item.get("modifiers")
-                joker_details.append(
-                    ObservedJoker(
-                        name=label,
-                        key=self._string_or_none(item.get("key")),
-                        edition=self._string_or_none(item.get("edition")),
-                        debuffed=bool(item.get("debuffed", False)),
-                        modifiers=tuple(str(value) for value in modifiers) if isinstance(modifiers, list) else (),
-                    )
+            key = self._string_or_none(item.get("key"))
+            if not key:
+                continue
+            stickers = item.get("stickers")
+            jokers.append(
+                ObservedJoker(
+                    key=key,
+                    rarity=self._string_or_none(item.get("rarity")),
+                    edition=self._string_or_none(item.get("edition")),
+                    sell_price=self._int_or_none(item.get("sell_price")),
+                    debuffed=bool(item.get("debuffed", False)),
+                    stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
                 )
-                continue
-            jokers.append(str(item))
-        return jokers, joker_details
+            )
+        return jokers
 
     def _parse_live_consumables(self, payload: object) -> list[ObservedConsumable]:
         consumables: list[ObservedConsumable] = []
@@ -180,14 +183,18 @@ class LiveObservationParser:
             if not isinstance(item, dict):
                 continue
             kind = self._string_or_none(item.get("kind"))
-            name = self._string_or_none(item.get("name"))
-            if not kind or not name:
+            key = self._string_or_none(item.get("key"))
+            if not kind or not key:
                 continue
+            stickers = item.get("stickers")
             consumables.append(
                 ObservedConsumable(
                     kind=kind,
-                    name=name,
-                    key=self._string_or_none(item.get("key")),
+                    key=key,
+                    edition=self._string_or_none(item.get("edition")),
+                    sell_price=self._int_or_none(item.get("sell_price")),
+                    debuffed=bool(item.get("debuffed", False)),
+                    stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
                     cost=self._int_or_none(item.get("cost")),
                 )
             )
@@ -201,26 +208,33 @@ class LiveObservationParser:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            name = self._string_or_none(item.get("name"))
-            if not name:
+            key = self._string_or_none(item.get("key"))
+            if not key:
                 continue
-            tags.append(ObservedTag(name=name, key=self._string_or_none(item.get("key"))))
+            tags.append(ObservedTag(key=key))
         return tags
 
-    def _parse_live_tag(self, payload: object) -> ObservedTag | None:
-        if payload is None:
-            return None
-        if isinstance(payload, dict):
-            name = self._string_or_none(payload.get("name", payload.get("label")))
-            key = self._string_or_none(payload.get("key"))
-            if name:
-                return ObservedTag(name=name, key=key)
-            if key:
-                return ObservedTag(name=key, key=key)
-            return None
-        if isinstance(payload, str):
-            return ObservedTag(name=payload, key=payload)
-        return None
+    def _parse_live_skip_tags(self, payload: object) -> list[ObservedSkipTag]:
+        skip_tags: list[ObservedSkipTag] = []
+        if not isinstance(payload, list):
+            return skip_tags
+
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            slot = self._string_or_none(item.get("slot"))
+            key = self._string_or_none(item.get("key", item.get("tag_key")))
+            if not slot or not key:
+                continue
+            skip_tags.append(
+                ObservedSkipTag(
+                    slot=slot,
+                    key=key,
+                    claimed=bool(item.get("claimed", False)),
+                )
+            )
+        skip_tags.sort(key=lambda skip_tag: self._slot_sort_key(skip_tag.slot))
+        return skip_tags
 
     def _parse_live_shop_items(self, payload: object) -> list[ObservedShopItem]:
         shop_items: list[ObservedShopItem] = []
@@ -232,13 +246,14 @@ class LiveObservationParser:
                 continue
             kind = self._string_or_none(item.get("kind"))
             name = self._string_or_none(item.get("name"))
-            if not kind or not name:
+            key = self._string_or_none(item.get("key"))
+            if not kind or (not name and not key):
                 continue
             shop_items.append(
                 ObservedShopItem(
                     kind=kind,
-                    name=name,
-                    key=self._string_or_none(item.get("key")),
+                    name=name or key,
+                    key=key,
                     cost=self._int_or_none(item.get("cost")),
                 )
             )
@@ -265,27 +280,34 @@ class LiveObservationParser:
             )
         return booster_packs
 
-    def _parse_live_blind_choices(self, payload: object) -> list[ObservedBlindChoice]:
-        blind_choices: list[ObservedBlindChoice] = []
+    def _parse_live_blinds(self, payload: object) -> list[ObservedBlind]:
+        blinds: list[ObservedBlind] = []
         if not isinstance(payload, list):
-            return blind_choices
+            return blinds
 
         for item in payload:
             if not isinstance(item, dict):
                 continue
             slot = self._string_or_none(item.get("slot"))
             key = self._string_or_none(item.get("key"))
-            if not slot or not key:
+            state = self._string_or_none(item.get("state"))
+            if not slot or not key or not state:
                 continue
-            blind_choices.append(
-                ObservedBlindChoice(
+            blinds.append(
+                ObservedBlind(
                     slot=slot,
                     key=key,
-                    state=self._string_or_none(item.get("state")),
-                    tag=self._string_or_none(item.get("tag")),
+                    state=state,
+                    tag_key=self._string_or_none(item.get("tag_key", item.get("tag"))),
+                    tag_claimed=bool(item.get("tag_claimed", False)),
                 )
             )
-        return blind_choices
+        blinds.sort(key=lambda blind: self._slot_sort_key(blind.slot))
+        return blinds
+
+    def _slot_sort_key(self, slot: str) -> tuple[int, str]:
+        normalized = str(slot).strip().lower()
+        return (_BLIND_SLOT_ORDER.get(normalized, len(_BLIND_SLOT_ORDER)), normalized)
 
     def _int_or_zero(self, value: object) -> int:
         return self._int_or_none(value) or 0

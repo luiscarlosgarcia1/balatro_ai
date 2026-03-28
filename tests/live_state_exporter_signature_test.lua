@@ -33,8 +33,8 @@ local function test_missing_item_keys_do_not_crash()
   local signature = Signature.make({
     state = {
       jokers = {
-        { name = "Joker" },
-        { name = nil },
+        { key = "j_joker" },
+        { key = nil },
       },
       vouchers = {
         { key = nil },
@@ -58,7 +58,7 @@ local function test_distinct_real_values_change_signature()
         target = 300,
       },
       jokers = {
-        { name = "Joker" },
+        { key = "j_joker" },
       },
     },
   })
@@ -72,7 +72,7 @@ local function test_distinct_real_values_change_signature()
         target = 300,
       },
       jokers = {
-        { name = "Joker" },
+        { key = "j_joker" },
       },
     },
   })
@@ -126,8 +126,35 @@ local function test_pack_reward_open_pack_kind_changes_signature()
   assert_not_equal(first, second, "signature should track pack kind through pack_contents")
 end
 
+local function test_blind_and_skip_claim_fields_change_signature()
+  local first = Signature.make({
+    state = {
+      skip_tags = {
+        { slot = "small", key = "tag_small", claimed = true },
+      },
+      blinds = {
+        { slot = "small", key = "bl_small", state = "skipped", tag_key = "tag_small", tag_claimed = true },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      skip_tags = {
+        { slot = "small", key = "tag_small", claimed = false },
+      },
+      blinds = {
+        { slot = "small", key = "bl_small", state = "upcoming", tag_key = "tag_small", tag_claimed = false },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track canonical blind and skip-tag claim semantics")
+end
+
 test_missing_scalar_fields_still_produce_signature()
 test_missing_item_keys_do_not_crash()
 test_distinct_real_values_change_signature()
 test_score_shape_changes_signature()
 test_pack_reward_open_pack_kind_changes_signature()
+test_blind_and_skip_claim_fields_change_signature()

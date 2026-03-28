@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import GameObservation, ObservedCard, ObservedJoker
+from ..models import GameObservation, ObservedCard
 from .save_decoder import SaveSnapshot
 
 
@@ -45,7 +45,6 @@ class SaveObservationParser:
         if blind_in_progress is None:
             blind_in_progress = self._extract_bool(blind_block, "in_blind")
         blind_on_deck = self._extract_top_level_string(game_block, "blind_on_deck") or self._extract_string(game_block, "blind_on_deck")
-        joker_names = self._extract_area_labels(card_areas_block, "jokers")
         hand_cards = self._extract_area_cards(card_areas_block, "hand")
 
         interaction_phase = self._infer_phase(
@@ -73,8 +72,7 @@ class SaveObservationParser:
             discards_left=discards_left or self._extract_int(round_resets_block, "discards") or 0,
             score_current=score_current,
             score_target=score_target,
-            jokers=joker_names,
-            joker_details=tuple(ObservedJoker(name=name) for name in joker_names),
+            jokers=(),
             hand_cards=hand_cards,
             source="save_file",
             state_id=state_id,
@@ -82,16 +80,17 @@ class SaveObservationParser:
             stake_id=stake_id,
             ante=ante,
             round_count=round_count,
-            blind_choices=(),
+            blinds=(),
+            shop_vouchers=(),
             vouchers=(),
-            consumables_inventory=(),
-            consumables_shop=(),
+            consumables=(),
             consumable_slots=None,
             reroll_cost=None,
             interest=interest,
             inflation=inflation,
             hand_size=None,
             tags=(),
+            skip_tags=(),
             booster_packs=(),
             joker_count=joker_count,
             notes=tuple(notes),
@@ -131,20 +130,6 @@ class SaveObservationParser:
             search_start = area_block.find(cards_block) + len(cards_block)
         config_block = self._extract_block(area_block, "config", start=search_start) or area_block
         return self._extract_int(config_block, "card_count")
-
-    def _extract_area_labels(self, card_areas_block: str, area_name: str) -> tuple[str, ...]:
-        area_block = self._extract_block(card_areas_block, area_name)
-        if not area_block:
-            return ()
-
-        cards_block = self._extract_block(area_block, "cards") or ""
-        labels = re.findall(r'\["label"\]="((?:[^"\\]|\\.)*)"', cards_block)
-        cleaned: list[str] = []
-        for label in labels:
-            decoded = self._unescape(label)
-            if decoded and decoded != "Base Card":
-                cleaned.append(decoded)
-        return tuple(cleaned)
 
     def _extract_area_cards(self, card_areas_block: str, area_name: str) -> tuple[ObservedCard, ...]:
         area_block = self._extract_block(card_areas_block, area_name)

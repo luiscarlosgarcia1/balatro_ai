@@ -195,37 +195,67 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(joker, dict):
                 continue
             extras = []
+            if joker.get("rarity"):
+                extras.append(f"rarity={joker['rarity']}")
             if joker.get("edition"):
                 extras.append(f"edition={joker['edition']}")
-            modifiers = joker.get("modifiers")
-            if isinstance(modifiers, list):
-                extras.extend(str(value) for value in modifiers)
+            if joker.get("sell_price") is not None:
+                extras.append(f"sell_price={joker['sell_price']}")
+            stickers = joker.get("stickers")
+            if isinstance(stickers, list):
+                extras.extend(f"sticker={value}" for value in stickers)
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {joker.get('name') or joker.get('key') or '?'}{extra_text}")
+            lines.append(f"    - {joker.get('key') or '?'}{extra_text}")
+    shop_vouchers = observation.get("shop_vouchers") or []
+    if shop_vouchers:
+        lines.append("  shop_vouchers:")
+        for voucher in shop_vouchers:
+            if not isinstance(voucher, dict):
+                continue
+            suffix = f" cost={voucher['cost']}" if voucher.get("cost") is not None else ""
+            lines.append(f"    - {voucher.get('key') or '?'}{suffix}")
     vouchers = observation.get("vouchers") or []
     if vouchers:
         lines.append("  vouchers:")
         for voucher in vouchers:
             if not isinstance(voucher, dict):
                 continue
-            lines.append(f"    - {voucher.get('name') or voucher.get('key') or '?'}")
+            lines.append(f"    - {voucher.get('key') or '?'}")
     consumables = observation.get("consumables") or []
     if consumables:
         lines.append("  consumables:")
         for consumable in consumables:
             if not isinstance(consumable, dict):
                 continue
-            suffix = f" cost={consumable['cost']}" if consumable.get("cost") is not None else ""
+            extras = []
+            if consumable.get("cost") is not None:
+                extras.append(f"cost={consumable['cost']}")
+            if consumable.get("sell_price") is not None:
+                extras.append(f"sell_price={consumable['sell_price']}")
+            if consumable.get("edition"):
+                extras.append(f"edition={consumable['edition']}")
+            stickers = consumable.get("stickers")
+            if isinstance(stickers, list):
+                extras.extend(f"sticker={value}" for value in stickers)
+            suffix = f" [{', '.join(extras)}]" if extras else ""
             lines.append(
-                f"    - {consumable.get('kind')}: {consumable.get('name') or consumable.get('key') or '?'}{suffix}"
+                f"    - {consumable.get('kind')}: {consumable.get('key') or '?'}{suffix}"
             )
+    skip_tags = observation.get("skip_tags") or []
+    if skip_tags:
+        lines.append("  skip_tags:")
+        for skip_tag in skip_tags:
+            if not isinstance(skip_tag, dict):
+                continue
+            suffix = " [claimed=true]" if skip_tag.get("claimed") else ""
+            lines.append(f"    - {skip_tag.get('slot')}: {skip_tag.get('key') or '?'}{suffix}")
     tags = observation.get("tags") or []
     if tags:
         lines.append("  tags:")
         for tag in tags:
             if not isinstance(tag, dict):
                 continue
-            lines.append(f"    - {tag.get('name') or tag.get('key') or '?'}")
+            lines.append(f"    - {tag.get('key') or '?'}")
     shop_items = observation.get("shop_items") or []
     if shop_items:
         lines.append("  shop_items:")
@@ -248,8 +278,10 @@ def format_observation(observation: dict[str, object]) -> str:
             extras = []
             if blind_choice.get("state"):
                 extras.append(f"state={blind_choice['state']}")
-            if blind_choice.get("tag"):
-                extras.append(f"tag={blind_choice['tag']}")
+            if blind_choice.get("tag_key"):
+                extras.append(f"tag_key={blind_choice['tag_key']}")
+            if blind_choice.get("tag_claimed"):
+                extras.append("tag_claimed=true")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
             lines.append(
                 f"    - {blind_choice.get('slot')}: {blind_choice.get('key')}{extra_text}"

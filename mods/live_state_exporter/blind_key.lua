@@ -13,21 +13,21 @@ local function normalize_state(value)
   return string.lower(value)
 end
 
-function BlindKey.derive(interaction_phase, blind_choices)
+function BlindKey.derive(interaction_phase, blinds)
   local expected_state = EXPECTED_STATE_BY_PHASE[interaction_phase]
   if expected_state == nil then
     return nil
   end
-  if type(blind_choices) ~= "table" then
+  if type(blinds) ~= "table" then
     return nil
   end
 
-  for _, blind_choice in ipairs(blind_choices) do
-    if type(blind_choice) == "table"
-      and normalize_state(blind_choice.state) == expected_state
-      and blind_choice.key ~= nil
+  for _, blind in ipairs(blinds) do
+    if type(blind) == "table"
+      and normalize_state(blind.state) == expected_state
+      and blind.key ~= nil
     then
-      return blind_choice.key
+      return blind.key
     end
   end
 
