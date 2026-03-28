@@ -638,6 +638,67 @@ local function collect_cards(area, limit, area_name)
   return result, count
 end
 
+local CARD_SUIT_ORDER = {
+  clubs = 0,
+  diamonds = 1,
+  hearts = 2,
+  spades = 3,
+}
+
+local CARD_RANK_ORDER = {
+  ace = 0,
+  ["2"] = 1,
+  ["3"] = 2,
+  ["4"] = 3,
+  ["5"] = 4,
+  ["6"] = 5,
+  ["7"] = 6,
+  ["8"] = 7,
+  ["9"] = 8,
+  ["10"] = 9,
+  jack = 10,
+  queen = 11,
+  king = 12,
+}
+
+local function sort_canonical_cards(cards)
+  local decorated = {}
+  for index, card in ipairs(cards or {}) do
+    local suit = normalize_token(card and card.suit)
+    local rank = normalize_token(card and card.rank)
+    decorated[#decorated + 1] = {
+      index = index,
+      suit_order = CARD_SUIT_ORDER[suit] or 99,
+      rank_order = CARD_RANK_ORDER[rank] or 99,
+      suit = suit or "",
+      rank = rank or "",
+      card = card,
+    }
+  end
+
+  table.sort(decorated, function(left, right)
+    if left.suit_order ~= right.suit_order then
+      return left.suit_order < right.suit_order
+    end
+    if left.rank_order ~= right.rank_order then
+      return left.rank_order < right.rank_order
+    end
+    if left.suit ~= right.suit then
+      return left.suit < right.suit
+    end
+    if left.rank ~= right.rank then
+      return left.rank < right.rank
+    end
+    return left.index < right.index
+  end)
+
+  local sorted = {}
+  for _, entry in ipairs(decorated) do
+    sorted[#sorted + 1] = entry.card
+  end
+  return sorted
+end
+
 local function card_entries_from_source(source)
   local area = safe_table(source)
   if not area then
@@ -1194,11 +1255,13 @@ local function snapshot_game()
     return nil
   end
 
-  local hand_cards, hand_count = collect_cards(root and root.hand, EXPORT_MAX_HAND_CARDS, "hand")
+  local hand_cards, _hand_count = collect_cards(root and root.hand, EXPORT_MAX_HAND_CARDS, "hand")
   local jokers, joker_count = collect_jokers(root and root.jokers, EXPORT_MAX_JOKERS)
   local shop_cards = collect_shop_cards(root, game)
   local deck_cards = collect_deck_cards(root, game)
   local pack_reward_cards = collect_pack_reward_cards(root, game)
+  hand_cards = sort_canonical_cards(hand_cards)
+  deck_cards = sort_canonical_cards(deck_cards)
 
   local blind = safe_table(game.blind) or {}
   local current_round = safe_table(game.current_round) or {}
@@ -1261,7 +1324,6 @@ local function snapshot_game()
       blind_key = BlindKey.derive(interaction_phase, blinds),
       blinds = blinds,
       deck_key = deck and deck.key or nil,
-      deck_cards = deck_cards,
       cards_in_deck = deck_cards,
       shop_vouchers = shop_vouchers,
       vouchers = vouchers,
@@ -1269,10 +1331,9 @@ local function snapshot_game()
         current = safe_number(first_non_nil(game.chips, game.current_round_score, game.score)),
         target = safe_number(first_non_nil(blind.chips, game.score_to_beat, game.target_score)),
       },
-      cards_in_hand = hand_count,
+      cards_in_hand = hand_cards,
       joker_count = joker_count,
       jokers = jokers,
-      hand_cards = hand_cards,
       shop_cards = shop_cards,
       consumables = consumables,
       skip_tags = skip_tags,

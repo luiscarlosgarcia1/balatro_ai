@@ -9,6 +9,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedReference,
     ObservedShopDiscount,
     ObservedShopItem,
     ObservedSkipTag,
@@ -43,7 +44,10 @@ class LiveObservationParser:
         if not isinstance(state, dict):
             return None
 
-        hand_cards = self._parse_hand_cards(state.get("cards_in_hand", state.get("hand_cards")))
+        cards_in_hand = self._parse_cards(state.get("cards_in_hand"))
+        selected_cards = self._parse_references(state.get("selected_cards"))
+        highlighted_card = self._parse_reference(state.get("highlighted_card"))
+        cards_in_deck = self._parse_cards(state.get("cards_in_deck"))
         notes = state.get("notes")
         if not isinstance(notes, list):
             notes = []
@@ -80,7 +84,10 @@ class LiveObservationParser:
             score_current=self._int_or_none(score_payload.get("current")),
             score_target=self._int_or_none(score_payload.get("target")),
             jokers=tuple(jokers),
-            hand_cards=tuple(hand_cards),
+            cards_in_hand=tuple(cards_in_hand),
+            selected_cards=tuple(selected_cards),
+            highlighted_card=highlighted_card,
+            cards_in_deck=tuple(cards_in_deck),
             source=str(state.get("source", "live_export")),
             state_id=self._int_or_none(state.get("state_id")),
             blind_key=self._string_or_none(state.get("blind_key")),
@@ -107,29 +114,73 @@ class LiveObservationParser:
             seen_at=seen_at,
         )
 
-    def _parse_hand_cards(self, payload: object) -> list[ObservedCard]:
-        hand_cards: list[ObservedCard] = []
+    def _parse_cards(self, payload: object) -> list[ObservedCard]:
+        cards: list[ObservedCard] = []
         if not isinstance(payload, list):
-            return hand_cards
+            return cards
 
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            modifiers = item.get("modifiers")
-            hand_cards.append(
+            stickers = item.get("stickers")
+            cards.append(
                 ObservedCard(
-                    area=str(item.get("area", "hand")),
-                    code=self._string_or_none(item.get("code", item.get("card_key"))),
-                    name=self._string_or_none(item.get("name")),
-                    facing=self._string_or_none(item.get("facing")),
+                    card_key=self._string_or_none(item.get("card_key", item.get("code"))),
+                    card_kind=self._string_or_none(item.get("card_kind", item.get("kind"))),
+                    suit=self._string_or_none(item.get("suit")),
+                    rank=self._string_or_none(item.get("rank")),
+                    rarity=self._string_or_none(item.get("rarity")),
                     enhancement=self._string_or_none(item.get("enhancement")),
                     edition=self._string_or_none(item.get("edition")),
                     seal=self._string_or_none(item.get("seal")),
+                    stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
+                    facing=self._string_or_none(item.get("facing")),
+                    cost=self._int_or_none(item.get("cost")),
+                    sell_price=self._int_or_none(item.get("sell_price")),
                     debuffed=bool(item.get("debuffed", False)),
-                    modifiers=tuple(str(value) for value in modifiers) if isinstance(modifiers, list) else (),
                 )
             )
-        return hand_cards
+        return cards
+
+    def _parse_references(self, payload: object) -> list[ObservedReference]:
+        references: list[ObservedReference] = []
+        if not isinstance(payload, list):
+            return references
+
+        for item in payload:
+            reference = self._parse_reference(item)
+            if reference is not None:
+                references.append(reference)
+        return references
+
+    def _parse_reference(self, payload: object) -> ObservedReference | None:
+        if not isinstance(payload, dict):
+            return None
+
+        zone = self._string_or_none(payload.get("zone"))
+        if not zone:
+            return None
+
+        reference = ObservedReference(
+            zone=zone,
+            card_key=self._string_or_none(payload.get("card_key")),
+            joker_key=self._string_or_none(payload.get("joker_key")),
+            consumable_key=self._string_or_none(payload.get("consumable_key")),
+            pack_key=self._string_or_none(payload.get("pack_key")),
+            voucher_key=self._string_or_none(payload.get("voucher_key")),
+        )
+        if any(
+            value is not None
+            for value in (
+                reference.card_key,
+                reference.joker_key,
+                reference.consumable_key,
+                reference.pack_key,
+                reference.voucher_key,
+            )
+        ):
+            return reference
+        return None
 
     def _parse_live_vouchers(self, payload: object) -> list[ObservedVoucher]:
         vouchers: list[ObservedVoucher] = []

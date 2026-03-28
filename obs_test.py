@@ -303,27 +303,86 @@ def format_observation(observation: dict[str, object]) -> str:
         for card in cards_in_hand:
             if not isinstance(card, dict):
                 continue
-            modifiers = card.get("modifiers")
-            mods = f" [{', '.join(str(value) for value in modifiers)}]" if isinstance(modifiers, list) and modifiers else ""
             extras = []
+            if card.get("card_kind"):
+                extras.append(f"kind={card['card_kind']}")
+            if card.get("suit"):
+                extras.append(f"suit={card['suit']}")
+            if card.get("rank"):
+                extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):
                 extras.append(f"edition={card['edition']}")
             if card.get("seal"):
                 extras.append(f"seal={card['seal']}")
+            if card.get("cost") is not None:
+                extras.append(f"cost={card['cost']}")
+            if card.get("sell_price") is not None:
+                extras.append(f"sell_price={card['sell_price']}")
             if card.get("facing"):
                 extras.append(f"facing={card['facing']}")
+            stickers = card.get("stickers")
+            if isinstance(stickers, list):
+                extras.extend(f"sticker={value}" for value in stickers)
+            if card.get("debuffed"):
+                extras.append("debuffed=true")
             extra_text = f" ({', '.join(extras)})" if extras else ""
             lines.append(
-                f"    - {card.get('card_key') or '?'}: {card.get('name') or '?'}{extra_text}{mods}"
+                f"    - {card.get('card_key') or '?'}{extra_text}"
             )
+    cards_in_deck = observation.get("cards_in_deck") or []
+    if cards_in_deck:
+        lines.append("  cards_in_deck:")
+        for card in cards_in_deck:
+            if not isinstance(card, dict):
+                continue
+            extras = []
+            if card.get("card_kind"):
+                extras.append(f"kind={card['card_kind']}")
+            if card.get("suit"):
+                extras.append(f"suit={card['suit']}")
+            if card.get("rank"):
+                extras.append(f"rank={card['rank']}")
+            if card.get("enhancement"):
+                extras.append(f"enh={card['enhancement']}")
+            if card.get("edition"):
+                extras.append(f"edition={card['edition']}")
+            if card.get("seal"):
+                extras.append(f"seal={card['seal']}")
+            extra_text = f" ({', '.join(extras)})" if extras else ""
+            lines.append(f"    - {card.get('card_key') or '?'}{extra_text}")
+    selected_cards = observation.get("selected_cards") or []
+    if selected_cards:
+        lines.append("  selected_cards:")
+        for reference in selected_cards:
+            rendered = format_reference(reference)
+            if rendered:
+                lines.append(f"    - {rendered}")
+    highlighted_card = observation.get("highlighted_card")
+    if isinstance(highlighted_card, dict):
+        rendered = format_reference(highlighted_card)
+        if rendered:
+            lines.append("  highlighted_card:")
+            lines.append(f"    - {rendered}")
     notes = observation.get("notes") or []
     if notes:
         lines.append("  notes:")
         for note in notes:
             lines.append(f"    - {note}")
     return "\n".join(lines)
+
+
+def format_reference(reference: object) -> str | None:
+    if not isinstance(reference, dict):
+        return None
+
+    zone = reference.get("zone") or "unknown"
+    for field_name in ("card_key", "joker_key", "consumable_key", "pack_key", "voucher_key"):
+        value = reference.get(field_name)
+        if value:
+            return f"{zone}: {field_name}={value}"
+    return f"{zone}: ?"
 
 
 def write_observation(run_dir: Path, sequence: int, observation) -> None:
