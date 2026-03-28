@@ -624,8 +624,24 @@ class LiveObserverContractTests(unittest.TestCase):
                     "source": "live_state_exporter",
                     "interaction_phase": "pack_reward",
                     "pack_contents": {
-                        "open_pack_kind": "tarot",
+                        "pack_key": "p_arcana_normal_1",
+                        "pack_size": 5,
+                        "choose_limit": 1,
+                        "choices_remaining": 1,
+                        "skip_available": True,
+                        "cards": [
+                            {
+                                "card_key": "c_fool",
+                                "card_kind": "Tarot",
+                                "cost": 0,
+                                "sell_price": 1,
+                            }
+                        ],
                     },
+                    "selected_cards": [
+                        {"zone": "pack_contents", "card_key": "c_fool"},
+                    ],
+                    "highlighted_card": {"zone": "pack_contents", "card_key": "c_fool"},
                     "score": {"current": 0, "target": 300},
                     "money": 8,
                     "hands_left": 4,
@@ -637,7 +653,60 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(blind_select["interaction_phase"], "blind_select")
         self.assertEqual(play_hand["interaction_phase"], "play_hand")
         self.assertEqual(pack_reward["interaction_phase"], "pack_reward")
-        self.assertIsNone(pack_reward["pack_contents"])
+        self.assertEqual(
+            pack_reward["pack_contents"],
+            {
+                "pack_key": "p_arcana_normal_1",
+                "pack_size": 5,
+                "choose_limit": 1,
+                "choices_remaining": 1,
+                "skip_available": True,
+                "cards": [
+                    {
+                        "card_key": "c_fool",
+                        "card_kind": "tarot",
+                        "cost": 0,
+                        "sell_price": 1,
+                    }
+                ],
+            },
+        )
+        self.assertEqual(
+            pack_reward["selected_cards"],
+            [{"zone": "pack_contents", "card_key": "c_fool"}],
+        )
+        self.assertEqual(
+            pack_reward["highlighted_card"],
+            {"zone": "pack_contents", "card_key": "c_fool"},
+        )
+
+    def test_observe_rejects_active_pack_contents_without_exact_pack_key(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "pack_reward",
+                "pack_contents": {
+                    "pack_size": 5,
+                    "choose_limit": 1,
+                    "choices_remaining": 1,
+                    "skip_available": True,
+                    "cards": [
+                        {
+                            "card_key": "c_fool",
+                            "card_kind": "Tarot",
+                        }
+                    ],
+                },
+                "score": {"current": 0, "target": 300},
+                "money": 8,
+                "hands_left": 4,
+                "discards_left": 4,
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertIsNone(observation["pack_contents"])
 
     def test_observe_preserves_phase_specific_blind_key_from_live_payload(self) -> None:
         blind_select = self.observe_live_payload(
@@ -917,6 +986,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("shop_discounts:", formatted)
         self.assertIn("discount_percent=25", formatted)
         self.assertIn("shop_free", formatted)
+        self.assertNotIn("open_pack_kind", formatted)
         self.assertIn("cards_in_hand:", formatted)
         self.assertIn("cards_in_deck:", formatted)
         self.assertIn("selected_cards:", formatted)
@@ -965,6 +1035,68 @@ class LiveObserverContractTests(unittest.TestCase):
 
         self.assertEqual(formatted.count("Jumbo Standard Pack"), 1)
         self.assertNotIn("shop_packs", formatted)
+
+    def test_format_observation_renders_canonical_pack_contents(self) -> None:
+        observation = {
+            "source": "live_state_exporter",
+            "state_id": 8,
+            "interaction_phase": "pack_reward",
+            "blind_key": "bl_big",
+            "deck_key": "b_erratic",
+            "stake_id": "gold_stake",
+            "score": {"current": 0, "target": 800},
+            "money": 14,
+            "hands_left": 4,
+            "discards_left": 2,
+            "ante": 3,
+            "round_count": 17,
+            "joker_slots": 5,
+            "joker_count": 1,
+            "jokers": [],
+            "consumable_slots": 2,
+            "consumables": [],
+            "shop_vouchers": [],
+            "vouchers": [],
+            "skip_tags": [],
+            "tags": [],
+            "shop_items": [],
+            "shop_discounts": [],
+            "reroll_cost": 5,
+            "interest": 3,
+            "inflation": 2,
+            "pack_contents": {
+                "pack_key": "p_arcana_normal_1",
+                "pack_size": 5,
+                "choose_limit": 1,
+                "choices_remaining": 1,
+                "skip_available": True,
+                "cards": [
+                    {
+                        "card_key": "c_fool",
+                        "card_kind": "tarot",
+                        "cost": 0,
+                    }
+                ],
+            },
+            "hand_size": 8,
+            "cards_in_hand": [],
+            "selected_cards": [{"zone": "pack_contents", "card_key": "c_fool"}],
+            "highlighted_card": {"zone": "pack_contents", "card_key": "c_fool"},
+            "cards_in_deck": [],
+            "blinds": [],
+            "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
+        }
+
+        formatted = format_observation(observation)
+
+        self.assertIn("pack_contents:", formatted)
+        self.assertIn("pack_key=p_arcana_normal_1", formatted)
+        self.assertIn("pack_size=5", formatted)
+        self.assertIn("choose_limit=1", formatted)
+        self.assertIn("choices_remaining=1", formatted)
+        self.assertIn("skip_available=true", formatted)
+        self.assertIn("c_fool", formatted)
+        self.assertNotIn("open_pack_kind", formatted)
 
     def test_observe_save_fallback_uses_same_canonical_skeleton(self) -> None:
         # Transitional legacy bridge: save fallback still starts from legacy decoded save text and

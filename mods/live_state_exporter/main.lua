@@ -15,11 +15,11 @@ local EXPORT_MAX_JOKERS = 8
 local EXPORT_MAX_CONSUMABLES = 10
 local EXPORT_MAX_VOUCHERS = 8
 local EXPORT_MAX_TAGS = 8
-local EXPORT_MAX_SHOP_CARDS = 16
 local EXPORT_MAX_DECK_CARDS = 80
-local EXPORT_MAX_PACK_REWARD_CARDS = 16
+local EXPORT_MAX_PACK_CARDS = 16
 local EXPORT_MAX_STRING = 80
 local unpack_fn = table.unpack or unpack
+local remembered_shop_pack_key = nil
 
 local function load_module(filename)
   local mod = rawget(_G, "SMODS") and SMODS.current_mod
@@ -37,6 +37,7 @@ end
 
 local Signature = load_module("signature.lua")
 local BlindKey = load_module("blind_key.lua")
+local PackContents = load_module("pack_contents.lua")
 
 local function now()
   if love and love.timer and love.timer.getTime then
@@ -601,7 +602,16 @@ local function summarize_booster_pack(card)
   end
 
   local ability = safe_table(card.ability) or {}
-  local key = safe_tostring(first_non_nil(ability.key, card.key))
+  local save_fields = safe_table(card.save_fields) or {}
+  local center = safe_table(card.config) and safe_table(card.config.center) or {}
+  local key = safe_tostring(first_non_nil(
+    ability.key,
+    center.key,
+    save_fields.center,
+    save_fields.card,
+    card.card_key,
+    card.key
+  ))
   local set_name = safe_tostring(first_non_nil(ability.set, card.set))
   local kind = nil
   if set_name then
@@ -616,7 +626,7 @@ local function summarize_booster_pack(card)
   return {
     name = trim_text(name or key or "pack", EXPORT_MAX_STRING),
     key = key,
-    pack_key = normalize_token(key or name),
+    pack_key = normalize_token(key),
     kind = kind,
     pack_kind = kind,
     cost = safe_number(first_non_nil(card.cost, card.base_cost, ability.cost)),
@@ -1114,21 +1124,22 @@ local function collect_shop_discounts(game)
   return discounts
 end
 
-local function infer_pack_kind(pack_kind)
-  local normalized = normalize_token(pack_kind)
-  if not normalized then
-    return nil
-  end
-  return normalized:gsub("_pack$", "")
+local function collect_pack_cards(root, game)
+  return collect_cards_from_sources(
+    {
+      root and rawget(root, "pack_cards"),
+      safe_table(game) and rawget(game, "pack_cards"),
+      safe_table(game and game.current_round) and game.current_round.pack_cards,
+      safe_table(game and game.current_round) and game.current_round.pack_choices,
+      root and rawget(root, "pack_choices"),
+    },
+    EXPORT_MAX_PACK_CARDS,
+    "pack_reward"
+  )
 end
 
-local collect_pack_reward_cards
-
-local function collect_pack_contents(root, game, open_pack_kind)
-  local cards = collect_pack_reward_cards(root, game)
-  if #cards == 0 and not open_pack_kind then
-    return nil
-  end
+local function collect_pack_contents(root, game, interaction_phase, shop_items)
+  local cards = collect_pack_cards(root, game)
 
   local selected_count = 0
   local pack_cards = safe_table(root and rawget(root, "pack_cards"))
@@ -1136,32 +1147,17 @@ local function collect_pack_contents(root, game, open_pack_kind)
     selected_count = #pack_cards.highlighted
   end
 
-  local choose_limit = safe_number(game.pack_choices)
-  local choices_remaining = choose_limit
-  if choose_limit then
-    choices_remaining = math.max(0, choose_limit - selected_count)
-  end
-
-  return {
-    open_pack_kind = infer_pack_kind(open_pack_kind),
-    pack_size = safe_number(game.pack_size),
-    choose_limit = choose_limit,
-    choices_remaining = choices_remaining,
-    skip_available = pack_cards ~= nil,
+  remembered_shop_pack_key = PackContents.remembered_key(interaction_phase, shop_items, remembered_shop_pack_key)
+  return PackContents.build({
+    interaction_phase = interaction_phase,
     cards = cards,
-  }
-end
-
-local function collect_shop_cards(root, game)
-  return collect_cards_from_sources(
-    {
-      root and rawget(root, "shop_cards"),
-      safe_table(game) and rawget(game, "shop_cards"),
-      safe_table(game and game.current_round) and game.current_round.shop_cards,
-    },
-    EXPORT_MAX_SHOP_CARDS,
-    "shop"
-  )
+    choose_limit = safe_number(game.pack_choices),
+    selected_count = selected_count,
+    skip_available = pack_cards ~= nil,
+    shop_items = shop_items,
+    remembered_pack_key = remembered_shop_pack_key,
+    pack_size = safe_number(game.pack_size),
+  })
 end
 
 local function collect_deck_cards(root, game)
@@ -1174,21 +1170,6 @@ local function collect_deck_cards(root, game)
     EXPORT_MAX_DECK_CARDS,
     "deck"
   )
-end
-
-collect_pack_reward_cards = function(root, game)
-  local cards = collect_cards_from_sources(
-    {
-      root and rawget(root, "pack_cards"),
-      safe_table(game) and rawget(game, "pack_cards"),
-      safe_table(game and game.current_round) and game.current_round.pack_cards,
-      safe_table(game and game.current_round) and game.current_round.pack_choices,
-      root and rawget(root, "pack_choices"),
-    },
-    EXPORT_MAX_PACK_REWARD_CARDS,
-    "pack_reward"
-  )
-  return cards
 end
 
 local function collect_shop_vouchers(root)
@@ -1215,51 +1196,50 @@ local function infer_phase(root, game)
   local current_state = root and root.STATE
   local states = root and root.STATES
   local blind = safe_table(game.blind) or {}
-  local pack_state_map = states and {
-    [states.TAROT_PACK] = "tarot",
-    [states.PLANET_PACK] = "planet",
-    [states.SPECTRAL_PACK] = "spectral",
-    [states.STANDARD_PACK] = "standard",
-    [states.BUFFOON_PACK] = "buffoon",
-    [states.SMODS_BOOSTER_OPENED] = "modded_booster",
+  local pack_states = states and {
+    [states.TAROT_PACK] = true,
+    [states.PLANET_PACK] = true,
+    [states.SPECTRAL_PACK] = true,
+    [states.STANDARD_PACK] = true,
+    [states.BUFFOON_PACK] = true,
+    [states.SMODS_BOOSTER_OPENED] = true,
   } or nil
 
   if states and current_state == states.BLIND_SELECT then
-    return "blind_select", nil
+    return "blind_select"
   end
 
-  if pack_state_map and pack_state_map[current_state] then
-    return "pack_reward", pack_state_map[current_state]
+  if pack_states and pack_states[current_state] then
+    return "pack_reward"
   end
 
   if states and current_state == states.SHOP then
-    return "shop", nil
+    return "shop"
   end
 
   if blind.in_blind then
-    return "play_hand", nil
+    return "play_hand"
   end
 
   local state_id = first_non_nil(root and root.STATE, game.state, game.current_round_state)
   if state_id ~= nil then
-    return "state_" .. tostring(state_id), nil
+    return "state_" .. tostring(state_id)
   end
 
-  return "unknown", nil
+  return "unknown"
 end
 
 local function snapshot_game()
   local root = rawget(_G, "G")
   local game = root and root.GAME
   if type(game) ~= "table" then
+    remembered_shop_pack_key = nil
     return nil
   end
 
   local hand_cards, _hand_count = collect_cards(root and root.hand, EXPORT_MAX_HAND_CARDS, "hand")
   local jokers, joker_count = collect_jokers(root and root.jokers, EXPORT_MAX_JOKERS)
-  local shop_cards = collect_shop_cards(root, game)
   local deck_cards = collect_deck_cards(root, game)
-  local pack_reward_cards = collect_pack_reward_cards(root, game)
   hand_cards = sort_canonical_cards(hand_cards)
   deck_cards = sort_canonical_cards(deck_cards)
 
@@ -1296,8 +1276,8 @@ local function snapshot_game()
     hand_area and safe_table(hand_area.config) and hand_area.config.temp_limit,
     safe_table(game.starting_params) and game.starting_params.hand_size
   ))
-  local interaction_phase, open_pack_kind = infer_phase(root, game)
-  local pack_contents = collect_pack_contents(root, game, open_pack_kind)
+  local interaction_phase = infer_phase(root, game)
+  local pack_contents = collect_pack_contents(root, game, interaction_phase, shop_items)
 
   return {
     meta = {
@@ -1334,14 +1314,12 @@ local function snapshot_game()
       cards_in_hand = hand_cards,
       joker_count = joker_count,
       jokers = jokers,
-      shop_cards = shop_cards,
       consumables = consumables,
       skip_tags = skip_tags,
       shop_items = shop_items,
       selected_cards = selected_cards,
       highlighted_card = highlighted_card,
       pack_contents = pack_contents,
-      pack_reward_cards = pack_reward_cards,
       tags = tags,
       notes = {
         "exporter=live_state_exporter",

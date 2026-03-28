@@ -9,6 +9,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedPackContents,
     ObservedReference,
     ObservedShopDiscount,
     ObservedShopItem,
@@ -62,6 +63,7 @@ class LiveObservationParser:
         consumables = self._parse_live_consumables(state.get("consumables"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
         shop_discounts = self._parse_live_shop_discounts(state.get("shop_discounts"))
+        pack_contents = self._parse_live_pack_contents(state.get("pack_contents"))
         tags = self._parse_live_tags(state.get("tags"))
         skip_tags = self._parse_live_skip_tags(state.get("skip_tags"))
         jokers = self._parse_live_jokers(state.get("jokers"))
@@ -108,6 +110,7 @@ class LiveObservationParser:
             hand_size=self._int_or_none(state.get("hand_size")),
             shop_items=tuple(shop_items),
             shop_discounts=tuple(shop_discounts),
+            pack_contents=pack_contents,
             tags=tuple(tags),
             skip_tags=tuple(skip_tags),
             notes=tuple(str(value) for value in notes if value is not None),
@@ -343,6 +346,23 @@ class LiveObservationParser:
                 )
             )
         return shop_discounts
+
+    def _parse_live_pack_contents(self, payload: object) -> ObservedPackContents | None:
+        if not isinstance(payload, dict):
+            return None
+
+        pack_key = self._string_or_none(payload.get("pack_key"))
+        if not pack_key:
+            return None
+
+        return ObservedPackContents(
+            pack_key=pack_key,
+            pack_size=self._int_or_none(payload.get("pack_size")),
+            choose_limit=self._int_or_none(payload.get("choose_limit")),
+            choices_remaining=self._int_or_none(payload.get("choices_remaining")),
+            skip_available=bool(payload.get("skip_available", False)),
+            cards=tuple(self._parse_cards(payload.get("cards"))),
+        )
 
     def _parse_live_blinds(self, payload: object) -> list[ObservedBlind]:
         blinds: list[ObservedBlind] = []
