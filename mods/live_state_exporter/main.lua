@@ -19,7 +19,6 @@ local EXPORT_MAX_DECK_CARDS = 80
 local EXPORT_MAX_PACK_CARDS = 16
 local EXPORT_MAX_STRING = 80
 local unpack_fn = table.unpack or unpack
--- Carry the exact selected shop pack key into pack_reward without synthesizing it.
 local remembered_shop_pack_key = nil
 
 local function load_module(filename)
@@ -38,6 +37,7 @@ end
 
 local Signature = load_module("signature.lua")
 local BlindKey = load_module("blind_key.lua")
+local PackContents = load_module("pack_contents.lua")
 
 local function now()
   if love and love.timer and love.timer.getTime then
@@ -602,7 +602,16 @@ local function summarize_booster_pack(card)
   end
 
   local ability = safe_table(card.ability) or {}
-  local key = safe_tostring(first_non_nil(ability.key, card.key))
+  local save_fields = safe_table(card.save_fields) or {}
+  local center = safe_table(card.config) and safe_table(card.config.center) or {}
+  local key = safe_tostring(first_non_nil(
+    ability.key,
+    center.key,
+    save_fields.center,
+    save_fields.card,
+    card.card_key,
+    card.key
+  ))
   local set_name = safe_tostring(first_non_nil(ability.set, card.set))
   local kind = nil
   if set_name then
@@ -617,7 +626,7 @@ local function summarize_booster_pack(card)
   return {
     name = trim_text(name or key or "pack", EXPORT_MAX_STRING),
     key = key,
-    pack_key = normalize_token(key or name),
+    pack_key = normalize_token(key),
     kind = kind,
     pack_kind = kind,
     cost = safe_number(first_non_nil(card.cost, card.base_cost, ability.cost)),
@@ -1115,42 +1124,6 @@ local function collect_shop_discounts(game)
   return discounts
 end
 
-local function find_active_shop_pack_key(root)
-  local shop_booster = safe_table(root and rawget(root, "shop_booster"))
-  if not shop_booster then
-    return nil
-  end
-
-  local highlighted = safe_table(shop_booster.highlighted) or {}
-  for _, card in ipairs(highlighted) do
-    local ref = build_typed_reference(card, "shop_items")
-    if ref and ref.pack_key then
-      return ref.pack_key
-    end
-  end
-
-  for _, card in ipairs(card_list_from_area(shop_booster)) do
-    local hover_state = safe_table(card.states) and safe_table(card.states.hover)
-    if card.hovering or (hover_state and hover_state.is) then
-      local ref = build_typed_reference(card, "shop_items")
-      if ref and ref.pack_key then
-        return ref.pack_key
-      end
-    end
-  end
-
-  return nil
-end
-
-local function resolve_open_pack_key(root, interaction_phase)
-  if interaction_phase == "shop" then
-    remembered_shop_pack_key = find_active_shop_pack_key(root)
-  elseif interaction_phase ~= "pack_reward" then
-    remembered_shop_pack_key = nil
-  end
-  return remembered_shop_pack_key
-end
-
 local function collect_pack_cards(root, game)
   return collect_cards_from_sources(
     {
@@ -1165,11 +1138,8 @@ local function collect_pack_cards(root, game)
   )
 end
 
-local function collect_pack_contents(root, game, pack_key)
+local function collect_pack_contents(root, game, interaction_phase, shop_items)
   local cards = collect_pack_cards(root, game)
-  if not pack_key then
-    return nil
-  end
 
   local selected_count = 0
   local pack_cards = safe_table(root and rawget(root, "pack_cards"))
@@ -1177,20 +1147,17 @@ local function collect_pack_contents(root, game, pack_key)
     selected_count = #pack_cards.highlighted
   end
 
-  local choose_limit = safe_number(game.pack_choices)
-  local choices_remaining = choose_limit
-  if choose_limit then
-    choices_remaining = math.max(0, choose_limit - selected_count)
-  end
-
-  return {
-    pack_key = pack_key,
-    pack_size = safe_number(game.pack_size),
-    choose_limit = choose_limit,
-    choices_remaining = choices_remaining,
-    skip_available = pack_cards ~= nil,
+  remembered_shop_pack_key = PackContents.remembered_key(interaction_phase, shop_items, remembered_shop_pack_key)
+  return PackContents.build({
+    interaction_phase = interaction_phase,
     cards = cards,
-  }
+    choose_limit = safe_number(game.pack_choices),
+    selected_count = selected_count,
+    skip_available = pack_cards ~= nil,
+    shop_items = shop_items,
+    remembered_pack_key = remembered_shop_pack_key,
+    pack_size = safe_number(game.pack_size),
+  })
 end
 
 local function collect_deck_cards(root, game)
@@ -1310,8 +1277,7 @@ local function snapshot_game()
     safe_table(game.starting_params) and game.starting_params.hand_size
   ))
   local interaction_phase = infer_phase(root, game)
-  local pack_key = resolve_open_pack_key(root, interaction_phase)
-  local pack_contents = collect_pack_contents(root, game, pack_key)
+  local pack_contents = collect_pack_contents(root, game, interaction_phase, shop_items)
 
   return {
     meta = {
