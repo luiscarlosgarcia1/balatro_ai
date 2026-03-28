@@ -10,17 +10,33 @@ ObservationPayload: TypeAlias = dict[str, Any]
 
 @dataclass(frozen=True)
 class ObservedCard:
-    """Compact card summary extracted from the save payload."""
+    """Canonical card object for hand, deck, and pack zones."""
 
-    area: str
-    code: str | None = None
-    name: str | None = None
-    facing: str | None = None
+    card_key: str | None = None
+    card_kind: str | None = None
+    suit: str | None = None
+    rank: str | None = None
+    rarity: str | None = None
     enhancement: str | None = None
     edition: str | None = None
     seal: str | None = None
+    stickers: tuple[str, ...] = ()
+    facing: str | None = None
+    cost: int | None = None
+    sell_price: int | None = None
     debuffed: bool = False
-    modifiers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ObservedReference:
+    """Compact typed reference used for selected/highlighted objects."""
+
+    zone: str
+    card_key: str | None = None
+    joker_key: str | None = None
+    consumable_key: str | None = None
+    pack_key: str | None = None
+    voucher_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -131,7 +147,10 @@ class GameObservation:
     score_current: int | None = None
     score_target: int | None = None
     jokers: tuple[ObservedJoker, ...] = ()
-    hand_cards: tuple[ObservedCard, ...] = ()
+    cards_in_hand: tuple[ObservedCard, ...] = ()
+    selected_cards: tuple[ObservedReference, ...] = ()
+    highlighted_card: ObservedReference | None = None
+    cards_in_deck: tuple[ObservedCard, ...] = ()
     source: str = "unknown"
     state_id: int | None = None
     blind_key: str | None = None

@@ -198,6 +198,60 @@ local function test_shop_discounts_change_signature()
   assert_not_equal(first, second, "signature should track canonical shop discounts")
 end
 
+local function test_card_zones_change_signature()
+  local first = Signature.make({
+    state = {
+      cards_in_hand = {
+        { card_key = "c_a", card_kind = "base", suit = "clubs", rank = "ace" },
+      },
+      cards_in_deck = {
+        { card_key = "c_k", card_kind = "base", suit = "clubs", rank = "king" },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      cards_in_hand = {
+        { card_key = "s_a", card_kind = "base", suit = "spades", rank = "ace" },
+      },
+      cards_in_deck = {
+        { card_key = "c_k", card_kind = "base", suit = "clubs", rank = "king" },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track canonical hand and deck card zones")
+end
+
+local function test_selection_references_change_signature()
+  local first = Signature.make({
+    state = {
+      selected_cards = {
+        { zone = "cards_in_hand", card_key = "h_8" },
+      },
+      highlighted_card = {
+        zone = "jokers",
+        joker_key = "j_blueprint",
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      selected_cards = {
+        { zone = "cards_in_hand", card_key = "h_8" },
+      },
+      highlighted_card = {
+        zone = "jokers",
+        joker_key = "j_brainstorm",
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track lightweight selection and highlight references")
+end
+
 local function test_legacy_booster_packs_do_not_affect_signature()
   local first = Signature.make({
     state = {
@@ -232,4 +286,6 @@ test_pack_reward_open_pack_kind_changes_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
 test_shop_discounts_change_signature()
+test_card_zones_change_signature()
+test_selection_references_change_signature()
 test_legacy_booster_packs_do_not_affect_signature()

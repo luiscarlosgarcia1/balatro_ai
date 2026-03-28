@@ -10,6 +10,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedReference,
     ObservedShopDiscount,
     ObservedShopItem,
     ObservedSkipTag,
@@ -55,6 +56,31 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "notes",
 )
 
+
+_SUIT_ORDER = {
+    "clubs": 0,
+    "diamonds": 1,
+    "hearts": 2,
+    "spades": 3,
+}
+
+_RANK_ORDER = {
+    "ace": 0,
+    "2": 1,
+    "3": 2,
+    "4": 3,
+    "5": 4,
+    "6": 5,
+    "7": 6,
+    "8": 7,
+    "9": 8,
+    "10": 9,
+    "jack": 10,
+    "queen": 11,
+    "king": 12,
+}
+
+
 def serialize_observation(observation: GameObservation) -> dict[str, Any]:
     serialized_jokers = [_serialize_joker(joker) for joker in observation.jokers]
     serialized_consumables = [_serialize_consumable(consumable) for consumable in observation.consumables]
@@ -62,7 +88,15 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
     serialized_vouchers = [_serialize_voucher(voucher) for voucher in observation.vouchers]
     serialized_tags = [_serialize_tag(tag) for tag in observation.tags]
     serialized_skip_tags = [_serialize_skip_tag(skip_tag) for skip_tag in observation.skip_tags]
-    serialized_cards_in_hand = [_serialize_card(card) for card in observation.hand_cards]
+    serialized_cards_in_hand = _serialize_cards(observation.cards_in_hand)
+    serialized_selected_cards = [
+        serialized_reference
+        for reference in observation.selected_cards
+        for serialized_reference in [_serialize_reference(reference)]
+        if serialized_reference is not None
+    ]
+    serialized_highlighted_card = _serialize_reference(observation.highlighted_card)
+    serialized_cards_in_deck = _serialize_cards(observation.cards_in_deck)
     serialized_blinds = [_serialize_blind(blind) for blind in observation.blinds]
     serialized_shop_discounts = [_serialize_shop_discount(discount) for discount in observation.shop_discounts]
 
@@ -99,9 +133,9 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "pack_contents": None,
         "hand_size": observation.hand_size,
         "cards_in_hand": serialized_cards_in_hand,
-        "selected_cards": [],
-        "highlighted_card": None,
-        "cards_in_deck": [],
+        "selected_cards": serialized_selected_cards,
+        "highlighted_card": serialized_highlighted_card,
+        "cards_in_deck": serialized_cards_in_deck,
         "blinds": serialized_blinds,
         "notes": _serialize_notes(observation.notes, observation.seen_at),
     }
@@ -170,23 +204,67 @@ def _serialize_skip_tag(tag: ObservedSkipTag) -> dict[str, Any]:
 
 
 def _serialize_card(card: ObservedCard) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "card_key": _normalize_machine_value(card.code),
-        "name": card.name,
-    }
+    payload: dict[str, Any] = {}
+    if card.card_key is not None:
+        payload["card_key"] = _normalize_machine_value(card.card_key)
+    if card.card_kind is not None:
+        payload["card_kind"] = _normalize_machine_value(card.card_kind)
+    if card.suit is not None:
+        payload["suit"] = _normalize_machine_value(card.suit)
+    if card.rank is not None:
+        payload["rank"] = _normalize_machine_value(card.rank)
+    if card.rarity is not None:
+        payload["rarity"] = _normalize_machine_value(card.rarity)
     if card.enhancement is not None:
         payload["enhancement"] = _normalize_machine_value(card.enhancement)
     if card.edition is not None:
         payload["edition"] = _normalize_machine_value(card.edition)
     if card.seal is not None:
         payload["seal"] = _normalize_machine_value(card.seal)
+    if card.stickers:
+        payload["stickers"] = [_normalize_machine_value(sticker) for sticker in card.stickers]
     if card.facing is not None:
         payload["facing"] = _normalize_machine_value(card.facing)
+    if card.cost is not None:
+        payload["cost"] = card.cost
+    if card.sell_price is not None:
+        payload["sell_price"] = card.sell_price
     if card.debuffed:
         payload["debuffed"] = True
-    if card.modifiers:
-        payload["modifiers"] = list(card.modifiers)
     return payload
+
+
+def _serialize_cards(cards: tuple[ObservedCard, ...]) -> list[dict[str, Any]]:
+    indexed_cards = list(enumerate(cards))
+    indexed_cards.sort(key=lambda item: _card_sort_key(item[1], item[0]))
+    return [_serialize_card(card) for _, card in indexed_cards]
+
+
+def _serialize_reference(reference: ObservedReference | None) -> dict[str, Any] | None:
+    if reference is None:
+        return None
+
+    payload: dict[str, Any] = {
+        "zone": _normalize_machine_value(reference.zone),
+    }
+    for field_name in ("card_key", "joker_key", "consumable_key", "pack_key", "voucher_key"):
+        value = getattr(reference, field_name)
+        if value is not None:
+            payload[field_name] = _normalize_machine_value(value)
+            break
+    return payload if len(payload) > 1 else None
+
+
+def _card_sort_key(card: ObservedCard, original_index: int) -> tuple[int, int, str, str, int]:
+    suit = _normalize_machine_value(card.suit)
+    rank = _normalize_machine_value(card.rank)
+    return (
+        _SUIT_ORDER.get(suit, len(_SUIT_ORDER)),
+        _RANK_ORDER.get(rank, len(_RANK_ORDER)),
+        str(suit or ""),
+        str(rank or ""),
+        original_index,
+    )
 
 
 def _serialize_blind(blind: ObservedBlind) -> dict[str, Any]:

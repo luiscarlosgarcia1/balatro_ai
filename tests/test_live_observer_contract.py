@@ -186,11 +186,12 @@ class LiveObserverContractTests(unittest.TestCase):
                         "stickers": ["rental"],
                     }
                 ],
-                "hand_cards": [
+                "cards_in_hand": [
                     {
-                        "area": "hand",
-                        "code": "S_A",
-                        "name": "Ace of Spades",
+                        "card_key": "S_A",
+                        "card_kind": "Base",
+                        "suit": "Spades",
+                        "rank": "Ace",
                         "enhancement": "Bonus",
                         "edition": "Foil",
                     }
@@ -241,6 +242,9 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["blinds"][0]["state"], "current")
         self.assertEqual(observation["blinds"][0]["tag_key"], "tag_economy")
         self.assertEqual(observation["cards_in_hand"][0]["card_key"], "s_a")
+        self.assertEqual(observation["cards_in_hand"][0]["card_kind"], "base")
+        self.assertEqual(observation["cards_in_hand"][0]["suit"], "spades")
+        self.assertEqual(observation["cards_in_hand"][0]["rank"], "ace")
         self.assertEqual(observation["cards_in_hand"][0]["enhancement"], "bonus")
         self.assertEqual(observation["shop_items"][0]["kind"], "joker")
         self.assertEqual(observation["shop_items"][1]["kind"], "consumable")
@@ -249,6 +253,127 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertNotIn({"key": "v_overstock", "cost": 10}, observation["shop_items"])
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(any(note.startswith("seen_at=") for note in observation["notes"]))
+
+    def test_observe_orders_cards_in_hand_and_deck_by_canonical_suit_then_rank(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "play_hand",
+                "score": {"current": 120, "target": 300},
+                "money": 8,
+                "hands_left": 4,
+                "discards_left": 2,
+                "cards_in_hand": [
+                    {
+                        "card_key": "s_10",
+                        "card_kind": "Base",
+                        "suit": "Spades",
+                        "rank": "10",
+                        "enhancement": "Bonus",
+                        "edition": "Foil",
+                        "seal": "Gold",
+                        "stickers": ["eternal"],
+                        "facing": "Front",
+                        "cost": 3,
+                        "sell_price": 1,
+                        "debuffed": True,
+                    },
+                    {
+                        "card_key": "c_a",
+                        "card_kind": "Base",
+                        "suit": "Clubs",
+                        "rank": "Ace",
+                    },
+                    {
+                        "card_key": "h_k",
+                        "card_kind": "Stone",
+                        "suit": "Hearts",
+                        "rank": "King",
+                        "rarity": "Common",
+                    },
+                ],
+                "cards_in_deck": [
+                    {
+                        "card_key": "s_2",
+                        "card_kind": "Base",
+                        "suit": "Spades",
+                        "rank": "2",
+                    },
+                    {
+                        "card_key": "d_a",
+                        "card_kind": "Base",
+                        "suit": "Diamonds",
+                        "rank": "Ace",
+                    },
+                    {
+                        "card_key": "c_k",
+                        "card_kind": "Base",
+                        "suit": "Clubs",
+                        "rank": "King",
+                    },
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            [card["card_key"] for card in observation["cards_in_hand"]],
+            ["c_a", "h_k", "s_10"],
+        )
+        self.assertEqual(
+            observation["cards_in_hand"][2],
+            {
+                "card_key": "s_10",
+                "card_kind": "base",
+                "suit": "spades",
+                "rank": "10",
+                "enhancement": "bonus",
+                "edition": "foil",
+                "seal": "gold",
+                "stickers": ["eternal"],
+                "facing": "front",
+                "cost": 3,
+                "sell_price": 1,
+                "debuffed": True,
+            },
+        )
+        self.assertEqual(
+            [card["card_key"] for card in observation["cards_in_deck"]],
+            ["c_k", "d_a", "s_2"],
+        )
+        self.assertNotIn("name", observation["cards_in_hand"][0])
+
+    def test_observe_emits_lightweight_selected_and_highlighted_references(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "play_hand",
+                "score": {"current": 120, "target": 300},
+                "money": 8,
+                "hands_left": 4,
+                "discards_left": 2,
+                "selected_cards": [
+                    {"zone": "cards_in_hand", "card_key": "h_8"},
+                    {"zone": "jokers", "joker_key": "j_blueprint"},
+                ],
+                "highlighted_card": {"zone": "cards_in_deck", "card_key": "c_a"},
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["selected_cards"],
+            [
+                {"zone": "cards_in_hand", "card_key": "h_8"},
+                {"zone": "jokers", "joker_key": "j_blueprint"},
+            ],
+        )
+        self.assertEqual(
+            observation["highlighted_card"],
+            {"zone": "cards_in_deck", "card_key": "c_a"},
+        )
 
     def test_observe_accepts_canonical_scalar_live_payload_without_legacy_aliases(self) -> None:
         live_payload = {
@@ -757,13 +882,22 @@ class LiveObserverContractTests(unittest.TestCase):
             "cards_in_hand": [
                 {
                     "card_key": "s_a",
-                    "name": "Ace of Spades",
+                    "card_kind": "base",
+                    "suit": "spades",
+                    "rank": "ace",
                     "enhancement": "bonus",
                 }
             ],
-            "selected_cards": [],
-            "highlighted_card": None,
-            "cards_in_deck": [],
+            "selected_cards": [{"zone": "cards_in_hand", "card_key": "s_a"}],
+            "highlighted_card": {"zone": "cards_in_deck", "card_key": "c_k"},
+            "cards_in_deck": [
+                {
+                    "card_key": "c_k",
+                    "card_kind": "base",
+                    "suit": "clubs",
+                    "rank": "king",
+                }
+            ],
             "blinds": [{"slot": "small", "key": "bl_small", "state": "current", "tag_key": "tag_economy"}],
             "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
         }
@@ -784,12 +918,16 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("discount_percent=25", formatted)
         self.assertIn("shop_free", formatted)
         self.assertIn("cards_in_hand:", formatted)
+        self.assertIn("cards_in_deck:", formatted)
+        self.assertIn("selected_cards:", formatted)
+        self.assertIn("highlighted_card:", formatted)
         self.assertIn("j_greedy_joker", formatted)
         self.assertIn("v_overstock", formatted)
-        self.assertNotIn("deck:", formatted)
+        self.assertNotIn("\n  deck:", formatted)
         self.assertNotIn("current_score", formatted)
         self.assertNotIn("shop_packs", formatted)
         self.assertNotIn("Greedy Joker", formatted)
+        self.assertNotIn("Ace of Spades", formatted)
 
     def test_format_observation_prints_each_shop_pack_once_from_live_observer(self) -> None:
         live_payload = {
@@ -849,6 +987,47 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIsNone(observation["stake_id"])
         self.assertTrue(any(note.startswith("seen_at=") for note in observation["notes"]))
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
+
+    def test_observe_save_fallback_extracts_canonical_hand_and_deck_cards(self) -> None:
+        legacy_save_payload = (
+            'return {["STATE"]=5,["BLIND"]={["config_blind"]="bl_big",["chips"]=to_big({300}, 1)},'
+            '["GAME"]={["chips"]=to_big({120}, 1),["dollars"]=10,["current_round"]={["hands_left"]=3,["discards_left"]=1},'
+            '["round_resets"]={["hands"]=4,["discards"]=2},["blind_on_deck"]="bl_big"},'
+            '["cardAreas"]={'
+            '["hand"]={["cards"]={'
+            '[1]={["save_fields"]={["card"]="S_A"},["base"]={["value"]="Ace",["suit"]="Spades"},'
+            '["ability"]={["set"]="Base",["effect"]="Bonus"},["edition"]={["type"]="Foil"},["seal"]="Gold",["debuff"]=true}'
+            '},["config"]={["card_count"]=1}},'
+            '["deck"]={["cards"]={'
+            '[1]={["save_fields"]={["card"]="D_A"},["base"]={["value"]="Ace",["suit"]="Diamonds"},["ability"]={["set"]="Base"}},'
+            '[2]={["save_fields"]={["card"]="C_K"},["base"]={["value"]="King",["suit"]="Clubs"},["ability"]={["set"]="Base"}}'
+            '},["config"]={["card_count"]=2}},'
+            '["jokers"]={["cards"]={},["config"]={["card_count"]=1}}}}'
+        )
+
+        observation = self.observe_legacy_save_payload(legacy_save_payload)
+
+        self.assertEqual(
+            observation["cards_in_hand"],
+            [
+                {
+                    "card_key": "s_a",
+                    "card_kind": "base",
+                    "suit": "spades",
+                    "rank": "ace",
+                    "enhancement": "bonus",
+                    "edition": "foil",
+                    "seal": "gold",
+                    "debuffed": True,
+                }
+            ],
+        )
+        self.assertEqual(
+            [card["card_key"] for card in observation["cards_in_deck"]],
+            ["c_k", "d_a"],
+        )
+        self.assertEqual(observation["selected_cards"], [])
+        self.assertIsNone(observation["highlighted_card"])
 
     def test_runtime_and_policy_consume_canonical_payload(self) -> None:
         observations = [

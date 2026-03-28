@@ -46,6 +46,19 @@ local function add_structured_items(parts, items, field_names)
   parts[#parts + 1] = table.concat(values, "|")
 end
 
+local function add_optional_structured_item(parts, item, field_names)
+  if type(item) ~= "table" then
+    parts[#parts + 1] = ""
+    return
+  end
+
+  local item_parts = {}
+  for _, field_name in ipairs(field_names) do
+    item_parts[#item_parts + 1] = string_part(item[field_name])
+  end
+  parts[#parts + 1] = table.concat(item_parts, "/")
+end
+
 function Signature.make(snapshot)
   if type(snapshot) ~= "table" then
     return "nil"
@@ -77,7 +90,50 @@ function Signature.make(snapshot)
     string_part(pack_contents.open_pack_kind),
   }
 
-  add_named_items(parts, state.hand_cards, "name")
+  add_structured_items(parts, state.cards_in_hand, {
+    "card_key",
+    "card_kind",
+    "suit",
+    "rank",
+    "rarity",
+    "enhancement",
+    "edition",
+    "seal",
+    "facing",
+    "cost",
+    "sell_price",
+    "debuffed",
+  })
+  add_structured_items(parts, state.cards_in_deck, {
+    "card_key",
+    "card_kind",
+    "suit",
+    "rank",
+    "rarity",
+    "enhancement",
+    "edition",
+    "seal",
+    "facing",
+    "cost",
+    "sell_price",
+    "debuffed",
+  })
+  add_structured_items(parts, state.selected_cards, {
+    "zone",
+    "card_key",
+    "joker_key",
+    "consumable_key",
+    "pack_key",
+    "voucher_key",
+  })
+  add_optional_structured_item(parts, state.highlighted_card, {
+    "zone",
+    "card_key",
+    "joker_key",
+    "consumable_key",
+    "pack_key",
+    "voucher_key",
+  })
   add_structured_items(parts, state.jokers, { "key", "rarity", "edition", "sell_price", "debuffed" })
   add_structured_items(parts, state.shop_vouchers, { "key", "cost" })
   add_named_items(parts, state.vouchers, "key")

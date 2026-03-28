@@ -46,6 +46,7 @@ class SaveObservationParser:
             blind_in_progress = self._extract_bool(blind_block, "in_blind")
         blind_on_deck = self._extract_top_level_string(game_block, "blind_on_deck") or self._extract_string(game_block, "blind_on_deck")
         hand_cards = self._extract_area_cards(card_areas_block, "hand")
+        deck_cards = self._extract_area_cards(card_areas_block, "deck")
 
         interaction_phase = self._infer_phase(
             state_id=state_id,
@@ -73,7 +74,10 @@ class SaveObservationParser:
             score_current=score_current,
             score_target=score_target,
             jokers=(),
-            hand_cards=hand_cards,
+            cards_in_hand=hand_cards,
+            selected_cards=(),
+            highlighted_card=None,
+            cards_in_deck=deck_cards,
             source="save_file",
             state_id=state_id,
             blind_key=blind_key,
@@ -147,55 +151,53 @@ class SaveObservationParser:
         base_block = self._extract_block(card_block, "base") or ""
         ability_block = self._extract_block(card_block, "ability") or ""
         edition_block = self._extract_block(card_block, "edition") or ""
+        config_block = self._extract_block(card_block, "config") or ""
 
+        card_key = self._extract_string(save_fields_block, "card")
+        rank = self._extract_string(base_block, "value")
+        suit = self._extract_string(base_block, "suit")
+        if card_key is None and rank and suit:
+            card_key = f"c_{rank.lower()}_{suit.lower()}"
         enhancement = self._extract_top_level_string(ability_block, "effect")
         if enhancement == "Base":
             enhancement = None
 
-        modifiers: list[str] = []
-        for key, label, default in (
-            ("bonus", "bonus", 0),
-            ("mult", "mult", 0),
-            ("x_mult", "x_mult", 1),
-            ("x_chips", "x_chips", 1),
-            ("perma_bonus", "perma_bonus", 0),
-            ("perma_mult", "perma_mult", 0),
-            ("perma_x_mult", "perma_x_mult", 0),
-            ("perma_x_chips", "perma_x_chips", 0),
-            ("h_mult", "h_mult", 0),
-            ("h_chips", "h_chips", 0),
-            ("h_x_mult", "h_x_mult", 0),
-            ("h_x_chips", "h_x_chips", 1),
-            ("h_dollars", "h_dollars", 0),
-            ("p_dollars", "p_dollars", 0),
-            ("t_mult", "t_mult", 0),
-            ("t_chips", "t_chips", 0),
-            ("d_size", "d_size", 0),
-            ("h_size", "h_size", 0),
-        ):
-            value = self._extract_top_level_number(ability_block, key)
-            if value is not None and value != default:
-                modifiers.append(f"{label}={self._format_number(value)}")
-
-        if self._extract_top_level_bool(card_block, "debuff"):
-            modifiers.append("debuffed")
-
-        if self._extract_top_level_bool(ability_block, "played_this_ante"):
-            modifiers.append("played_this_ante")
-
         return ObservedCard(
-            area=area_name,
-            code=self._extract_string(save_fields_block, "card"),
-            name=self._extract_string(base_block, "name"),
-            facing=self._extract_top_level_string(card_block, "facing"),
+            card_key=card_key,
+            card_kind=self._extract_string(ability_block, "set"),
+            suit=suit,
+            rank=rank,
+            rarity=self._extract_top_level_string(config_block, "rarity"),
             enhancement=enhancement,
             edition=self._extract_top_level_string(edition_block, "type")
             or self._extract_top_level_string(edition_block, "key")
             or self._extract_top_level_string(edition_block, "name"),
             seal=self._extract_top_level_string(card_block, "seal"),
+            stickers=self._extract_stickers(card_block, ability_block),
+            facing=self._extract_top_level_string(card_block, "facing"),
+            cost=self._extract_int(card_block, "cost") or self._extract_int(ability_block, "cost"),
+            sell_price=self._extract_int(card_block, "sell_cost"),
             debuffed=bool(self._extract_top_level_bool(card_block, "debuff")),
-            modifiers=tuple(modifiers),
         )
+
+    def _extract_stickers(self, card_block: str, ability_block: str) -> tuple[str, ...]:
+        stickers: list[str] = []
+        seen: set[str] = set()
+
+        for field in ("sticker", "stickers"):
+            for source in (card_block, ability_block):
+                value = self._extract_top_level_string(source, field)
+                if value and value not in seen:
+                    seen.add(value)
+                    stickers.append(value)
+
+        for flag in ("eternal", "perishable", "rental", "pinned"):
+            if self._extract_top_level_bool(card_block, flag) or self._extract_top_level_bool(ability_block, flag):
+                if flag not in seen:
+                    seen.add(flag)
+                    stickers.append(flag)
+
+        return tuple(stickers)
 
     def _extract_string(self, text: str, key: str) -> str | None:
         match = re.search(rf'\["{re.escape(key)}"\]="((?:[^"\\]|\\.)*)"', text)
