@@ -35,9 +35,6 @@ class LiveObservationParser:
         if not isinstance(state, dict):
             return None
 
-        # Transitional legacy bridge: the live exporter still emits a legacy-ish
-        # mixed schema, so this parser continues accepting old field names and
-        # shapes before the canonical serializer rewrites them for public output.
         hand_cards = self._parse_hand_cards(state.get("hand_cards"))
         notes = state.get("notes")
         if not isinstance(notes, list):
@@ -50,17 +47,15 @@ class LiveObservationParser:
             deck_name = self._string_or_none(deck_payload.get("name"))
             deck_key = self._string_or_none(deck_payload.get("key"))
 
-        blind_choices = self._parse_live_blind_choices(state.get("blind_choices"))
+        blind_choices = self._parse_live_blind_choices(state.get("blinds", state.get("blind_choices")))
         vouchers = self._parse_live_vouchers(state.get("vouchers"))
-        # Transitional legacy bridge: these old split consumable fields should
-        # disappear once the exporter emits canonical owned/shop structures directly.
-        consumables_inventory = self._parse_live_consumables(state.get("consumables_inventory"))
+        consumables_inventory = self._parse_live_consumables(
+            state.get("consumables", state.get("consumables_inventory"))
+        )
         consumables_shop = self._parse_live_consumables(state.get("consumables_shop"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
         tags = self._parse_live_tags(state.get("tags"))
-        # Transitional legacy bridge: old split pack list still feeds canonical shop_items.
-        shop_packs = self._parse_live_booster_packs(state.get("shop_packs", state.get("booster_packs")))
-        booster_packs = tuple(shop_packs)
+        booster_packs = tuple(self._parse_live_booster_packs(state.get("booster_packs")))
         jokers, joker_details = self._parse_live_jokers(state.get("jokers"))
         skip_tag = self._parse_live_tag(state.get("skip_tag", state.get("claimed_skip_tag")))
         skip_tag_claimed_raw = state.get("skip_tag_claimed", state.get("claimed_skip_tag"))
@@ -77,9 +72,7 @@ class LiveObservationParser:
             seen_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
 
         return GameObservation(
-            # Transitional legacy bridge: main phase still comes in through the
-            # legacy `phase` field and gets canonicalized later.
-            phase=str(state.get("phase", state.get("state", "unknown"))),
+            phase=str(state.get("interaction_phase", state.get("state", "unknown"))),
             money=self._int_or_zero(state.get("money")),
             hands_left=self._int_or_zero(state.get("hands_left")),
             discards_left=self._int_or_zero(state.get("discards_left")),
@@ -92,7 +85,7 @@ class LiveObservationParser:
             state_id=self._int_or_none(state.get("state_id")),
             ante=self._int_or_none(state.get("ante")),
             round_count=self._int_or_none(state.get("round_count", state.get("round_number"))),
-            stake=self._string_or_none(state.get("stake", state.get("difficulty"))),
+            stake=self._string_or_none(state.get("stake_id", state.get("stake", state.get("difficulty")))),
             blind_name=self._string_or_none(state.get("blind_name", state.get("blind"))),
             blind_key=self._string_or_none(state.get("blind_key")),
             blind_choices=tuple(blind_choices),
@@ -101,19 +94,16 @@ class LiveObservationParser:
             vouchers=tuple(vouchers),
             consumables_inventory=tuple(consumables_inventory),
             consumables_shop=tuple(consumables_shop),
-            consumable_capacity=self._int_or_none(state.get("consumable_capacity")),
+            consumable_capacity=self._int_or_none(
+                state.get("consumable_slots", state.get("consumable_capacity"))
+            ),
             reroll_cost=self._int_or_none(state.get("reroll_cost")),
             shop_items=tuple(shop_items),
-            shop_packs=tuple(shop_packs),
             tags=tuple(tags),
             booster_packs=tuple(booster_packs),
             skip_tag_claimed=skip_tag_claimed,
             skip_tag=skip_tag,
-            # Transitional legacy bridge: pack-specific subphase data may still
-            # arrive under older field names.
-            interaction_phase=self._string_or_none(
-                state.get("interaction_phase", state.get("pack_phase", state.get("subphase")))
-            ),
+            interaction_phase=self._string_or_none(state.get("interaction_phase")),
             cards_in_hand=self._int_or_none(state.get("cards_in_hand")),
             jokers_count=self._int_or_none(state.get("jokers_count")),
             notes=tuple(str(value) for value in notes if value is not None),
