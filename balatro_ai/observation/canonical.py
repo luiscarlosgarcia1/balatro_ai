@@ -7,7 +7,6 @@ from typing import Any
 from ..models import (
     GameObservation,
     ObservedBlindChoice,
-    ObservedBoosterPack,
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
@@ -193,11 +192,7 @@ def _serialize_blind_choice(choice: ObservedBlindChoice) -> dict[str, Any]:
 
 
 def _serialize_shop_items(observation: GameObservation) -> list[dict[str, Any]]:
-    # Transitional legacy bridge: current live input still splits packs out as `shop_packs`.
-    # Phase 1 folds that legacy input into canonical `shop_items`; later slices can delete this bridge.
-    shop_items = [_serialize_shop_item(item) for item in observation.shop_items]
-    shop_items.extend(_serialize_shop_pack(pack) for pack in observation.shop_packs)
-    return shop_items
+    return [_serialize_shop_item(item) for item in observation.shop_items]
 
 
 def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
@@ -208,17 +203,6 @@ def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
     }
     if item.cost is not None:
         payload["cost"] = item.cost
-    return payload
-
-
-def _serialize_shop_pack(pack: ObservedBoosterPack) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(pack.kind),
-        "name": pack.name,
-        "key": _normalize_machine_value(pack.key),
-    }
-    if pack.cost is not None:
-        payload["cost"] = pack.cost
     return payload
 
 

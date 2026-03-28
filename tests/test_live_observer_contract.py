@@ -68,12 +68,10 @@ FORBIDDEN_LEGACY_KEYS = {
 
 class LiveObserverContractTests(unittest.TestCase):
     def test_observe_returns_canonical_ordered_contract_and_defaults(self) -> None:
-        # Transitional legacy bridge: this mirrors the current legacy-ish live exporter input.
-        # The assertions below lock the canonical public payload that must come out of observe().
-        legacy_live_payload = {
+        live_payload = {
             "state": {
                 "source": "live_state_exporter",
-                "phase": "shop",
+                "interaction_phase": "shop",
                 "state_id": 41,
                 "money": 10,
                 "hands_left": 4,
@@ -88,7 +86,7 @@ class LiveObserverContractTests(unittest.TestCase):
             }
         }
 
-        observation = self.observe_legacy_live_payload(legacy_live_payload)
+        observation = self.observe_live_payload(live_payload)
 
         self.assertEqual(list(observation.keys()), CANONICAL_TOP_LEVEL_KEYS)
         self.assertEqual(observation["source"], "live_state_exporter")
@@ -107,11 +105,10 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
 
     def test_observe_populates_canonical_shop_owned_and_card_fields(self) -> None:
-        # Transitional legacy bridge: these fields are accepted as legacy input and normalized away.
-        legacy_live_payload = {
+        live_payload = {
             "state": {
                 "source": "live_state_exporter",
-                "phase": "shop",
+                "interaction_phase": "shop",
                 "money": 14,
                 "hands_left": 4,
                 "discards_left": 2,
@@ -119,7 +116,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 "current_score": 150,
                 "ante": 3,
                 "round_count": 17,
-                "stake": "Gold Stake",
+                "stake_id": "gold_stake",
                 "reroll_cost": 5,
                 "vouchers": [
                     {
@@ -127,8 +124,8 @@ class LiveObserverContractTests(unittest.TestCase):
                         "key": "v_clearance_sale",
                     }
                 ],
-                "consumable_capacity": 2,
-                "consumables_inventory": [
+                "consumable_slots": 2,
+                "consumables": [
                     {
                         "kind": "Tarot",
                         "name": "The Fool",
@@ -148,14 +145,12 @@ class LiveObserverContractTests(unittest.TestCase):
                         "key": "c_sun",
                         "cost": 3,
                     },
-                ],
-                "shop_packs": [
                     {
+                        "kind": "Pack",
                         "name": "Arcana Pack",
                         "key": "p_arcana_normal_1",
-                        "kind": "Arcana",
                         "cost": 4,
-                    }
+                    },
                 ],
                 "tags": [
                     {
@@ -185,7 +180,7 @@ class LiveObserverContractTests(unittest.TestCase):
                         "edition": "Foil",
                     }
                 ],
-                "blind_choices": [
+                "blinds": [
                     {
                         "slot": "Small",
                         "key": "bl_small",
@@ -196,7 +191,7 @@ class LiveObserverContractTests(unittest.TestCase):
             }
         }
 
-        observation = self.observe_legacy_live_payload(legacy_live_payload)
+        observation = self.observe_live_payload(live_payload)
 
         self.assertEqual(observation["stake_id"], "gold_stake")
         self.assertEqual(observation["consumable_slots"], 2)
@@ -215,15 +210,103 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["cards_in_hand"][0]["enhancement"], "bonus")
         self.assertEqual(observation["shop_items"][0]["kind"], "joker")
         self.assertEqual(observation["shop_items"][1]["kind"], "consumable")
-        self.assertEqual(observation["shop_items"][2]["kind"], "arcana")
+        self.assertEqual(observation["shop_items"][2]["kind"], "pack")
         self.assertEqual(observation["shop_items"][2]["key"], "p_arcana_normal_1")
 
-    def test_observe_normalizes_interaction_phase_for_live_states(self) -> None:
-        blind_select = self.observe_legacy_live_payload(
+    def test_observe_keeps_live_shop_packs_only_in_shop_items(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "money": 10,
+                "hands_left": 4,
+                "discards_left": 2,
+                "score_to_beat": 300,
+                "current_score": 75,
+                "shop_items": [
+                    {
+                        "kind": "Joker",
+                        "name": "Credit Card",
+                        "key": "j_credit_card",
+                        "cost": 1,
+                    },
+                    {
+                        "kind": "Pack",
+                        "name": "Buffoon Pack",
+                        "key": "p_buffoon_normal_1",
+                        "cost": 4,
+                    },
+                    {
+                        "kind": "Consumable",
+                        "name": "The Fool",
+                        "key": "c_fool",
+                        "cost": 3,
+                    },
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["shop_items"],
+            [
+                {"kind": "joker", "name": "Credit Card", "key": "j_credit_card", "cost": 1},
+                {"kind": "pack", "name": "Buffoon Pack", "key": "p_buffoon_normal_1", "cost": 4},
+                {"kind": "consumable", "name": "The Fool", "key": "c_fool", "cost": 3},
+            ],
+        )
+
+    def test_observe_ignores_legacy_shop_packs_input(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "money": 10,
+                "hands_left": 4,
+                "discards_left": 2,
+                "score_to_beat": 300,
+                "current_score": 75,
+                "shop_items": [
+                    {
+                        "kind": "Pack",
+                        "name": "Jumbo Standard Pack",
+                        "key": "p_standard_jumbo_1",
+                        "cost": 6,
+                    }
+                ],
+                "shop_packs": [
+                    {
+                        "kind": "Booster",
+                        "name": "Jumbo Standard Pack",
+                        "key": "p_standard_jumbo_1",
+                        "cost": 6,
+                    },
+                    {
+                        "kind": "Arcana",
+                        "name": "Arcana Pack",
+                        "key": "p_arcana_normal_1",
+                        "cost": 4,
+                    },
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["shop_items"],
+            [
+                {"kind": "pack", "name": "Jumbo Standard Pack", "key": "p_standard_jumbo_1", "cost": 6}
+            ],
+        )
+
+    def test_observe_uses_live_interaction_phase_without_legacy_phase_bridge(self) -> None:
+        blind_select = self.observe_live_payload(
             {
                 "state": {
                     "source": "live_state_exporter",
-                    "phase": "blind_select",
+                    "interaction_phase": "blind_select",
                     "money": 8,
                     "hands_left": 4,
                     "discards_left": 4,
@@ -232,11 +315,11 @@ class LiveObserverContractTests(unittest.TestCase):
                 }
             }
         )
-        play_hand = self.observe_legacy_live_payload(
+        play_hand = self.observe_live_payload(
             {
                 "state": {
                     "source": "live_state_exporter",
-                    "phase": "play_hand",
+                    "interaction_phase": "play_hand",
                     "money": 8,
                     "hands_left": 4,
                     "discards_left": 4,
@@ -245,12 +328,14 @@ class LiveObserverContractTests(unittest.TestCase):
                 }
             }
         )
-        pack_reward = self.observe_legacy_live_payload(
+        pack_reward = self.observe_live_payload(
             {
                 "state": {
                     "source": "live_state_exporter",
-                    "phase": "pack_reward",
-                    "interaction_phase": "tarot_pack",
+                    "interaction_phase": "pack_reward",
+                    "pack_contents": {
+                        "open_pack_kind": "tarot",
+                    },
                     "money": 8,
                     "hands_left": 4,
                     "discards_left": 4,
@@ -263,6 +348,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(blind_select["interaction_phase"], "blind_select")
         self.assertEqual(play_hand["interaction_phase"], "play_hand")
         self.assertEqual(pack_reward["interaction_phase"], "pack_reward")
+        self.assertIsNone(pack_reward["pack_contents"])
 
     def test_format_observation_renders_from_canonical_payload(self) -> None:
         observation = {
@@ -334,6 +420,41 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("Greedy Joker", formatted)
         self.assertNotIn("deck:", formatted)
         self.assertNotIn("current_score", formatted)
+        self.assertNotIn("shop_packs", formatted)
+
+    def test_format_observation_prints_each_shop_pack_once_from_live_observer(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "money": 10,
+                "hands_left": 4,
+                "discards_left": 2,
+                "score_to_beat": 300,
+                "current_score": 75,
+                "shop_items": [
+                    {
+                        "kind": "Pack",
+                        "name": "Jumbo Standard Pack",
+                        "key": "p_standard_jumbo_1",
+                        "cost": 6,
+                    }
+                ],
+                "shop_packs": [
+                    {
+                        "kind": "Booster",
+                        "name": "Jumbo Standard Pack",
+                        "key": "p_standard_jumbo_1",
+                        "cost": 6,
+                    }
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+        formatted = format_observation(observation)
+
+        self.assertEqual(formatted.count("Jumbo Standard Pack"), 1)
         self.assertNotIn("shop_packs", formatted)
 
     def test_observe_save_fallback_uses_same_canonical_skeleton(self) -> None:
@@ -414,12 +535,12 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("phase=shop", stdout.getvalue())
         self.assertIn("score=90/300", stdout.getvalue())
 
-    def observe_legacy_live_payload(self, legacy_live_payload: dict[str, object]) -> dict[str, object]:
+    def observe_live_payload(self, live_payload: dict[str, object]) -> dict[str, object]:
         root = self.make_fixture_root()
         try:
             live_state_path = root / "ai" / "live_state.json"
             live_state_path.parent.mkdir(parents=True, exist_ok=True)
-            live_state_path.write_text(json.dumps(legacy_live_payload), encoding="utf-8")
+            live_state_path.write_text(json.dumps(live_payload), encoding="utf-8")
 
             observer = BalatroSaveObserver(paths=BalatroPaths(root=root, profile=2))
             return observer.observe()
