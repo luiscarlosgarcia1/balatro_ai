@@ -167,7 +167,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 ],
                 "tags": [
                     {
-                        "key": "tag_economy",
+                        "key": "tag_top_up",
                     }
                 ],
                 "skip_tags": [
@@ -232,7 +232,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["jokers"][0]["sell_price"], 2)
         self.assertEqual(observation["jokers"][0]["stickers"], ["rental"])
         self.assertNotIn("name", observation["jokers"][0])
-        self.assertEqual(observation["tags"][0]["key"], "tag_economy")
+        self.assertEqual(observation["tags"][0]["key"], "tag_top_up")
         self.assertNotIn("name", observation["tags"][0])
         self.assertEqual(observation["skip_tags"][0]["key"], "tag_economy")
         self.assertEqual(observation["skip_tags"][0]["slot"], "big")
@@ -530,6 +530,74 @@ class LiveObserverContractTests(unittest.TestCase):
                 {"slot": "small", "key": "bl_small", "state": "skipped", "tag_key": "tag_small", "tag_claimed": True},
                 {"slot": "big", "key": "bl_big", "state": "select", "tag_key": "tag_big"},
                 {"slot": "boss", "key": "bl_head", "state": "upcoming"},
+            ],
+        )
+
+    def test_observe_keeps_skip_tags_distinct_from_empty_active_tags(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "blind_select",
+                "blind_key": "bl_big",
+                "score": {"current": 0, "target": 300},
+                "money": 4,
+                "hands_left": 4,
+                "discards_left": 4,
+                "skip_tags": [
+                    {"slot": "Small", "key": "tag_foil"},
+                    {"slot": "Big", "key": "tag_uncommon"},
+                ],
+                "tags": [],
+                "blinds": [
+                    {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_foil", "tag_claimed": True},
+                    {"slot": "Big", "key": "bl_big", "state": "Select", "tag_key": "tag_uncommon"},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["skip_tags"],
+            [
+                {"slot": "small", "key": "tag_foil"},
+                {"slot": "big", "key": "tag_uncommon"},
+            ],
+        )
+        self.assertEqual(observation["tags"], [])
+
+    def test_observe_separates_active_tags_from_claimable_skip_tags(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "blind_key": "bl_big",
+                "score": {"current": 0, "target": 300},
+                "money": 5,
+                "hands_left": 4,
+                "discards_left": 4,
+                "skip_tags": [
+                    {"slot": "Big", "key": "tag_economy"},
+                ],
+                "tags": [
+                    {"key": "tag_top_up"},
+                    {"key": "tag_buffoon"},
+                ],
+                "blinds": [
+                    {"slot": "Small", "key": "bl_small", "state": "Defeated"},
+                    {"slot": "Big", "key": "bl_big", "state": "Upcoming", "tag_key": "tag_economy"},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(observation["skip_tags"], [{"slot": "big", "key": "tag_economy"}])
+        self.assertEqual(
+            observation["tags"],
+            [
+                {"key": "tag_top_up"},
+                {"key": "tag_buffoon"},
             ],
         )
 

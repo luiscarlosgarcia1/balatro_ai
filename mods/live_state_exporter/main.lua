@@ -766,12 +766,6 @@ local function collect_tags(game, root)
     end
   end
 
-  local round_resets = safe_table(game.round_resets) or {}
-  local blind_tags = safe_table(round_resets.blind_tags) or {}
-  for _, key in pairs(blind_tags) do
-    add_tag(nil, key)
-  end
-
   return result
 end
 
