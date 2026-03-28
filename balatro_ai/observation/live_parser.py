@@ -6,10 +6,10 @@ import json
 from ..models import (
     GameObservation,
     ObservedBlind,
-    ObservedBoosterPack,
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedShopDiscount,
     ObservedShopItem,
     ObservedSkipTag,
     ObservedTag,
@@ -57,9 +57,9 @@ class LiveObservationParser:
         shop_vouchers = self._parse_live_vouchers(state.get("shop_vouchers"))
         consumables = self._parse_live_consumables(state.get("consumables"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
+        shop_discounts = self._parse_live_shop_discounts(state.get("shop_discounts"))
         tags = self._parse_live_tags(state.get("tags"))
         skip_tags = self._parse_live_skip_tags(state.get("skip_tags"))
-        booster_packs = tuple(self._parse_live_booster_packs(state.get("booster_packs")))
         jokers = self._parse_live_jokers(state.get("jokers"))
 
         seen_at_raw = state.get("seen_at")
@@ -100,9 +100,9 @@ class LiveObservationParser:
             inflation=self._int_or_none(state.get("inflation")),
             hand_size=self._int_or_none(state.get("hand_size")),
             shop_items=tuple(shop_items),
+            shop_discounts=tuple(shop_discounts),
             tags=tuple(tags),
             skip_tags=tuple(skip_tags),
-            booster_packs=tuple(booster_packs),
             notes=tuple(str(value) for value in notes if value is not None),
             seen_at=seen_at,
         )
@@ -249,36 +249,49 @@ class LiveObservationParser:
             key = self._string_or_none(item.get("key"))
             if not kind or (not name and not key):
                 continue
+            stickers = item.get("stickers")
             shop_items.append(
                 ObservedShopItem(
                     kind=kind,
                     name=name or key,
                     key=key,
                     cost=self._int_or_none(item.get("cost")),
+                    rarity=self._string_or_none(item.get("rarity")),
+                    edition=self._string_or_none(item.get("edition")),
+                    sell_price=self._int_or_none(item.get("sell_price")),
+                    enhancement=self._string_or_none(item.get("enhancement")),
+                    seal=self._string_or_none(item.get("seal")),
+                    consumable_kind=self._string_or_none(item.get("consumable_kind")),
+                    stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
+                    debuffed=bool(item.get("debuffed", False)),
+                    card_key=self._string_or_none(item.get("card_key")),
+                    card_kind=self._string_or_none(item.get("card_kind")),
+                    suit=self._string_or_none(item.get("suit")),
+                    rank=self._string_or_none(item.get("rank")),
+                    pack_key=self._string_or_none(item.get("pack_key")),
+                    pack_kind=self._string_or_none(item.get("pack_kind")),
                 )
             )
         return shop_items
 
-    def _parse_live_booster_packs(self, payload: object) -> list[ObservedBoosterPack]:
-        booster_packs: list[ObservedBoosterPack] = []
+    def _parse_live_shop_discounts(self, payload: object) -> list[ObservedShopDiscount]:
+        shop_discounts: list[ObservedShopDiscount] = []
         if not isinstance(payload, list):
-            return booster_packs
+            return shop_discounts
 
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            name = self._string_or_none(item.get("name"))
-            if not name:
+            kind = self._string_or_none(item.get("kind"))
+            if not kind:
                 continue
-            booster_packs.append(
-                ObservedBoosterPack(
-                    name=name,
-                    key=self._string_or_none(item.get("key")),
-                    kind=self._string_or_none(item.get("kind")),
-                    cost=self._int_or_none(item.get("cost")),
+            shop_discounts.append(
+                ObservedShopDiscount(
+                    kind=kind,
+                    value=self._int_or_none(item.get("value")),
                 )
             )
-        return booster_packs
+        return shop_discounts
 
     def _parse_live_blinds(self, payload: object) -> list[ObservedBlind]:
         blinds: list[ObservedBlind] = []

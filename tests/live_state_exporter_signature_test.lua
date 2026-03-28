@@ -12,6 +12,12 @@ local function assert_not_equal(left, right, message)
   end
 end
 
+local function assert_equal(left, right, message)
+  if left ~= right then
+    error(message or ("expected values to match, left=" .. tostring(left) .. " right=" .. tostring(right)), 2)
+  end
+end
+
 local function test_missing_scalar_fields_still_produce_signature()
   local signature = Signature.make({
     state = {
@@ -152,9 +158,78 @@ local function test_blind_and_skip_claim_fields_change_signature()
   assert_not_equal(first, second, "signature should track canonical blind and skip-tag claim semantics")
 end
 
+local function test_shop_item_structure_changes_signature()
+  local first = Signature.make({
+    state = {
+      shop_items = {
+        { key = "j_credit_card", kind = "joker", edition = "foil", sell_price = 2, stickers = { "rental" } },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      shop_items = {
+        { key = "j_credit_card", kind = "joker", edition = "negative", sell_price = 2, stickers = { "rental" } },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track canonical shop item structure, not only item keys")
+end
+
+local function test_shop_discounts_change_signature()
+  local first = Signature.make({
+    state = {
+      shop_discounts = {
+        { kind = "discount_percent", value = 25 },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      shop_discounts = {
+        { kind = "shop_free" },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track canonical shop discounts")
+end
+
+local function test_legacy_booster_packs_do_not_affect_signature()
+  local first = Signature.make({
+    state = {
+      shop_items = {
+        { key = "p_buffoon_normal_1", kind = "pack" },
+      },
+      booster_packs = {
+        { key = "p_ghost_legacy_1" },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      shop_items = {
+        { key = "p_buffoon_normal_1", kind = "pack" },
+      },
+      booster_packs = {
+        { key = "p_arcana_legacy_2" },
+      },
+    },
+  })
+
+  assert_equal(first, second, "signature should ignore removed legacy booster_packs")
+end
+
 test_missing_scalar_fields_still_produce_signature()
 test_missing_item_keys_do_not_crash()
 test_distinct_real_values_change_signature()
 test_score_shape_changes_signature()
 test_pack_reward_open_pack_kind_changes_signature()
 test_blind_and_skip_claim_fields_change_signature()
+test_shop_item_structure_changes_signature()
+test_shop_discounts_change_signature()
+test_legacy_booster_packs_do_not_affect_signature()

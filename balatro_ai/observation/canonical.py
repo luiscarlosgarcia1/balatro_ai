@@ -10,6 +10,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedShopDiscount,
     ObservedShopItem,
     ObservedSkipTag,
     ObservedTag,
@@ -63,6 +64,7 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
     serialized_skip_tags = [_serialize_skip_tag(skip_tag) for skip_tag in observation.skip_tags]
     serialized_cards_in_hand = [_serialize_card(card) for card in observation.hand_cards]
     serialized_blinds = [_serialize_blind(blind) for blind in observation.blinds]
+    serialized_shop_discounts = [_serialize_shop_discount(discount) for discount in observation.shop_discounts]
 
     payload: dict[str, Any] = {
         "source": observation.source,
@@ -90,7 +92,7 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "skip_tags": serialized_skip_tags,
         "tags": serialized_tags,
         "shop_items": _serialize_shop_items(observation),
-        "shop_discounts": [],
+        "shop_discounts": serialized_shop_discounts,
         "reroll_cost": observation.reroll_cost,
         "interest": observation.interest,
         "inflation": observation.inflation,
@@ -212,6 +214,43 @@ def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
     }
     if item.cost is not None:
         payload["cost"] = item.cost
+    if item.rarity is not None:
+        payload["rarity"] = _normalize_machine_value(item.rarity)
+    if item.edition is not None:
+        payload["edition"] = _normalize_machine_value(item.edition)
+    if item.sell_price is not None:
+        payload["sell_price"] = item.sell_price
+    if item.enhancement is not None:
+        payload["enhancement"] = _normalize_machine_value(item.enhancement)
+    if item.seal is not None:
+        payload["seal"] = _normalize_machine_value(item.seal)
+    if item.consumable_kind is not None:
+        payload["consumable_kind"] = _normalize_machine_value(item.consumable_kind)
+    if item.stickers:
+        payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
+    if item.debuffed:
+        payload["debuffed"] = True
+    if item.card_key is not None:
+        payload["card_key"] = _normalize_machine_value(item.card_key)
+    if item.card_kind is not None:
+        payload["card_kind"] = _normalize_machine_value(item.card_kind)
+    if item.suit is not None:
+        payload["suit"] = _normalize_machine_value(item.suit)
+    if item.rank is not None:
+        payload["rank"] = _normalize_machine_value(item.rank)
+    if item.pack_key is not None:
+        payload["pack_key"] = _normalize_machine_value(item.pack_key)
+    if item.pack_kind is not None:
+        payload["pack_kind"] = _normalize_machine_value(item.pack_kind)
+    return payload
+
+
+def _serialize_shop_discount(discount: ObservedShopDiscount) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "kind": _normalize_machine_value(discount.kind),
+    }
+    if discount.value is not None:
+        payload["value"] = discount.value
     return payload
 
 

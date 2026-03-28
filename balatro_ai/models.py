@@ -73,16 +73,6 @@ class ObservedSkipTag:
 
 
 @dataclass(frozen=True)
-class ObservedBoosterPack:
-    """Visible booster pack summary for shop decisions."""
-
-    name: str
-    key: str | None = None
-    kind: str | None = None
-    cost: int | None = None
-
-
-@dataclass(frozen=True)
 class ObservedShopItem:
     """Any visible shop item the policy may need to consider."""
 
@@ -90,6 +80,28 @@ class ObservedShopItem:
     name: str
     key: str | None = None
     cost: int | None = None
+    rarity: str | None = None
+    edition: str | None = None
+    sell_price: int | None = None
+    enhancement: str | None = None
+    seal: str | None = None
+    consumable_kind: str | None = None
+    stickers: tuple[str, ...] = ()
+    debuffed: bool = False
+    card_key: str | None = None
+    card_kind: str | None = None
+    suit: str | None = None
+    rank: str | None = None
+    pack_key: str | None = None
+    pack_kind: str | None = None
+
+
+@dataclass(frozen=True)
+class ObservedShopDiscount:
+    """Compact canonical shop discount entry."""
+
+    kind: str
+    value: int | None = None
 
 
 @dataclass(frozen=True)
@@ -139,9 +151,9 @@ class GameObservation:
     inflation: int | None = None
     hand_size: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
+    shop_discounts: tuple[ObservedShopDiscount, ...] = ()
     tags: tuple[ObservedTag, ...] = ()
     skip_tags: tuple[ObservedSkipTag, ...] = ()
-    booster_packs: tuple[ObservedBoosterPack, ...] = ()
     notes: tuple[str, ...] = ()
     seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

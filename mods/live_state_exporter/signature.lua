@@ -82,10 +82,27 @@ function Signature.make(snapshot)
   add_structured_items(parts, state.shop_vouchers, { "key", "cost" })
   add_named_items(parts, state.vouchers, "key")
   add_structured_items(parts, state.consumables, { "key", "kind", "edition", "sell_price", "debuffed" })
-  add_named_items(parts, state.shop_items, "key")
+  add_structured_items(parts, state.shop_items, {
+    "key",
+    "kind",
+    "cost",
+    "rarity",
+    "edition",
+    "sell_price",
+    "enhancement",
+    "seal",
+    "consumable_kind",
+    "debuffed",
+    "card_key",
+    "card_kind",
+    "suit",
+    "rank",
+    "pack_key",
+    "pack_kind",
+  })
+  add_structured_items(parts, state.shop_discounts, { "kind", "value" })
   add_structured_items(parts, state.skip_tags, { "slot", "key", "claimed" })
   add_named_items(parts, state.tags, "key")
-  add_named_items(parts, state.booster_packs, "key")
   add_structured_items(parts, state.blinds, { "slot", "key", "state", "tag_key", "tag_claimed" })
 
   return table.concat(parts, "::")

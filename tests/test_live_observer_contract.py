@@ -313,19 +313,38 @@ class LiveObserverContractTests(unittest.TestCase):
                         "name": "Credit Card",
                         "key": "j_credit_card",
                         "cost": 1,
+                        "rarity": "Common",
+                        "edition": "Foil",
+                        "sell_price": 2,
+                        "stickers": ["rental"],
                     },
                     {
                         "kind": "Pack",
                         "name": "Buffoon Pack",
                         "key": "p_buffoon_normal_1",
                         "cost": 4,
+                        "pack_key": "p_buffoon_normal_1",
+                        "pack_kind": "Buffoon",
                     },
                     {
                         "kind": "Consumable",
                         "name": "The Fool",
                         "key": "c_fool",
                         "cost": 3,
+                        "consumable_kind": "Tarot",
+                        "edition": "Negative",
+                        "sell_price": 1,
+                        "stickers": ["eternal"],
+                        "debuffed": True,
                     },
+                ],
+                "booster_packs": [
+                    {
+                        "name": "Ghost Legacy Pack",
+                        "key": "p_ghost_legacy_1",
+                        "kind": "Ghost",
+                        "cost": 99,
+                    }
                 ],
             }
         }
@@ -335,11 +354,39 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             observation["shop_items"],
             [
-                {"kind": "joker", "name": "Credit Card", "key": "j_credit_card", "cost": 1},
-                {"kind": "pack", "name": "Buffoon Pack", "key": "p_buffoon_normal_1", "cost": 4},
-                {"kind": "consumable", "name": "The Fool", "key": "c_fool", "cost": 3},
+                {
+                    "kind": "joker",
+                    "name": "Credit Card",
+                    "key": "j_credit_card",
+                    "cost": 1,
+                    "rarity": "common",
+                    "edition": "foil",
+                    "sell_price": 2,
+                    "stickers": ["rental"],
+                },
+                {
+                    "kind": "pack",
+                    "name": "Buffoon Pack",
+                    "key": "p_buffoon_normal_1",
+                    "cost": 4,
+                    "pack_key": "p_buffoon_normal_1",
+                    "pack_kind": "buffoon",
+                },
+                {
+                    "kind": "consumable",
+                    "name": "The Fool",
+                    "key": "c_fool",
+                    "cost": 3,
+                    "consumable_kind": "tarot",
+                    "edition": "negative",
+                    "sell_price": 1,
+                    "stickers": ["eternal"],
+                    "debuffed": True,
+                },
             ],
         )
+        self.assertEqual(observation["shop_items"][0].get("item_kind"), None)
+        self.assertNotIn("booster_packs", observation)
 
     def test_observe_ignores_legacy_shop_packs_input(self) -> None:
         live_payload = {
@@ -384,6 +431,40 @@ class LiveObserverContractTests(unittest.TestCase):
             observation["shop_items"],
             [
                 {"kind": "pack", "name": "Jumbo Standard Pack", "key": "p_standard_jumbo_1", "cost": 6}
+            ],
+        )
+
+    def test_observe_exposes_canonical_shop_discounts_array(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "score": {
+                    "current": 75,
+                    "target": 300,
+                },
+                "money": 10,
+                "hands_left": 4,
+                "discards_left": 2,
+                "shop_discounts": [
+                    {
+                        "kind": "discount_percent",
+                        "value": 25,
+                    },
+                    {
+                        "kind": "shop_free",
+                    },
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["shop_discounts"],
+            [
+                {"kind": "discount_percent", "value": 25},
+                {"kind": "shop_free"},
             ],
         )
 
@@ -664,7 +745,10 @@ class LiveObserverContractTests(unittest.TestCase):
             "shop_items": [
                 {"key": "j_vampire", "kind": "joker", "cost": 7},
             ],
-            "shop_discounts": [],
+            "shop_discounts": [
+                {"kind": "discount_percent", "value": 25},
+                {"kind": "shop_free"},
+            ],
             "reroll_cost": 5,
             "interest": 3,
             "inflation": 2,
@@ -696,6 +780,9 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("consumables:", formatted)
         self.assertIn("shop_vouchers:", formatted)
         self.assertIn("shop_items:", formatted)
+        self.assertIn("shop_discounts:", formatted)
+        self.assertIn("discount_percent=25", formatted)
+        self.assertIn("shop_free", formatted)
         self.assertIn("cards_in_hand:", formatted)
         self.assertIn("j_greedy_joker", formatted)
         self.assertIn("v_overstock", formatted)

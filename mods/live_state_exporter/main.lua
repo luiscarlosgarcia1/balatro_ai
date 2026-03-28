@@ -15,7 +15,6 @@ local EXPORT_MAX_JOKERS = 8
 local EXPORT_MAX_CONSUMABLES = 10
 local EXPORT_MAX_VOUCHERS = 8
 local EXPORT_MAX_TAGS = 8
-local EXPORT_MAX_PACKS = 4
 local EXPORT_MAX_SHOP_CARDS = 16
 local EXPORT_MAX_DECK_CARDS = 80
 local EXPORT_MAX_PACK_REWARD_CARDS = 16
@@ -769,45 +768,6 @@ local function collect_tags(game, root)
   return result
 end
 
-local function collect_booster_packs(game, root)
-  local result = {}
-  local seen = {}
-  local candidates = {
-    safe_table(game.current_round) and game.current_round.booster_packs,
-    safe_table(game.current_round) and game.current_round.pack_choices,
-    safe_table(game.current_round) and game.current_round.shop_boosters,
-    safe_table(game.current_round) and game.current_round.shop_booster,
-    game and rawget(game, "booster_packs"),
-    root and rawget(root, "shop_booster"),
-    root and rawget(root, "shop_boosters"),
-    game and rawget(game, "shop_booster"),
-    game and rawget(game, "shop_boosters"),
-  }
-
-  for _, candidate in ipairs(candidates) do
-    if candidate then
-      local entries = card_list_from_area(candidate)
-      if #entries == 0 and is_array(candidate) then
-        entries = candidate
-      elseif #entries == 0 and type(candidate) == "table" and not candidate.cards then
-        entries = { candidate }
-      end
-
-      for _, card in ipairs(entries) do
-        if #result >= EXPORT_MAX_PACKS then
-          return result
-        end
-        local summary = summarize_booster_pack(card)
-        if summary then
-          push_unique(result, seen, summary.key or summary.name, summary)
-        end
-      end
-    end
-  end
-
-  return result
-end
-
 local function collect_blinds(game)
   local result = {}
   local round_resets = safe_table(game.round_resets) or {}
@@ -898,7 +858,6 @@ local function summarize_shop_item(card, area_kind)
     if pack then
       return {
         kind = "pack",
-        item_kind = "booster_pack",
         name = pack.name,
         key = pack.key,
         pack_key = pack.pack_key,
@@ -919,7 +878,6 @@ local function summarize_shop_item(card, area_kind)
       end
       return {
         kind = "consumable",
-        item_kind = "consumable",
         name = trim_text(consumable_name, EXPORT_MAX_STRING),
         key = consumable.key,
         cost = consumable.cost,
@@ -939,7 +897,6 @@ local function summarize_shop_item(card, area_kind)
       end
       return {
         kind = "joker",
-        item_kind = "joker",
         name = trim_text(joker_name, EXPORT_MAX_STRING),
         key = joker.key,
         cost = item_cost,
@@ -955,7 +912,6 @@ local function summarize_shop_item(card, area_kind)
   if generic_card then
     return {
       kind = generic_card.kind or area_kind or "shop",
-      item_kind = normalize_token(generic_card.kind or area_kind or "shop"),
       name = generic_card.name,
       key = generic_card.key,
       card_key = generic_card.card_key,
@@ -981,7 +937,6 @@ local function summarize_shop_item(card, area_kind)
 
   return {
     kind = area_kind or string.lower(safe_tostring(first_non_nil(ability.set, card.set)) or "shop"),
-    item_kind = normalize_token(area_kind or first_non_nil(ability.set, card.set) or "shop"),
     name = trim_text(label, EXPORT_MAX_STRING),
     key = safe_tostring(first_non_nil(ability.key, card.key)),
     cost = item_cost,
@@ -1085,15 +1040,17 @@ local function collect_shop_discounts(game)
   local discounts = {}
   local discount_percent = safe_number(game.discount_percent)
   if discount_percent and discount_percent ~= 0 then
-    discounts.discount_percent = discount_percent
+    discounts[#discounts + 1] = {
+      kind = "discount_percent",
+      value = discount_percent,
+    }
   end
   if game.shop_free then
-    discounts.shop_free = true
+    discounts[#discounts + 1] = {
+      kind = "shop_free",
+    }
   end
-  if next(discounts) then
-    return discounts
-  end
-  return nil
+  return discounts
 end
 
 local function infer_pack_kind(pack_kind)
@@ -1256,7 +1213,6 @@ local function snapshot_game()
   local stake = summarize_stake(game, root)
   local vouchers = collect_used_vouchers(game, root)
   local tags = collect_tags(game, root)
-  local booster_packs = collect_booster_packs(game, root)
   local blinds = collect_blinds(game)
   local skip_tags = collect_skip_tags(blinds)
   local selected_cards = collect_selected_cards(root)
@@ -1326,7 +1282,6 @@ local function snapshot_game()
       pack_contents = pack_contents,
       pack_reward_cards = pack_reward_cards,
       tags = tags,
-      booster_packs = booster_packs,
       notes = {
         "exporter=live_state_exporter",
       },

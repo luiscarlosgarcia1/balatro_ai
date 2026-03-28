@@ -269,6 +269,17 @@ def format_observation(observation: dict[str, object]) -> str:
             lines.append(
                 f"    - {item.get('kind')}: {item.get('name') or item.get('key') or '?'}{extra_text}"
             )
+    shop_discounts = observation.get("shop_discounts") or []
+    if shop_discounts:
+        lines.append("  shop_discounts:")
+        for discount in shop_discounts:
+            if not isinstance(discount, dict):
+                continue
+            kind = discount.get("kind") or "?"
+            if discount.get("value") is not None:
+                lines.append(f"    - {kind}={discount['value']}")
+            else:
+                lines.append(f"    - {kind}")
     blinds = observation.get("blinds") or []
     if blinds:
         lines.append("  blinds:")
