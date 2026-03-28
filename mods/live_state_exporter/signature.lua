@@ -87,7 +87,11 @@ function Signature.make(snapshot)
     string_part(state.joker_count),
     string_part(state.consumable_slots),
     string_part(state.hand_size),
-    string_part(pack_contents.open_pack_kind),
+    string_part(pack_contents.pack_key),
+    string_part(pack_contents.pack_size),
+    string_part(pack_contents.choose_limit),
+    string_part(pack_contents.choices_remaining),
+    string_part(pack_contents.skip_available),
   }
 
   add_structured_items(parts, state.cards_in_hand, {
@@ -157,6 +161,20 @@ function Signature.make(snapshot)
     "pack_kind",
   })
   add_structured_items(parts, state.shop_discounts, { "kind", "value" })
+  add_structured_items(parts, pack_contents.cards, {
+    "card_key",
+    "card_kind",
+    "suit",
+    "rank",
+    "rarity",
+    "enhancement",
+    "edition",
+    "seal",
+    "facing",
+    "cost",
+    "sell_price",
+    "debuffed",
+  })
   add_structured_items(parts, state.skip_tags, { "slot", "key", "claimed" })
   add_named_items(parts, state.tags, "key")
   add_structured_items(parts, state.blinds, { "slot", "key", "state", "tag_key", "tag_claimed" })

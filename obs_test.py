@@ -280,6 +280,53 @@ def format_observation(observation: dict[str, object]) -> str:
                 lines.append(f"    - {kind}={discount['value']}")
             else:
                 lines.append(f"    - {kind}")
+    pack_contents = observation.get("pack_contents")
+    if isinstance(pack_contents, dict):
+        lines.append("  pack_contents:")
+        extras = []
+        if pack_contents.get("pack_key"):
+            extras.append(f"pack_key={pack_contents['pack_key']}")
+        if pack_contents.get("pack_size") is not None:
+            extras.append(f"pack_size={pack_contents['pack_size']}")
+        if pack_contents.get("choose_limit") is not None:
+            extras.append(f"choose_limit={pack_contents['choose_limit']}")
+        if pack_contents.get("choices_remaining") is not None:
+            extras.append(f"choices_remaining={pack_contents['choices_remaining']}")
+        if "skip_available" in pack_contents:
+            extras.append(f"skip_available={'true' if pack_contents.get('skip_available') else 'false'}")
+        if extras:
+            lines.append(f"    - {', '.join(extras)}")
+
+        pack_cards = pack_contents.get("cards") or []
+        for card in pack_cards:
+            if not isinstance(card, dict):
+                continue
+            card_extras = []
+            if card.get("card_kind"):
+                card_extras.append(f"kind={card['card_kind']}")
+            if card.get("suit"):
+                card_extras.append(f"suit={card['suit']}")
+            if card.get("rank"):
+                card_extras.append(f"rank={card['rank']}")
+            if card.get("enhancement"):
+                card_extras.append(f"enh={card['enhancement']}")
+            if card.get("edition"):
+                card_extras.append(f"edition={card['edition']}")
+            if card.get("seal"):
+                card_extras.append(f"seal={card['seal']}")
+            if card.get("cost") is not None:
+                card_extras.append(f"cost={card['cost']}")
+            if card.get("sell_price") is not None:
+                card_extras.append(f"sell_price={card['sell_price']}")
+            if card.get("facing"):
+                card_extras.append(f"facing={card['facing']}")
+            stickers = card.get("stickers")
+            if isinstance(stickers, list):
+                card_extras.extend(f"sticker={value}" for value in stickers)
+            if card.get("debuffed"):
+                card_extras.append("debuffed=true")
+            extra_text = f" ({', '.join(card_extras)})" if card_extras else ""
+            lines.append(f"    - {card.get('card_key') or '?'}{extra_text}")
     blinds = observation.get("blinds") or []
     if blinds:
         lines.append("  blinds:")

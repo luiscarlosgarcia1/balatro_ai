@@ -10,6 +10,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedPackContents,
     ObservedReference,
     ObservedShopDiscount,
     ObservedShopItem,
@@ -130,7 +131,7 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "reroll_cost": observation.reroll_cost,
         "interest": observation.interest,
         "inflation": observation.inflation,
-        "pack_contents": None,
+        "pack_contents": _serialize_pack_contents(observation.pack_contents),
         "hand_size": observation.hand_size,
         "cards_in_hand": serialized_cards_in_hand,
         "selected_cards": serialized_selected_cards,
@@ -330,6 +331,20 @@ def _serialize_shop_discount(discount: ObservedShopDiscount) -> dict[str, Any]:
     if discount.value is not None:
         payload["value"] = discount.value
     return payload
+
+
+def _serialize_pack_contents(pack_contents: ObservedPackContents | None) -> dict[str, Any] | None:
+    if pack_contents is None:
+        return None
+
+    return {
+        "pack_key": _normalize_machine_value(pack_contents.pack_key),
+        "pack_size": pack_contents.pack_size,
+        "choose_limit": pack_contents.choose_limit,
+        "choices_remaining": pack_contents.choices_remaining,
+        "skip_available": pack_contents.skip_available,
+        "cards": [_serialize_card(card) for card in pack_contents.cards],
+    }
 
 
 def _serialize_notes(notes: tuple[str, ...], seen_at: datetime | None) -> list[str]:

@@ -121,6 +121,18 @@ class ObservedShopDiscount:
 
 
 @dataclass(frozen=True)
+class ObservedPackContents:
+    """Canonical opened-pack state with required exact pack identity."""
+
+    pack_key: str
+    pack_size: int | None = None
+    choose_limit: int | None = None
+    choices_remaining: int | None = None
+    skip_available: bool = False
+    cards: tuple[ObservedCard, ...] = ()
+
+
+@dataclass(frozen=True)
 class ObservedBlind:
     """Blind choice available during blind selection."""
 
@@ -171,6 +183,7 @@ class GameObservation:
     hand_size: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
     shop_discounts: tuple[ObservedShopDiscount, ...] = ()
+    pack_contents: ObservedPackContents | None = None
     tags: tuple[ObservedTag, ...] = ()
     skip_tags: tuple[ObservedSkipTag, ...] = ()
     notes: tuple[str, ...] = ()
