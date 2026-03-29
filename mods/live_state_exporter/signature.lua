@@ -173,7 +173,6 @@ function Signature.make(snapshot)
     "sell_price",
     "debuffed",
   })
-  add_structured_items(parts, state.skip_tags, { "slot", "key", "claimed" })
   add_named_items(parts, state.tags, "key")
   add_structured_items(parts, state.blinds, { "slot", "key", "state", "tag_key", "tag_claimed" })
 

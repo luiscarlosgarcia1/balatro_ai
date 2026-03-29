@@ -80,15 +80,6 @@ class ObservedTag:
 
 
 @dataclass(frozen=True)
-class ObservedSkipTag:
-    """Claimable or claimed skip tag summary."""
-
-    slot: str
-    key: str
-    claimed: bool = False
-
-
-@dataclass(frozen=True)
 class ObservedShopItem:
     """Any visible shop item the policy may need to consider."""
 
@@ -183,7 +174,6 @@ class GameObservation:
     shop_discounts: tuple[ObservedShopDiscount, ...] = ()
     pack_contents: ObservedPackContents | None = None
     tags: tuple[ObservedTag, ...] = ()
-    skip_tags: tuple[ObservedSkipTag, ...] = ()
     notes: tuple[str, ...] = ()
     seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

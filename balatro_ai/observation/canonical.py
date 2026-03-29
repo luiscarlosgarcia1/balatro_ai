@@ -14,7 +14,6 @@ from ..models import (
     ObservedReference,
     ObservedShopDiscount,
     ObservedShopItem,
-    ObservedSkipTag,
     ObservedTag,
     ObservedVoucher,
 )
@@ -38,7 +37,6 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "consumable_slots",
     "consumables",
     "vouchers",
-    "skip_tags",
     "tags",
     "shop_items",
     "shop_discounts",
@@ -85,7 +83,6 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
     serialized_consumables = [_serialize_consumable(consumable) for consumable in observation.consumables]
     serialized_vouchers = [_serialize_voucher(voucher) for voucher in observation.vouchers]
     serialized_tags = [_serialize_tag(tag) for tag in observation.tags]
-    serialized_skip_tags = [_serialize_skip_tag(skip_tag) for skip_tag in observation.skip_tags]
     serialized_cards_in_hand = _serialize_cards(observation.cards_in_hand)
     serialized_selected_cards = [
         serialized_reference
@@ -119,7 +116,6 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "consumable_slots": observation.consumable_slots,
         "consumables": serialized_consumables,
         "vouchers": serialized_vouchers,
-        "skip_tags": serialized_skip_tags,
         "tags": serialized_tags,
         "shop_items": _serialize_shop_items(observation),
         "shop_discounts": serialized_shop_discounts,
@@ -187,16 +183,6 @@ def _serialize_tag(tag: ObservedTag) -> dict[str, Any]:
     return {
         "key": _normalize_machine_value(tag.key),
     }
-
-
-def _serialize_skip_tag(tag: ObservedSkipTag) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "slot": _normalize_machine_value(tag.slot),
-        "key": _normalize_machine_value(tag.key),
-    }
-    if tag.claimed:
-        payload["claimed"] = True
-    return payload
 
 
 def _serialize_card(card: ObservedCard) -> dict[str, Any]:

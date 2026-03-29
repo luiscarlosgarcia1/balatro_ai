@@ -13,7 +13,6 @@ from ..models import (
     ObservedReference,
     ObservedShopDiscount,
     ObservedShopItem,
-    ObservedSkipTag,
     ObservedTag,
     ObservedVoucher,
 )
@@ -71,7 +70,6 @@ class LiveObservationParser:
         shop_discounts = self._parse_live_shop_discounts(state.get("shop_discounts"))
         pack_contents = self._parse_live_pack_contents(state.get("pack_contents"))
         tags = self._parse_live_tags(state.get("tags"))
-        skip_tags = self._parse_live_skip_tags(state.get("skip_tags"))
         jokers = self._parse_live_jokers(state.get("jokers"))
 
         seen_at_raw = state.get("seen_at")
@@ -116,7 +114,6 @@ class LiveObservationParser:
             shop_discounts=tuple(shop_discounts),
             pack_contents=pack_contents,
             tags=tuple(tags),
-            skip_tags=tuple(skip_tags),
             notes=tuple(str(value) for value in notes if value is not None),
             seen_at=seen_at,
         )
@@ -271,28 +268,6 @@ class LiveObservationParser:
                 continue
             tags.append(ObservedTag(key=key))
         return tags
-
-    def _parse_live_skip_tags(self, payload: object) -> list[ObservedSkipTag]:
-        skip_tags: list[ObservedSkipTag] = []
-        if not isinstance(payload, list):
-            return skip_tags
-
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            slot = self._string_or_none(item.get("slot"))
-            key = self._string_or_none(item.get("key", item.get("tag_key")))
-            if not slot or not key:
-                continue
-            skip_tags.append(
-                ObservedSkipTag(
-                    slot=slot,
-                    key=key,
-                    claimed=bool(item.get("claimed", False)),
-                )
-            )
-        skip_tags.sort(key=lambda skip_tag: self._slot_sort_key(skip_tag.slot))
-        return skip_tags
 
     def _parse_live_shop_items(self, payload: object) -> list[ObservedShopItem]:
         shop_items: list[ObservedShopItem] = []

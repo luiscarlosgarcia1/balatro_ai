@@ -232,14 +232,6 @@ def format_observation(observation: dict[str, object]) -> str:
             lines.append(
                 f"    - {consumable.get('kind')}: {consumable.get('key') or '?'}{suffix}"
             )
-    skip_tags = observation.get("skip_tags") or []
-    if skip_tags:
-        lines.append("  skip_tags:")
-        for skip_tag in skip_tags:
-            if not isinstance(skip_tag, dict):
-                continue
-            suffix = " [claimed=true]" if skip_tag.get("claimed") else ""
-            lines.append(f"    - {skip_tag.get('slot')}: {skip_tag.get('key') or '?'}{suffix}")
     tags = observation.get("tags") or []
     if tags:
         lines.append("  tags:")

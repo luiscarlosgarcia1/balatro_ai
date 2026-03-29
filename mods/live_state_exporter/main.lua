@@ -812,7 +812,6 @@ end
 
 local function collect_tags(game, root)
   local result = {}
-  local seen = {}
 
   local function add_tag(value, key_hint)
     if #result >= EXPORT_MAX_TAGS then
@@ -820,7 +819,7 @@ local function collect_tags(game, root)
     end
     local summary = summarize_tag(value, key_hint)
     if summary then
-      push_unique(result, seen, summary.key, summary)
+      result[#result + 1] = summary
     end
   end
 
@@ -1106,23 +1105,6 @@ local function collect_shop_items(root, interaction_phase)
   return result
 end
 
-local function collect_skip_tags(blinds)
-  local result = {}
-  for _, blind in ipairs(blinds or {}) do
-    if blind.tag_key then
-      local summary = {
-        slot = normalize_token(blind.slot),
-        key = normalize_token(blind.tag_key),
-      }
-      if blind.tag_claimed then
-        summary.claimed = true
-      end
-      result[#result + 1] = summary
-    end
-  end
-  return result
-end
-
 local function collect_selected_cards(root)
   local result = {}
   local seen = {}
@@ -1303,9 +1285,8 @@ local function snapshot_game()
   local deck = summarize_deck(game)
   local stake = summarize_stake(game, root)
   local vouchers = collect_used_vouchers(game, root)
-  local tags = collect_tags(game, root)
   local blinds = collect_blinds(game)
-  local skip_tags = collect_skip_tags(blinds)
+  local tags = collect_tags(game, root)
   local selected_cards = collect_selected_cards(root)
   local highlighted_card = collect_highlighted_card(root)
   local shop_discounts = collect_shop_discounts(game)
@@ -1360,7 +1341,6 @@ local function snapshot_game()
       cards_in_hand = hand_cards,
       jokers = jokers,
       consumables = consumables,
-      skip_tags = skip_tags,
       shop_items = shop_items,
       selected_cards = selected_cards,
       highlighted_card = highlighted_card,

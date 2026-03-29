@@ -91,7 +91,6 @@ class SaveObservationParser:
             hand_size=None,
             shop_discounts=(),
             tags=(),
-            skip_tags=(),
             notes=tuple(notes),
             seen_at=snapshot.modified_at,
         )

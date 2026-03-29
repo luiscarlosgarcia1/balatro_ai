@@ -165,9 +165,6 @@ end
 local function test_blind_and_skip_claim_fields_change_signature()
   local first = Signature.make({
     state = {
-      skip_tags = {
-        { slot = "small", key = "tag_small", claimed = true },
-      },
       blinds = {
         { slot = "small", key = "bl_small", state = "skipped", tag_key = "tag_small", tag_claimed = true },
       },
@@ -176,9 +173,6 @@ local function test_blind_and_skip_claim_fields_change_signature()
 
   local second = Signature.make({
     state = {
-      skip_tags = {
-        { slot = "small", key = "tag_small", claimed = false },
-      },
       blinds = {
         { slot = "small", key = "bl_small", state = "upcoming", tag_key = "tag_small", tag_claimed = false },
       },
