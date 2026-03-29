@@ -21,37 +21,37 @@
 
 ## Ordered Issue Sequence
 
-1. `observer_json_schema_baseline_issue.md`  
+1. `#30`  
    Why now: creates the canonical serializer boundary and gives the first safe place to delete old schema/formatter logic.  
    Depends on: none.
 
-2. `observer_live_exporter_signature_refit_issue.md`  
+2. `#31`  
    Why now: moves the live path closer to canonical field names before the deeper schema slices land, so later issues delete live-side compatibility instead of building on it.  
-   Depends on: `observer_json_schema_baseline_issue.md`.
+   Depends on: `#30`.
 
-3. `observer_run_scalars_issue.md`  
+3. `#29`  
    Why now: replaces the scalar backbone and removes old scalar naming and formatting assumptions early.  
-   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`.
+   Depends on: `#30`, `#31`.
 
-4. `observer_owned_objects_issue.md`  
+4. `#28`  
    Why now: replaces the old owned-object structure and settles voucher separation before market refits.  
-   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`.
+   Depends on: `#30`, `#31`.
 
-5. `observer_blinds_and_skips_issue.md`  
+5. `#27`  
    Why now: completes blind/tag normalization using the same compact array conventions.  
-   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`, benefits from `observer_owned_objects_issue.md`.
+   Depends on: `#30`, `#31`, benefits from `#28`.
 
-6. `observer_shop_market_issue.md`  
+6. `#26`  
    Why now: should land after voucher separation so the old market split can be removed cleanly.  
-   Depends on: `observer_json_schema_baseline_issue.md`, `observer_live_exporter_signature_refit_issue.md`, `observer_owned_objects_issue.md`.
+   Depends on: `#30`, `#31`, `#28`.
 
-7. `observer_card_zones_issue.md`  
+7. `#25`  
    Why now: replaces the current hand-card summary path with the final card-zone contract.  
-   Depends on: `observer_json_schema_baseline_issue.md`.
+   Depends on: `#30`.
 
-8. `observer_pack_contents_issue.md`  
+8. `#24`  
    Why now: finishes the modal/pack side after the final market and card object conventions exist.  
-   Depends on: `observer_json_schema_baseline_issue.md`, `observer_shop_market_issue.md`, `observer_card_zones_issue.md`.
+   Depends on: `#30`, `#26`, `#25`.
 
 ## Important Interface Changes
 
@@ -70,7 +70,7 @@
 
 ## Phase 1: Contract Baseline And First Cleanup
 
-**Issues**: `observer_json_schema_baseline_issue.md`
+**Issues**: `#30`
 
 ### Goal
 
@@ -95,13 +95,13 @@ It gives the repo one authoritative contract early and creates the first safe pl
 ### Read Before Starting
 
 - Source PRD
-- `observer_json_schema_baseline_issue.md`
+- `#30`
 - [obs_test.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/obs_test.py)
 - [tests/test_live_observer_contract.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/tests/test_live_observer_contract.py)
 
 ## Phase 2: Live Exporter And Signature Refit
 
-**Issues**: `observer_live_exporter_signature_refit_issue.md`
+**Issues**: `#31`
 
 ### Goal
 
@@ -128,13 +128,13 @@ It removes live-side translation tax early, so later scalar, owned-object, blind
 ### Read Before Starting
 
 - Source PRD
-- `observer_live_exporter_signature_refit_issue.md`
+- `#31`
 - [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
 - [mods/live_state_exporter/signature.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/signature.lua)
 
 ## Phase 3: Scalar Backbone Replacement
 
-**Issues**: `observer_run_scalars_issue.md`
+**Issues**: `#29`
 
 ### Goal
 
@@ -158,13 +158,13 @@ The scalar backbone feeds every later slice and lets us remove old scalar aliase
 ### Read Before Starting
 
 - Source PRD
-- `observer_run_scalars_issue.md`
+- `#29`
 - [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
 - [mods/live_state_exporter/signature.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/signature.lua)
 
 ## Phase 4: Owned State And Blind/Skip Replacement
 
-**Issues**: `observer_owned_objects_issue.md`, `observer_blinds_and_skips_issue.md`
+**Issues**: `#28`, `#27`
 
 ### Goal
 
@@ -188,13 +188,13 @@ These slices share the same array-of-objects conventions and settle voucher/tag/
 ### Read Before Starting
 
 - Source PRD
-- `observer_owned_objects_issue.md`
-- `observer_blinds_and_skips_issue.md`
+- `#28`
+- `#27`
 - [balatro_ai/observation/live_parser.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/balatro_ai/observation/live_parser.py)
 
 ## Phase 5: Shop Market Replacement
 
-**Issues**: `observer_shop_market_issue.md`
+**Issues**: `#26`
 
 ### Goal
 
@@ -218,13 +218,13 @@ Voucher separation is already settled, so the market can be simplified cleanly w
 ### Read Before Starting
 
 - Source PRD
-- `observer_shop_market_issue.md`
+- `#26`
 - [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
 - [tests/test_live_observer_contract.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/tests/test_live_observer_contract.py)
 
 ## Phase 6: Card Zones And Selection Replacement
 
-**Issues**: `observer_card_zones_issue.md`
+**Issues**: `#25`
 
 ### Goal
 
@@ -248,13 +248,13 @@ This phase defines the final shared card object shape and deterministic ordering
 ### Read Before Starting
 
 - Source PRD
-- `observer_card_zones_issue.md`
+- `#25`
 - [balatro_ai/observation/live_parser.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/balatro_ai/observation/live_parser.py)
 - [balatro_ai/observation/save_parser.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/balatro_ai/observation/save_parser.py)
 
 ## Phase 7: Pack Contents And Final Legacy Purge
 
-**Issues**: `observer_pack_contents_issue.md`
+**Issues**: `#24`
 
 ### Goal
 
@@ -279,7 +279,7 @@ Pack contents depends on the final market placement and final card object conven
 ### Read Before Starting
 
 - Source PRD
-- `observer_pack_contents_issue.md`
+- `#24`
 - [mods/live_state_exporter/main.lua](c:/Users/luiga/OneDrive/Documentos/balatro_ai/mods/live_state_exporter/main.lua)
 - [tests/test_live_observer_contract.py](c:/Users/luiga/OneDrive/Documentos/balatro_ai/tests/test_live_observer_contract.py)
 
