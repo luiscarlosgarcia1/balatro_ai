@@ -35,15 +35,12 @@ CANONICAL_TOP_LEVEL_KEYS = [
     "vouchers",
     "tags",
     "shop_items",
-    "shop_discounts",
     "reroll_cost",
     "interest",
-    "inflation",
     "pack_contents",
     "hand_size",
     "cards_in_hand",
     "selected_cards",
-    "highlighted_card",
     "cards_in_deck",
     "blinds",
     "notes",
@@ -97,7 +94,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["selected_cards"], [])
         self.assertEqual(observation["cards_in_deck"], [])
         self.assertIsNone(observation["pack_contents"])
-        self.assertIsNone(observation["highlighted_card"])
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
 
     def test_observe_populates_canonical_shop_owned_and_card_fields(self) -> None:
@@ -118,7 +114,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 "joker_slots": 5,
                 "reroll_cost": 5,
                 "interest": 3,
-                "inflation": 2,
                 "hand_size": 8,
                 "vouchers": [
                     {
@@ -205,7 +200,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["consumable_slots"], 2)
         self.assertEqual(observation["hand_size"], 8)
         self.assertEqual(observation["interest"], 3)
-        self.assertEqual(observation["inflation"], 2)
         self.assertEqual(observation["reroll_cost"], 5)
         self.assertEqual(observation["vouchers"][0]["key"], "v_clearance_sale")
         self.assertNotIn("name", observation["vouchers"][0])
@@ -328,7 +322,7 @@ class LiveObserverContractTests(unittest.TestCase):
         )
         self.assertNotIn("name", observation["cards_in_hand"][0])
 
-    def test_observe_emits_lightweight_selected_and_highlighted_references(self) -> None:
+    def test_observe_emits_lightweight_selected_references(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
@@ -341,7 +335,6 @@ class LiveObserverContractTests(unittest.TestCase):
                     {"zone": "cards_in_hand", "card_key": "h_8"},
                     {"zone": "jokers", "joker_key": "j_blueprint"},
                 ],
-                "highlighted_card": {"zone": "cards_in_deck", "card_key": "c_a"},
             }
         }
 
@@ -353,10 +346,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 {"zone": "cards_in_hand", "card_key": "h_8"},
                 {"zone": "jokers", "joker_key": "j_blueprint"},
             ],
-        )
-        self.assertEqual(
-            observation["highlighted_card"],
-            {"zone": "cards_in_deck", "card_key": "c_a"},
         )
 
     def test_observe_accepts_canonical_scalar_live_payload_without_legacy_aliases(self) -> None:
@@ -381,7 +370,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 "consumable_slots": 2,
                 "reroll_cost": 6,
                 "interest": 4,
-                "inflation": 1,
                 "hand_size": 8,
                 "notes": ["exporter=live_state_exporter", "screenshot_status=true"],
             }
@@ -397,7 +385,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
         self.assertEqual(observation["interest"], 4)
-        self.assertEqual(observation["inflation"], 1)
         self.assertEqual(observation["hand_size"], 8)
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
@@ -532,40 +519,6 @@ class LiveObserverContractTests(unittest.TestCase):
             ],
         )
 
-    def test_observe_exposes_canonical_shop_discounts_array(self) -> None:
-        live_payload = {
-            "state": {
-                "source": "live_state_exporter",
-                "interaction_phase": "shop",
-                "score": {
-                    "current": 75,
-                    "target": 300,
-                },
-                "money": 10,
-                "hands_left": 4,
-                "discards_left": 2,
-                "shop_discounts": [
-                    {
-                        "kind": "discount_percent",
-                        "value": 25,
-                    },
-                    {
-                        "kind": "shop_free",
-                    },
-                ],
-            }
-        }
-
-        observation = self.observe_live_payload(live_payload)
-
-        self.assertEqual(
-            observation["shop_discounts"],
-            [
-                {"kind": "discount_percent", "value": 25},
-                {"kind": "shop_free"},
-            ],
-        )
-
     def test_observe_uses_live_interaction_phase_without_legacy_phase_bridge(self) -> None:
         blind_select = self.observe_live_payload(
             {
@@ -614,7 +567,6 @@ class LiveObserverContractTests(unittest.TestCase):
                     "selected_cards": [
                         {"zone": "pack_contents", "card_key": "c_fool"},
                     ],
-                    "highlighted_card": {"zone": "pack_contents", "card_key": "c_fool"},
                     "score": {"current": 0, "target": 300},
                     "money": 8,
                     "hands_left": 4,
@@ -646,10 +598,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             pack_reward["selected_cards"],
             [{"zone": "pack_contents", "card_key": "c_fool"}],
-        )
-        self.assertEqual(
-            pack_reward["highlighted_card"],
-            {"zone": "pack_contents", "card_key": "c_fool"},
         )
 
     def test_observe_rejects_active_pack_contents_without_exact_pack_key(self) -> None:
@@ -951,13 +899,8 @@ class LiveObserverContractTests(unittest.TestCase):
                 {"key": "j_vampire", "cost": 7},
                 {"key": "v_overstock", "cost": 10},
             ],
-            "shop_discounts": [
-                {"kind": "discount_percent", "value": 25},
-                {"kind": "shop_free"},
-            ],
             "reroll_cost": 5,
             "interest": 3,
-            "inflation": 2,
             "pack_contents": None,
             "hand_size": 8,
             "cards_in_hand": [
@@ -967,7 +910,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 }
             ],
             "selected_cards": [{"zone": "cards_in_hand", "card_key": "s_a"}],
-            "highlighted_card": {"zone": "cards_in_deck", "card_key": "c_k"},
             "cards_in_deck": [
                 {
                     "card_key": "c_k",
@@ -984,18 +926,13 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("stake_id: gold_stake", formatted)
         self.assertIn("joker_slots: 5", formatted)
         self.assertIn("interest: 3", formatted)
-        self.assertIn("inflation: 2", formatted)
         self.assertIn("hand_size: 8", formatted)
         self.assertIn("consumables:", formatted)
         self.assertIn("shop_items:", formatted)
-        self.assertIn("shop_discounts:", formatted)
-        self.assertIn("discount_percent=25", formatted)
-        self.assertIn("shop_free", formatted)
         self.assertNotIn("open_pack_kind", formatted)
         self.assertIn("cards_in_hand:", formatted)
         self.assertIn("cards_in_deck:", formatted)
         self.assertIn("selected_cards:", formatted)
-        self.assertIn("highlighted_card:", formatted)
         self.assertIn("j_greedy_joker", formatted)
         self.assertIn("v_overstock", formatted)
         self.assertNotIn("\n  deck:", formatted)
@@ -1062,10 +999,8 @@ class LiveObserverContractTests(unittest.TestCase):
             "vouchers": [],
             "tags": [],
             "shop_items": [],
-            "shop_discounts": [],
             "reroll_cost": 5,
             "interest": 3,
-            "inflation": 2,
             "pack_contents": {
                 "pack_key": "p_arcana_normal_1",
                 "pack_size": 5,
@@ -1083,7 +1018,6 @@ class LiveObserverContractTests(unittest.TestCase):
             "hand_size": 8,
             "cards_in_hand": [],
             "selected_cards": [{"zone": "pack_contents", "card_key": "c_fool"}],
-            "highlighted_card": {"zone": "pack_contents", "card_key": "c_fool"},
             "cards_in_deck": [],
             "blinds": [],
             "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
@@ -1158,7 +1092,6 @@ class LiveObserverContractTests(unittest.TestCase):
             ["c_k", "d_a"],
         )
         self.assertEqual(observation["selected_cards"], [])
-        self.assertIsNone(observation["highlighted_card"])
 
     def test_runtime_and_policy_consume_canonical_payload(self) -> None:
         observations = [
@@ -1182,15 +1115,12 @@ class LiveObserverContractTests(unittest.TestCase):
                 "vouchers": [],
                 "tags": [],
                 "shop_items": [],
-                "shop_discounts": [],
                 "reroll_cost": None,
                 "interest": None,
-                "inflation": None,
                 "pack_contents": None,
                 "hand_size": None,
                 "cards_in_hand": [],
                 "selected_cards": [],
-                "highlighted_card": None,
                 "cards_in_deck": [],
                 "blinds": [],
                 "notes": [],

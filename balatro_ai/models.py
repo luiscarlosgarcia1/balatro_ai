@@ -29,7 +29,7 @@ class ObservedCard:
 
 @dataclass(frozen=True)
 class ObservedReference:
-    """Compact typed reference used for selected/highlighted objects."""
+    """Compact typed reference used for selected objects."""
 
     zone: str
     card_key: str | None = None
@@ -103,14 +103,6 @@ class ObservedShopItem:
 
 
 @dataclass(frozen=True)
-class ObservedShopDiscount:
-    """Compact canonical shop discount entry."""
-
-    kind: str
-    value: int | None = None
-
-
-@dataclass(frozen=True)
 class ObservedPackContents:
     """Canonical opened-pack state with required exact pack identity."""
 
@@ -150,7 +142,6 @@ class GameObservation:
     jokers: tuple[ObservedJoker, ...] = ()
     cards_in_hand: tuple[ObservedCard, ...] = ()
     selected_cards: tuple[ObservedReference, ...] = ()
-    highlighted_card: ObservedReference | None = None
     cards_in_deck: tuple[ObservedCard, ...] = ()
     source: str = "unknown"
     state_id: int | None = None
@@ -166,10 +157,8 @@ class GameObservation:
     consumable_slots: int | None = None
     reroll_cost: int | None = None
     interest: int | None = None
-    inflation: int | None = None
     hand_size: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
-    shop_discounts: tuple[ObservedShopDiscount, ...] = ()
     pack_contents: ObservedPackContents | None = None
     tags: tuple[ObservedTag, ...] = ()
     notes: tuple[str, ...] = ()

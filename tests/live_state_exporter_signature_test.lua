@@ -202,26 +202,6 @@ local function test_shop_item_structure_changes_signature()
   assert_not_equal(first, second, "signature should track canonical shop item structure, not only item keys")
 end
 
-local function test_shop_discounts_change_signature()
-  local first = Signature.make({
-    state = {
-      shop_discounts = {
-        { kind = "discount_percent", value = 25 },
-      },
-    },
-  })
-
-  local second = Signature.make({
-    state = {
-      shop_discounts = {
-        { kind = "shop_free" },
-      },
-    },
-  })
-
-  assert_not_equal(first, second, "signature should track canonical shop discounts")
-end
-
 local function test_card_zones_change_signature()
   local first = Signature.make({
     state = {
@@ -254,6 +234,26 @@ local function test_selection_references_change_signature()
       selected_cards = {
         { zone = "cards_in_hand", card_key = "h_8" },
       },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      selected_cards = {
+        { zone = "jokers", joker_key = "j_blueprint" },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track lightweight selected-card references")
+end
+
+local function test_removed_highlighted_card_does_not_affect_signature()
+  local first = Signature.make({
+    state = {
+      selected_cards = {
+        { zone = "cards_in_hand", card_key = "h_8" },
+      },
       highlighted_card = {
         zone = "jokers",
         joker_key = "j_blueprint",
@@ -273,7 +273,7 @@ local function test_selection_references_change_signature()
     },
   })
 
-  assert_not_equal(first, second, "signature should track lightweight selection and highlight references")
+  assert_equal(first, second, "signature should ignore removed highlighted_card payloads")
 end
 
 local function test_legacy_booster_packs_do_not_affect_signature()
@@ -310,7 +310,7 @@ test_pack_reward_pack_key_changes_signature()
 test_legacy_open_pack_kind_does_not_affect_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
-test_shop_discounts_change_signature()
 test_card_zones_change_signature()
 test_selection_references_change_signature()
+test_removed_highlighted_card_does_not_affect_signature()
 test_legacy_booster_packs_do_not_affect_signature()

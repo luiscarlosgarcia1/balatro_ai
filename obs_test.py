@@ -183,7 +183,6 @@ def format_observation(observation: dict[str, object]) -> str:
         f"  joker_slots: {observation.get('joker_slots') if observation.get('joker_slots') is not None else '-'}",
         f"  reroll_cost: {observation.get('reroll_cost') if observation.get('reroll_cost') is not None else '-'}",
         f"  interest: {observation.get('interest') if observation.get('interest') is not None else '-'}",
-        f"  inflation: {observation.get('inflation') if observation.get('inflation') is not None else '-'}",
         f"  hand_size: {observation.get('hand_size') if observation.get('hand_size') is not None else '-'}",
         f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
     ]
@@ -248,17 +247,6 @@ def format_observation(observation: dict[str, object]) -> str:
                 extras.append(f"cost={item['cost']}")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
             lines.append(f"    - {item.get('name') or item.get('key') or '?'}{extra_text}")
-    shop_discounts = observation.get("shop_discounts") or []
-    if shop_discounts:
-        lines.append("  shop_discounts:")
-        for discount in shop_discounts:
-            if not isinstance(discount, dict):
-                continue
-            kind = discount.get("kind") or "?"
-            if discount.get("value") is not None:
-                lines.append(f"    - {kind}={discount['value']}")
-            else:
-                lines.append(f"    - {kind}")
     pack_contents = observation.get("pack_contents")
     if isinstance(pack_contents, dict):
         lines.append("  pack_contents:")
@@ -365,12 +353,6 @@ def format_observation(observation: dict[str, object]) -> str:
             rendered = format_reference(reference)
             if rendered:
                 lines.append(f"    - {rendered}")
-    highlighted_card = observation.get("highlighted_card")
-    if isinstance(highlighted_card, dict):
-        rendered = format_reference(highlighted_card)
-        if rendered:
-            lines.append("  highlighted_card:")
-            lines.append(f"    - {rendered}")
     notes = observation.get("notes") or []
     if notes:
         lines.append("  notes:")

@@ -11,7 +11,6 @@ from ..models import (
     ObservedJoker,
     ObservedPackContents,
     ObservedReference,
-    ObservedShopDiscount,
     ObservedShopItem,
     ObservedTag,
     ObservedVoucher,
@@ -38,7 +37,6 @@ class LiveObservationParser:
 
         cards_in_hand = self._parse_cards(state.get("cards_in_hand"))
         selected_cards = self._parse_references(state.get("selected_cards"))
-        highlighted_card = self._parse_reference(state.get("highlighted_card"))
         cards_in_deck = self._parse_cards(state.get("cards_in_deck"))
         notes = state.get("notes")
         if not isinstance(notes, list):
@@ -59,7 +57,6 @@ class LiveObservationParser:
             shop_vouchers=shop_vouchers,
             interaction_phase=interaction_phase,
         )
-        shop_discounts = self._parse_live_shop_discounts(state.get("shop_discounts"))
         pack_contents = self._parse_live_pack_contents(state.get("pack_contents"))
         tags = self._parse_live_tags(state.get("tags"))
         jokers = self._parse_live_jokers(state.get("jokers"))
@@ -84,7 +81,6 @@ class LiveObservationParser:
             jokers=tuple(jokers),
             cards_in_hand=tuple(cards_in_hand),
             selected_cards=tuple(selected_cards),
-            highlighted_card=highlighted_card,
             cards_in_deck=tuple(cards_in_deck),
             source=str(state.get("source", "live_export")),
             state_id=self._int_or_none(state.get("state_id")),
@@ -100,10 +96,8 @@ class LiveObservationParser:
             consumable_slots=self._int_or_none(state.get("consumable_slots")),
             reroll_cost=self._int_or_none(state.get("reroll_cost")),
             interest=self._int_or_none(state.get("interest")),
-            inflation=self._int_or_none(state.get("inflation")),
             hand_size=self._int_or_none(state.get("hand_size")),
             shop_items=tuple(shop_items),
-            shop_discounts=tuple(shop_discounts),
             pack_contents=pack_contents,
             tags=tuple(tags),
             notes=tuple(str(value) for value in notes if value is not None),
@@ -326,25 +320,6 @@ class LiveObservationParser:
             )
             seen.add(dedupe_key)
         return merged
-
-    def _parse_live_shop_discounts(self, payload: object) -> list[ObservedShopDiscount]:
-        shop_discounts: list[ObservedShopDiscount] = []
-        if not isinstance(payload, list):
-            return shop_discounts
-
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            kind = self._string_or_none(item.get("kind"))
-            if not kind:
-                continue
-            shop_discounts.append(
-                ObservedShopDiscount(
-                    kind=kind,
-                    value=self._int_or_none(item.get("value")),
-                )
-            )
-        return shop_discounts
 
     def _parse_live_pack_contents(self, payload: object) -> ObservedPackContents | None:
         if not isinstance(payload, dict):

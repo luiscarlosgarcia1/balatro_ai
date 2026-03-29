@@ -12,7 +12,6 @@ from ..models import (
     ObservedJoker,
     ObservedPackContents,
     ObservedReference,
-    ObservedShopDiscount,
     ObservedShopItem,
     ObservedTag,
     ObservedVoucher,
@@ -39,15 +38,12 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "vouchers",
     "tags",
     "shop_items",
-    "shop_discounts",
     "reroll_cost",
     "interest",
-    "inflation",
     "pack_contents",
     "hand_size",
     "cards_in_hand",
     "selected_cards",
-    "highlighted_card",
     "cards_in_deck",
     "blinds",
     "notes",
@@ -90,10 +86,8 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         for serialized_reference in [_serialize_reference(reference)]
         if serialized_reference is not None
     ]
-    serialized_highlighted_card = _serialize_reference(observation.highlighted_card)
     serialized_cards_in_deck = _serialize_cards(observation.cards_in_deck)
     serialized_blinds = [_serialize_blind(blind) for blind in observation.blinds]
-    serialized_shop_discounts = [_serialize_shop_discount(discount) for discount in observation.shop_discounts]
 
     payload: dict[str, Any] = {
         "source": observation.source,
@@ -118,15 +112,12 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "vouchers": serialized_vouchers,
         "tags": serialized_tags,
         "shop_items": _serialize_shop_items(observation),
-        "shop_discounts": serialized_shop_discounts,
         "reroll_cost": observation.reroll_cost,
         "interest": observation.interest,
-        "inflation": observation.inflation,
         "pack_contents": _serialize_pack_contents(observation.pack_contents),
         "hand_size": observation.hand_size,
         "cards_in_hand": serialized_cards_in_hand,
         "selected_cards": serialized_selected_cards,
-        "highlighted_card": serialized_highlighted_card,
         "cards_in_deck": serialized_cards_in_deck,
         "blinds": serialized_blinds,
         "notes": _serialize_notes(observation.notes, observation.seen_at),
@@ -305,15 +296,6 @@ def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
             payload["pack_key"] = _normalize_machine_value(item.pack_key)
         if item.pack_kind is not None:
             payload["pack_kind"] = _normalize_machine_value(item.pack_kind)
-    return payload
-
-
-def _serialize_shop_discount(discount: ObservedShopDiscount) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(discount.kind),
-    }
-    if discount.value is not None:
-        payload["value"] = discount.value
     return payload
 
 

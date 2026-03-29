@@ -37,7 +37,6 @@ class SaveObservationParser:
         round_count = self._extract_int(game_block, "round")
         stake_id = self._extract_int(game_block, "stake")
         interest = self._extract_int(game_block, "interest_amount")
-        inflation = self._extract_int(game_block, "inflation")
         cards_in_hand = self._extract_area_card_count(card_areas_block, "hand")
         seed = self._extract_string(pseudorandom_block, "seed")
         blind_in_progress = self._extract_top_level_bool(blind_block, "in_blind")
@@ -73,7 +72,6 @@ class SaveObservationParser:
             jokers=(),
             cards_in_hand=hand_cards,
             selected_cards=(),
-            highlighted_card=None,
             cards_in_deck=deck_cards,
             source="save_file",
             state_id=state_id,
@@ -87,9 +85,7 @@ class SaveObservationParser:
             consumable_slots=None,
             reroll_cost=None,
             interest=interest,
-            inflation=inflation,
             hand_size=None,
-            shop_discounts=(),
             tags=(),
             notes=tuple(notes),
             seen_at=snapshot.modified_at,

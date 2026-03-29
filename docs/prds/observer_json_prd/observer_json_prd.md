@@ -37,18 +37,15 @@ The agreed top-level order is:
 20. `skip_tags`
 21. `tags`
 22. `shop_items`
-23. `shop_discounts`
-24. `reroll_cost`
-25. `interest`
-26. `inflation`
-27. `pack_contents`
-28. `hand_size`
-29. `cards_in_hand`
-30. `selected_cards`
-31. `highlighted_card`
-32. `cards_in_deck`
-33. `blinds`
-34. `notes`
+23. `reroll_cost`
+24. `interest`
+25. `pack_contents`
+26. `hand_size`
+27. `cards_in_hand`
+28. `selected_cards`
+29. `cards_in_deck`
+30. `blinds`
+31. `notes`
 
 This matters because the AI will eventually consume the observer directly. If the observer stays half-human, half-machine, then policy logic, evaluation, and future automation will all be built on an unstable surface.
 
@@ -64,7 +61,7 @@ The observer should:
 - represent lists as arrays of structured objects rather than flattened strings
 - keep card, joker, consumable, voucher, tag, blind, and pack objects compact but gameplay-complete
 - include structural card information such as `card_key`, `card_kind`, `suit`, `rank`, `rarity`, `enhancement`, `edition`, `seal`, `stickers`, `facing`, `cost`, `sell_price`, and `debuffed` when relevant
-- expose selected and highlighted state as lightweight references when that is more efficient than repeating full objects
+- expose selected state as lightweight references when that is more efficient than repeating full objects
 - avoid duplicating shop vouchers inside `shop_items`
 - preserve visible UI order for `shop_items` so the AI sees the market in the same order the player does
 - represent opened packs through a dedicated `pack_contents` object placed after `shop_items`
@@ -74,7 +71,7 @@ The canonical JSON contract should prefer predictable top-level presence over ag
 
 - every approved top-level key should be present in the canonical output
 - top-level collection fields should use empty arrays when they have no entries
-- top-level optional object fields should use `null` when they are not active, such as `pack_contents` or `highlighted_card`
+- top-level optional object fields should use `null` when they are not active, such as `pack_contents`
 - nested object fields should usually be omitted when they are irrelevant to that specific object, unless keeping them present materially simplifies machine consumption
 
 The canonical JSON output is the contract. Any human-readable console rendering is a secondary view derived from that contract.
@@ -88,7 +85,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 5. As the Balatro agent developer, I want `interaction_phase` preserved separately from the main state id, so that the agent can tell shop, blind select, and pack interaction apart.
 6. As the Balatro agent developer, I want `blind_key`, `deck_key`, and `stake_id` represented as raw ids, so that the agent can look up meaning elsewhere instead of relying on display text.
 7. As the Balatro agent developer, I want score represented as a machine-readable structure, so that the AI can compare current and target score without string parsing.
-8. As the Balatro agent developer, I want core scalar run state like money, hands, discards, ante, round count, reroll cost, interest, and inflation exposed directly, so that the AI can evaluate economy and tempo.
+8. As the Balatro agent developer, I want core scalar run state like money, hands, discards, ante, round count, reroll cost, and interest exposed directly, so that the AI can evaluate economy and tempo.
 9. As the Balatro agent developer, I want `joker_slots`, `joker_count`, `consumable_slots`, and `hand_size` exposed explicitly, so that the AI knows both current occupancy and capacity.
 10. As the Balatro agent developer, I want `jokers` emitted as structured objects, so that the AI can inspect edition, rarity, sell price, stickers, and debuff state without pulling effect summaries from the observer.
 11. As the Balatro agent developer, I want `consumables` emitted as structured inventory objects, so that the AI can evaluate current inventory without screenshots.
@@ -98,11 +95,11 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 15. As the Balatro agent developer, I want `tags` to show active tags ordered most-recent-first, so that the AI can understand the run’s current tag stack.
 16. As the Balatro agent developer, I want `shop_items` to be the canonical market list for buyable items other than vouchers, so that the AI can reason over one primary shop list without duplication.
 17. As the Balatro agent developer, I want `shop_items` entries to include structural details like cost, edition, enhancement, seal, consumable kind, stickers, and sell price when relevant, so that the AI can distinguish modified offers.
-18. As the Balatro agent developer, I want `shop_discounts` represented explicitly, so that price reasoning does not rely on inferring discounts indirectly.
+18. As the Balatro agent developer, I want `shop_items` to expose effective current prices directly, so that price reasoning does not rely on a separate discount payload.
 19. As the Balatro agent developer, I want opened pack state represented through `pack_contents`, so that pack decisions are modeled separately from the normal shop market.
 20. As the Balatro agent developer, I want `pack_contents` to include metadata like pack key, kind, pack size, choose limit, choices remaining, and skip availability, so that the AI understands the pack interaction constraints.
 21. As the Balatro agent developer, I want `cards_in_hand` represented as structured card objects, so that the AI can evaluate play and discard decisions from game state alone.
-22. As the Balatro agent developer, I want `selected_cards` and `highlighted_card` represented explicitly, so that the AI can reason about partial selections and hover state without screen inspection.
+22. As the Balatro agent developer, I want `selected_cards` represented explicitly, so that the AI can reason about partial selections without screen inspection.
 23. As the Balatro agent developer, I want `cards_in_deck` represented as structured card objects sorted by suit and rank, so that the AI sees a stable inventory-style view of the deck rather than arbitrary area order.
 24. As the Balatro agent developer, I want `cards_in_hand` represented in the same stable suit-and-rank ordering, so that the AI sees a deterministic inventory-style hand view instead of arbitrary area order.
 25. As the Balatro agent developer, I want every card object to expose suit and rank directly, so that the AI does not need to infer them from a code string.
@@ -125,9 +122,8 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 - `shop_vouchers` should always be represented as an array, even when there is only one current shop voucher.
 - `shop_items` remains the canonical market list for other buyable items such as jokers, consumables, and booster packs, and it should preserve visible UI order.
 - `pack_contents` should be a dedicated object placed after `shop_items` and contain both metadata and the visible pack cards.
-- `selected_cards` and `highlighted_card` should use lightweight references where that is more efficient than repeating the full card payload. The preferred shape is a compact object such as `{zone, card_key}` or `{zone, joker_key}` rather than a full repeated object.
+- `selected_cards` should use lightweight references where that is more efficient than repeating the full card payload. The preferred shape is a compact object such as `{zone, card_key}` or `{zone, joker_key}` rather than a full repeated object.
 - `selected_cards` should be an array and use `[]` when nothing is selected.
-- `highlighted_card` should use a single lightweight reference object when something is highlighted and `null` when nothing is highlighted.
 - `cards_in_hand` and `cards_in_deck` should both be rendered in stable suit-and-rank order for deterministic AI consumption.
 - The exact suit order should be `clubs`, `diamonds`, `hearts`, `spades`.
 - The exact rank order should be `ace`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10`, `jack`, `queen`, `king`.
@@ -142,7 +138,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
   - a JSON serializer that enforces field order and omission rules
   - a Lua exporter layer that gathers raw state into schema-shaped payloads
   - a card normalization module for cards, jokers, and consumables
-  - a selection and modal-state module for pack contents, selected cards, and highlighted card
+  - a selection and modal-state module for pack contents and selected cards
 
 ## Testing Decisions
 
@@ -158,7 +154,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
   - preservation of visible UI order in `shop_items`
   - presence and shape of `pack_contents`
   - suit/rank ordering for `cards_in_hand` and `cards_in_deck`
-  - lightweight reference behavior for `selected_cards` and `highlighted_card`, including compact `{zone, *_key}` shapes and `null` behavior for missing highlight
+  - lightweight reference behavior for `selected_cards`, including compact `{zone, *_key}` shapes
   - note structure including `screenshot_status` and `seen_at` entries when emitted
 - The Lua exporter and Python observer should both be covered end to end where possible.
 - Prior art in the codebase is the live observer contract suite and the live exporter signature regression tests.

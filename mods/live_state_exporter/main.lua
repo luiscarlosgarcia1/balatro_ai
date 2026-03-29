@@ -1173,47 +1173,6 @@ local function collect_selected_cards(root)
   return result
 end
 
-local function collect_highlighted_card(root)
-  local areas = {
-    { area = root and rawget(root, "hand"), zone = "cards_in_hand" },
-    { area = root and rawget(root, "jokers"), zone = "jokers" },
-    { area = root and first_non_nil(root and rawget(root, "consumeables"), root and rawget(root, "consumables")), zone = "consumables" },
-    { area = root and rawget(root, "shop_jokers"), zone = "shop_items" },
-    { area = root and rawget(root, "shop_booster"), zone = "shop_items" },
-    { area = root and rawget(root, "shop_vouchers"), zone = "shop_items" },
-    { area = root and rawget(root, "pack_cards"), zone = "pack_contents" },
-    { area = root and rawget(root, "deck"), zone = "cards_in_deck" },
-  }
-
-  for _, entry in ipairs(areas) do
-    for _, card in ipairs(card_list_from_area(entry.area)) do
-      local hover_state = safe_table(card.states) and safe_table(card.states.hover)
-      if card.hovering or (hover_state and hover_state.is) then
-        return build_typed_reference(card, entry.zone)
-      end
-    end
-  end
-
-  return nil
-end
-
-local function collect_shop_discounts(game)
-  local discounts = {}
-  local discount_percent = safe_number(game.discount_percent)
-  if discount_percent and discount_percent ~= 0 then
-    discounts[#discounts + 1] = {
-      kind = "discount_percent",
-      value = discount_percent,
-    }
-  end
-  if game.shop_free then
-    discounts[#discounts + 1] = {
-      kind = "shop_free",
-    }
-  end
-  return discounts
-end
-
 local function collect_pack_cards(root, game)
   return collect_cards_from_sources(
     {
@@ -1328,8 +1287,6 @@ local function snapshot_game()
   local blinds = collect_blinds(game)
   local tags = collect_tags(game, root)
   local selected_cards = collect_selected_cards(root)
-  local highlighted_card = collect_highlighted_card(root)
-  local shop_discounts = collect_shop_discounts(game)
   local consumable_slots = safe_number(first_non_nil(
     safe_table(consumeables_area) and safe_table(consumeables_area.config) and consumeables_area.config.card_limit,
     safe_table(consumeables_area) and safe_table(consumeables_area.config) and consumeables_area.config.temp_limit,
@@ -1366,8 +1323,6 @@ local function snapshot_game()
       consumable_slots = consumable_slots,
       hand_size = hand_size,
       interest = safe_number(game.interest_amount),
-      inflation = safe_number(game.inflation),
-      shop_discounts = shop_discounts,
       reroll_cost = safe_number(current_round.reroll_cost),
       blind_key = BlindKey.derive(interaction_phase, blinds),
       blinds = blinds,
@@ -1383,7 +1338,6 @@ local function snapshot_game()
       consumables = consumables,
       shop_items = shop_items,
       selected_cards = selected_cards,
-      highlighted_card = highlighted_card,
       pack_contents = pack_contents,
       tags = tags,
       notes = {
