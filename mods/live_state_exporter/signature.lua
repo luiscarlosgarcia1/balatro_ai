@@ -75,9 +75,6 @@ function Signature.make(snapshot)
     string_part(state.joker_slots),
     string_part(state.consumable_slots),
     string_part(state.hand_size),
-    string_part(pack_contents.pack_key),
-    string_part(pack_contents.pack_size),
-    string_part(pack_contents.choose_limit),
     string_part(pack_contents.choices_remaining),
     string_part(pack_contents.skip_available),
   }

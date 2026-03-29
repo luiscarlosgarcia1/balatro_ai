@@ -113,11 +113,8 @@ class ObservedInterest:
 
 @dataclass(frozen=True)
 class ObservedPackContents:
-    """Canonical opened-pack state with required exact pack identity."""
+    """Canonical opened-pack state for finishing an active pack interaction."""
 
-    pack_key: str
-    pack_size: int | None = None
-    choose_limit: int | None = None
     choices_remaining: int | None = None
     skip_available: bool = False
     cards: tuple[ObservedCard, ...] = ()

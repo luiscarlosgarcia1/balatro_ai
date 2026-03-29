@@ -264,12 +264,6 @@ def format_observation(observation: dict[str, object]) -> str:
     if isinstance(pack_contents, dict):
         lines.append("  pack_contents:")
         extras = []
-        if pack_contents.get("pack_key"):
-            extras.append(f"pack_key={pack_contents['pack_key']}")
-        if pack_contents.get("pack_size") is not None:
-            extras.append(f"pack_size={pack_contents['pack_size']}")
-        if pack_contents.get("choose_limit") is not None:
-            extras.append(f"choose_limit={pack_contents['choose_limit']}")
         if pack_contents.get("choices_remaining") is not None:
             extras.append(f"choices_remaining={pack_contents['choices_remaining']}")
         if "skip_available" in pack_contents:

@@ -341,14 +341,7 @@ class LiveObservationParser:
         if not isinstance(payload, dict):
             return None
 
-        pack_key = self._string_or_none(payload.get("pack_key"))
-        if not pack_key:
-            return None
-
         return ObservedPackContents(
-            pack_key=pack_key,
-            pack_size=self._int_or_none(payload.get("pack_size")),
-            choose_limit=self._int_or_none(payload.get("choose_limit")),
             choices_remaining=self._int_or_none(payload.get("choices_remaining")),
             skip_available=bool(payload.get("skip_available", False)),
             cards=tuple(self._parse_cards(payload.get("cards"))),

@@ -94,7 +94,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 17. As the Balatro agent developer, I want `shop_items` entries to include structural details like cost, edition, enhancement, seal, consumable kind, stickers, and sell price when relevant, so that the AI can distinguish modified offers.
 18. As the Balatro agent developer, I want `shop_items` to expose effective current prices directly, so that price reasoning does not rely on a separate discount payload.
 19. As the Balatro agent developer, I want opened pack state represented through `pack_contents`, so that pack decisions are modeled separately from the normal shop market.
-20. As the Balatro agent developer, I want `pack_contents` to include metadata like pack key, kind, pack size, choose limit, choices remaining, and skip availability, so that the AI understands the pack interaction constraints.
+20. As the Balatro agent developer, I want `pack_contents` to include actionable pack state like choices remaining, skip availability, and visible cards, so that the AI can finish the pack interaction without relying on inferred provenance.
 21. As the Balatro agent developer, I want `cards_in_hand` represented as structured card objects, so that the AI can evaluate play and discard decisions from game state alone.
 22. As the Balatro agent developer, I want `selected_cards` represented explicitly, so that the AI can reason about partial selections without screen inspection.
 23. As the Balatro agent developer, I want `cards_in_deck` represented as structured card objects sorted by suit and rank, so that the AI sees a stable inventory-style view of the deck rather than arbitrary area order.
@@ -119,7 +119,8 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 - `shop_vouchers` should always be represented as an array, even when there is only one current shop voucher.
 - `shop_items` remains the canonical market list for other buyable items such as jokers, consumables, and booster packs, and it should preserve visible UI order.
 - `interest` should be represented as a raw-state object with `amount`, `cap`, and `no_interest` rather than a derived payout scalar.
-- `pack_contents` should be a dedicated object placed after `shop_items` and contain both metadata and the visible pack cards.
+- `pack_contents` should be a dedicated object placed after `shop_items` and contain actionable pack state plus the visible pack cards.
+- When `interaction_phase` is `pack_reward`, `pack_contents` should remain present even if some metadata is unavailable; only inactive pack screens should use top-level `null`.
 - `selected_cards` should use lightweight references where that is more efficient than repeating the full card payload. The preferred shape is a compact object such as `{zone, card_key}` or `{zone, joker_key}` rather than a full repeated object.
 - `selected_cards` should be an array and use `[]` when nothing is selected.
 - `cards_in_hand` and `cards_in_deck` should both be rendered in stable suit-and-rank order for deterministic AI consumption.

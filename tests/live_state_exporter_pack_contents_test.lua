@@ -6,13 +6,7 @@ local function assert_equal(left, right, message)
   end
 end
 
-local function assert_nil(value, message)
-  if value ~= nil then
-    error(message or ("expected nil, got " .. tostring(value)), 2)
-  end
-end
-
-local function test_build_prefers_active_pack_cards_over_stale_shop_pack_identity()
+local function test_build_keeps_active_pack_contents_without_reconstructing_identity()
   local pack_contents = PackContents.build({
     interaction_phase = "pack_reward",
     cards = {
@@ -25,18 +19,14 @@ local function test_build_prefers_active_pack_cards_over_stale_shop_pack_identit
     choose_limit = 1,
     selected_count = 0,
     skip_available = true,
-    shop_items = {
-      { key = "p_buffoon_normal_1" },
-    },
-    remembered_pack_key = "p_buffoon_normal_1",
-    pack_size = 2,
   })
 
-  assert_equal(pack_contents.pack_key, "p_standard_jumbo_1", "active pack cards should override stale shop family")
-  assert_equal(pack_contents.pack_size, 5, "pack_size should reflect visible pack cards")
+  assert_equal(pack_contents.choices_remaining, 1, "choices_remaining should start at choose_limit")
+  assert_equal(pack_contents.skip_available, true, "pack reward should preserve skip availability")
+  assert_equal(#pack_contents.cards, 5, "visible pack cards should stay attached to pack_contents")
 end
 
-local function test_build_derives_arcana_pack_from_tarot_cards()
+local function test_build_reduces_choices_remaining_by_selected_count()
   local pack_contents = PackContents.build({
     interaction_phase = "pack_reward",
     cards = {
@@ -44,21 +34,15 @@ local function test_build_derives_arcana_pack_from_tarot_cards()
       { card_key = "c_magician" },
       { card_key = "c_world" },
     },
-    choose_limit = 1,
-    selected_count = 0,
+    choose_limit = 2,
+    selected_count = 1,
     skip_available = true,
-    shop_items = {
-      { key = "p_buffoon_normal_2" },
-    },
-    remembered_pack_key = "p_buffoon_normal_2",
-    pack_size = 99,
   })
 
-  assert_equal(pack_contents.pack_key, "p_arcana_normal_2", "tarot cards should resolve to arcana pack family")
-  assert_equal(pack_contents.pack_size, 3, "pack_size should use card count for normal packs")
+  assert_equal(pack_contents.choices_remaining, 1, "choices_remaining should reflect already selected cards")
 end
 
-local function test_build_returns_nil_when_pack_identity_cannot_be_resolved()
+local function test_build_keeps_partial_pack_contents_when_metadata_is_missing()
   local pack_contents = PackContents.build({
     interaction_phase = "pack_reward",
     cards = {
@@ -67,25 +51,13 @@ local function test_build_returns_nil_when_pack_identity_cannot_be_resolved()
     },
     choose_limit = 1,
     selected_count = 0,
-    skip_available = true,
-    shop_items = {},
-    remembered_pack_key = nil,
-    pack_size = 2,
+    skip_available = false,
   })
 
-  assert_nil(pack_contents, "unidentifiable active packs should not emit a fake pack key")
+  assert_equal(pack_contents.choices_remaining, 1, "pack_contents should remain present during active pack reward")
+  assert_equal(pack_contents.skip_available, false, "partial pack_contents should preserve boolean flags")
 end
 
-local function test_remembered_key_tracks_single_visible_pack_offer_in_shop()
-  local remembered = PackContents.remembered_key("shop", {
-    { key = "j_greedy_joker" },
-    { key = "p_standard_jumbo_1" },
-  }, nil)
-
-  assert_equal(remembered, "p_standard_jumbo_1", "shop phase should remember a single visible pack offer")
-end
-
-test_build_prefers_active_pack_cards_over_stale_shop_pack_identity()
-test_build_derives_arcana_pack_from_tarot_cards()
-test_build_returns_nil_when_pack_identity_cannot_be_resolved()
-test_remembered_key_tracks_single_visible_pack_offer_in_shop()
+test_build_keeps_active_pack_contents_without_reconstructing_identity()
+test_build_reduces_choices_remaining_by_selected_count()
+test_build_keeps_partial_pack_contents_when_metadata_is_missing()

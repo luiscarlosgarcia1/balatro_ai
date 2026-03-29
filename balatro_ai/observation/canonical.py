@@ -316,9 +316,6 @@ def _serialize_pack_contents(pack_contents: ObservedPackContents | None) -> dict
         return None
 
     return {
-        "pack_key": _normalize_machine_value(pack_contents.pack_key),
-        "pack_size": pack_contents.pack_size,
-        "choose_limit": pack_contents.choose_limit,
         "choices_remaining": pack_contents.choices_remaining,
         "skip_available": pack_contents.skip_available,
         "cards": [_serialize_card(card) for card in pack_contents.cards],

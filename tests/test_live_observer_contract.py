@@ -550,9 +550,6 @@ class LiveObserverContractTests(unittest.TestCase):
                     "source": "live_state_exporter",
                     "interaction_phase": "pack_reward",
                     "pack_contents": {
-                        "pack_key": "p_arcana_normal_1",
-                        "pack_size": 5,
-                        "choose_limit": 1,
                         "choices_remaining": 1,
                         "skip_available": True,
                         "cards": [
@@ -581,9 +578,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             pack_reward["pack_contents"],
             {
-                "pack_key": "p_arcana_normal_1",
-                "pack_size": 5,
-                "choose_limit": 1,
                 "choices_remaining": 1,
                 "skip_available": True,
                 "cards": [
@@ -600,14 +594,12 @@ class LiveObserverContractTests(unittest.TestCase):
             [{"zone": "pack_contents", "card_key": "c_fool"}],
         )
 
-    def test_observe_rejects_active_pack_contents_without_exact_pack_key(self) -> None:
+    def test_observe_keeps_active_pack_contents_without_identity_metadata(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
                 "interaction_phase": "pack_reward",
                 "pack_contents": {
-                    "pack_size": 5,
-                    "choose_limit": 1,
                     "choices_remaining": 1,
                     "skip_available": True,
                     "cards": [
@@ -626,7 +618,18 @@ class LiveObserverContractTests(unittest.TestCase):
 
         observation = self.observe_live_payload(live_payload)
 
-        self.assertIsNone(observation["pack_contents"])
+        self.assertEqual(
+            observation["pack_contents"],
+            {
+                "choices_remaining": 1,
+                "skip_available": True,
+                "cards": [
+                    {
+                        "card_key": "c_fool",
+                    }
+                ],
+            },
+        )
 
     def test_observe_preserves_phase_specific_blind_key_from_live_payload(self) -> None:
         blind_select = self.observe_live_payload(
@@ -1002,9 +1005,6 @@ class LiveObserverContractTests(unittest.TestCase):
             "reroll_cost": 5,
             "interest": {"amount": 3, "cap": 25, "no_interest": False},
             "pack_contents": {
-                "pack_key": "p_arcana_normal_1",
-                "pack_size": 5,
-                "choose_limit": 1,
                 "choices_remaining": 1,
                 "skip_available": True,
                 "cards": [
@@ -1026,9 +1026,6 @@ class LiveObserverContractTests(unittest.TestCase):
         formatted = format_observation(observation)
 
         self.assertIn("pack_contents:", formatted)
-        self.assertIn("pack_key=p_arcana_normal_1", formatted)
-        self.assertIn("pack_size=5", formatted)
-        self.assertIn("choose_limit=1", formatted)
         self.assertIn("choices_remaining=1", formatted)
         self.assertIn("skip_available=true", formatted)
         self.assertIn("c_fool", formatted)

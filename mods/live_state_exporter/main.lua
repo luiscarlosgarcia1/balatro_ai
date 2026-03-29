@@ -19,8 +19,6 @@ local EXPORT_MAX_DECK_CARDS = 80
 local EXPORT_MAX_PACK_CARDS = 16
 local EXPORT_MAX_STRING = 80
 local unpack_fn = table.unpack or unpack
-local remembered_shop_pack_key = nil
-
 local function load_module(filename)
   local mod = rawget(_G, "SMODS") and SMODS.current_mod
   local mod_path = mod and mod.path
@@ -1187,7 +1185,7 @@ local function collect_pack_cards(root, game)
   )
 end
 
-local function collect_pack_contents(root, game, interaction_phase, shop_items)
+local function collect_pack_contents(root, game, interaction_phase)
   local cards = to_public_cards(collect_pack_cards(root, game))
 
   local selected_count = 0
@@ -1196,16 +1194,12 @@ local function collect_pack_contents(root, game, interaction_phase, shop_items)
     selected_count = #pack_cards.highlighted
   end
 
-  remembered_shop_pack_key = PackContents.remembered_key(interaction_phase, shop_items, remembered_shop_pack_key)
   return PackContents.build({
     interaction_phase = interaction_phase,
     cards = cards,
     choose_limit = safe_number(game.pack_choices),
     selected_count = selected_count,
     skip_available = pack_cards ~= nil,
-    shop_items = shop_items,
-    remembered_pack_key = remembered_shop_pack_key,
-    pack_size = safe_number(game.pack_size),
   })
 end
 
@@ -1262,7 +1256,6 @@ local function snapshot_game()
   local root = rawget(_G, "G")
   local game = root and root.GAME
   if type(game) ~= "table" then
-    remembered_shop_pack_key = nil
     return nil
   end
 
@@ -1303,7 +1296,7 @@ local function snapshot_game()
     hand_area and safe_table(hand_area.config) and hand_area.config.temp_limit,
     safe_table(game.starting_params) and game.starting_params.hand_size
   ))
-  local pack_contents = collect_pack_contents(root, game, interaction_phase, shop_items)
+  local pack_contents = collect_pack_contents(root, game, interaction_phase)
 
   return {
     meta = {

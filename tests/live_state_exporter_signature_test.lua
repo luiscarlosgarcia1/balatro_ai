@@ -110,12 +110,12 @@ local function test_score_shape_changes_signature()
   assert_not_equal(first, second, "signature should track canonical score fields")
 end
 
-local function test_pack_reward_pack_key_changes_signature()
+local function test_pack_reward_choices_remaining_changes_signature()
   local first = Signature.make({
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_normal_1",
+        choices_remaining = 1,
         cards = {
           { card_key = "c_fool" },
         },
@@ -127,7 +127,7 @@ local function test_pack_reward_pack_key_changes_signature()
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_mega_2",
+        choices_remaining = 2,
         cards = {
           { card_key = "c_fool" },
         },
@@ -135,7 +135,7 @@ local function test_pack_reward_pack_key_changes_signature()
     },
   })
 
-  assert_not_equal(first, second, "signature should track exact pack identity through pack_contents")
+  assert_not_equal(first, second, "signature should track actionable pack choice state")
 end
 
 local function test_legacy_open_pack_kind_does_not_affect_signature()
@@ -143,7 +143,6 @@ local function test_legacy_open_pack_kind_does_not_affect_signature()
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_normal_1",
         open_pack_kind = "tarot",
       },
     },
@@ -153,7 +152,6 @@ local function test_legacy_open_pack_kind_does_not_affect_signature()
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_normal_1",
         open_pack_kind = "planet",
       },
     },
@@ -330,7 +328,7 @@ test_missing_scalar_fields_still_produce_signature()
 test_missing_item_keys_do_not_crash()
 test_distinct_real_values_change_signature()
 test_score_shape_changes_signature()
-test_pack_reward_pack_key_changes_signature()
+test_pack_reward_choices_remaining_changes_signature()
 test_legacy_open_pack_kind_does_not_affect_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
