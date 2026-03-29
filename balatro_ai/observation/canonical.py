@@ -34,11 +34,9 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "ante",
     "round_count",
     "joker_slots",
-    "joker_count",
     "jokers",
     "consumable_slots",
     "consumables",
-    "shop_vouchers",
     "vouchers",
     "skip_tags",
     "tags",
@@ -85,7 +83,6 @@ _RANK_ORDER = {
 def serialize_observation(observation: GameObservation) -> dict[str, Any]:
     serialized_jokers = [_serialize_joker(joker) for joker in observation.jokers]
     serialized_consumables = [_serialize_consumable(consumable) for consumable in observation.consumables]
-    serialized_shop_vouchers = [_serialize_voucher(voucher) for voucher in observation.shop_vouchers]
     serialized_vouchers = [_serialize_voucher(voucher) for voucher in observation.vouchers]
     serialized_tags = [_serialize_tag(tag) for tag in observation.tags]
     serialized_skip_tags = [_serialize_skip_tag(skip_tag) for skip_tag in observation.skip_tags]
@@ -118,11 +115,9 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "ante": observation.ante,
         "round_count": observation.round_count,
         "joker_slots": observation.joker_slots,
-        "joker_count": observation.joker_count if observation.joker_count is not None else len(serialized_jokers),
         "jokers": serialized_jokers,
         "consumable_slots": observation.consumable_slots,
         "consumables": serialized_consumables,
-        "shop_vouchers": serialized_shop_vouchers,
         "vouchers": serialized_vouchers,
         "skip_tags": serialized_skip_tags,
         "tags": serialized_tags,

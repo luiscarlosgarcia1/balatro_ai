@@ -57,11 +57,17 @@ class LiveObservationParser:
         if not isinstance(score_payload, dict):
             score_payload = {}
 
+        interaction_phase = self._string_or_none(state.get("interaction_phase")) or "unknown"
         blinds = self._parse_live_blinds(state.get("blinds"))
         vouchers = self._parse_live_vouchers(state.get("vouchers"))
         shop_vouchers = self._parse_live_vouchers(state.get("shop_vouchers"))
         consumables = self._parse_live_consumables(state.get("consumables"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
+        shop_items = self._merge_shop_vouchers_into_shop_items(
+            shop_items=shop_items,
+            shop_vouchers=shop_vouchers,
+            interaction_phase=interaction_phase,
+        )
         shop_discounts = self._parse_live_shop_discounts(state.get("shop_discounts"))
         pack_contents = self._parse_live_pack_contents(state.get("pack_contents"))
         tags = self._parse_live_tags(state.get("tags"))
@@ -79,7 +85,7 @@ class LiveObservationParser:
             seen_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
 
         return GameObservation(
-            interaction_phase=self._string_or_none(state.get("interaction_phase")) or "unknown",
+            interaction_phase=interaction_phase,
             money=self._int_or_zero(state.get("money")),
             hands_left=self._int_or_zero(state.get("hands_left")),
             discards_left=self._int_or_zero(state.get("discards_left")),
@@ -99,8 +105,6 @@ class LiveObservationParser:
             round_count=self._int_or_none(state.get("round_count", state.get("round_number"))),
             blinds=tuple(blinds),
             joker_slots=self._int_or_none(state.get("joker_slots")),
-            joker_count=self._int_or_none(state.get("joker_count")),
-            shop_vouchers=tuple(shop_vouchers),
             vouchers=tuple(vouchers),
             consumables=tuple(consumables),
             consumable_slots=self._int_or_none(state.get("consumable_slots")),
@@ -327,6 +331,36 @@ class LiveObservationParser:
                 )
             )
         return shop_items
+
+    def _merge_shop_vouchers_into_shop_items(
+        self,
+        *,
+        shop_items: list[ObservedShopItem],
+        shop_vouchers: list[ObservedVoucher],
+        interaction_phase: str,
+    ) -> list[ObservedShopItem]:
+        if interaction_phase != "shop" or not shop_vouchers:
+            return shop_items
+
+        merged = list(shop_items)
+        seen = {
+            (item.kind, item.key or item.name)
+            for item in merged
+        }
+        for voucher in shop_vouchers:
+            dedupe_key = ("voucher", voucher.key)
+            if dedupe_key in seen:
+                continue
+            merged.append(
+                ObservedShopItem(
+                    kind="voucher",
+                    name=voucher.key,
+                    key=voucher.key,
+                    cost=voucher.cost,
+                )
+            )
+            seen.add(dedupe_key)
+        return merged
 
     def _parse_live_shop_discounts(self, payload: object) -> list[ObservedShopDiscount]:
         shop_discounts: list[ObservedShopDiscount] = []

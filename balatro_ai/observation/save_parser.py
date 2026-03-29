@@ -39,7 +39,6 @@ class SaveObservationParser:
         interest = self._extract_int(game_block, "interest_amount")
         inflation = self._extract_int(game_block, "inflation")
         cards_in_hand = self._extract_area_card_count(card_areas_block, "hand")
-        joker_count = self._extract_area_card_count(card_areas_block, "jokers")
         seed = self._extract_string(pseudorandom_block, "seed")
         blind_in_progress = self._extract_top_level_bool(blind_block, "in_blind")
         if blind_in_progress is None:
@@ -63,8 +62,6 @@ class SaveObservationParser:
             notes.append(f"seed={seed}")
         if cards_in_hand is not None:
             notes.append(f"cards_in_hand={cards_in_hand}")
-        if joker_count is not None:
-            notes.append(f"jokers_count={joker_count}")
 
         return GameObservation(
             interaction_phase=interaction_phase,
@@ -85,7 +82,6 @@ class SaveObservationParser:
             ante=ante,
             round_count=round_count,
             blinds=(),
-            shop_vouchers=(),
             vouchers=(),
             consumables=(),
             consumable_slots=None,
@@ -96,7 +92,6 @@ class SaveObservationParser:
             shop_discounts=(),
             tags=(),
             skip_tags=(),
-            joker_count=joker_count,
             notes=tuple(notes),
             seen_at=snapshot.modified_at,
         )

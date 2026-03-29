@@ -84,7 +84,6 @@ function Signature.make(snapshot)
     string_part(score.current),
     string_part(score.target),
     string_part(state.joker_slots),
-    string_part(state.joker_count),
     string_part(state.consumable_slots),
     string_part(state.hand_size),
     string_part(pack_contents.pack_key),
@@ -139,7 +138,6 @@ function Signature.make(snapshot)
     "voucher_key",
   })
   add_structured_items(parts, state.jokers, { "key", "rarity", "edition", "sell_price", "debuffed" })
-  add_structured_items(parts, state.shop_vouchers, { "key", "cost" })
   add_named_items(parts, state.vouchers, "key")
   add_structured_items(parts, state.consumables, { "key", "kind", "edition", "sell_price", "debuffed" })
   add_structured_items(parts, state.shop_items, {

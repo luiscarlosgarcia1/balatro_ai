@@ -172,8 +172,6 @@ class GameObservation:
     round_count: int | None = None
     blinds: tuple[ObservedBlind, ...] = ()
     joker_slots: int | None = None
-    joker_count: int | None = None
-    shop_vouchers: tuple[ObservedVoucher, ...] = ()
     vouchers: tuple[ObservedVoucher, ...] = ()
     consumables: tuple[ObservedConsumable, ...] = ()
     consumable_slots: int | None = None

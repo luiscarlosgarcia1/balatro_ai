@@ -317,7 +317,7 @@ local function build_typed_reference(card, zone)
     zone = zone,
   }
 
-  if zone == "shop_vouchers" or set_name == "voucher" then
+  if set_name == "voucher" then
     ref.voucher_key = key
     return ref.voucher_key and ref or nil
   end
@@ -440,11 +440,12 @@ local function summarize_joker(card)
   end
 
   local ability = safe_table(card.ability) or {}
+  local save_fields = safe_table(card.save_fields) or {}
   local edition = safe_table(card.edition) or {}
   local center = safe_table(card.config) and safe_table(card.config.center) or {}
   local stickers = collect_stickers(card, ability, {})
 
-  local key = safe_tostring(first_non_nil(ability.key, card.key))
+  local key = safe_tostring(first_non_nil(ability.key, center.key, save_fields.center, card.card_key, card.key))
   if not key then
     return nil
   end
@@ -461,7 +462,7 @@ end
 
 local function summarize_voucher(value, key_hint, cost_hint)
   local voucher = safe_table(value) or {}
-  local key = safe_tostring(first_non_nil(voucher.key, key_hint))
+  local key = safe_tostring(first_non_nil(voucher.key, voucher.center_key, key_hint))
   if not key then
     return nil
   end
@@ -753,9 +754,7 @@ end
 
 local function collect_jokers(area, limit)
   local result = {}
-  local count = 0
   for _, card in ipairs(card_list_from_area(area)) do
-    count = count + 1
     if #result < limit then
       local summary = summarize_joker(card)
       if summary then
@@ -763,7 +762,7 @@ local function collect_jokers(area, limit)
       end
     end
   end
-  return result, count
+  return result
 end
 
 local function collect_consumables_from_area(area, limit)
@@ -921,8 +920,32 @@ local function summarize_shop_item(card, area_kind)
   end
 
   local ability = safe_table(card.ability) or {}
+  local save_fields = safe_table(card.save_fields) or {}
   local edition = safe_table(card.edition) or {}
+  local center = safe_table(card.config) and safe_table(card.config.center) or {}
   local item_cost = safe_number(first_non_nil(card.cost, card.base_cost, ability.cost))
+
+  if area_kind == "voucher" then
+    local voucher = summarize_voucher(
+      {
+        key = safe_tostring(first_non_nil(ability.key, center.key, save_fields.center, card.card_key, card.key)),
+        center_key = safe_tostring(first_non_nil(center.key, save_fields.center)),
+        cost = safe_number(first_non_nil(ability.cost, center.cost, card.base_cost)),
+      },
+      safe_tostring(first_non_nil(card.key, ability.key, center.key, save_fields.center, card.card_key)),
+      item_cost
+    )
+    if not voucher then
+      return nil
+    end
+    local voucher_name = safe_tostring(first_non_nil(card.label, ability.name, card.name, voucher.key))
+    return {
+      kind = "voucher",
+      name = trim_text(voucher_name or voucher.key or "voucher", EXPORT_MAX_STRING),
+      key = voucher.key,
+      cost = voucher.cost,
+    }
+  end
 
   if area_kind == "pack" then
     local pack = summarize_booster_pack(card)
@@ -936,7 +959,7 @@ local function summarize_shop_item(card, area_kind)
         cost = pack.cost,
         edition = safe_tostring(first_non_nil(edition.type, edition.key, edition.name)),
         sell_price = safe_number(card.sell_cost),
-        stickers = collect_stickers(card, ability, safe_table(card.save_fields) or {}),
+        stickers = collect_stickers(card, ability, save_fields),
       }
     end
   end
@@ -955,14 +978,14 @@ local function summarize_shop_item(card, area_kind)
         consumable_kind = consumable.kind,
         edition = safe_tostring(first_non_nil(edition.type, edition.key, edition.name)),
         sell_price = safe_number(card.sell_cost),
-        stickers = collect_stickers(card, ability, safe_table(card.save_fields) or {}),
+        stickers = collect_stickers(card, ability, save_fields),
         debuffed = safe_bool(first_non_nil(card.debuffed, card.debuff)),
       }
   end
 
   local joker = summarize_joker(card)
   if joker and area_kind == "joker" then
-      local joker_name = safe_tostring(first_non_nil(card.label, ability.name, ability.key, card.name, card.key))
+      local joker_name = safe_tostring(first_non_nil(card.label, ability.name, center.name, ability.key, center.key, card.name, card.key))
       if not joker_name then
         return nil
       end
@@ -1017,24 +1040,69 @@ local function summarize_shop_item(card, area_kind)
   }
 end
 
-local function collect_shop_items(root)
-  local result = {}
+local function collect_shop_items(root, interaction_phase)
+  local decorated = {}
   local seen = {}
+  local sequence = 0
   local areas = {
-    { area = root and rawget(root, "shop_jokers"), kind = "joker" },
-    { area = root and rawget(root, "shop_booster"), kind = "pack" },
+    { area = root and rawget(root, "shop_jokers"), kind = "joker", row = 0, column = 0 },
   }
+  if interaction_phase == "shop" then
+    areas[#areas + 1] = { area = root and rawget(root, "shop_vouchers"), kind = "voucher", row = 1, column = 0 }
+  end
+  areas[#areas + 1] = { area = root and rawget(root, "shop_booster"), kind = "pack", row = 1, column = 1 }
 
   for _, entry in ipairs(areas) do
     for _, card in ipairs(card_list_from_area(entry.area)) do
+      sequence = sequence + 1
       local summary = summarize_shop_item(card, entry.kind)
       if summary then
         local unique_key = (summary.kind or "item") .. "::" .. (summary.key or summary.name)
-        push_unique(result, seen, unique_key, summary)
+        if not seen[unique_key] then
+          seen[unique_key] = true
+          local transform = safe_table(card.T) or {}
+          local visual_transform = safe_table(card.VT) or {}
+          decorated[#decorated + 1] = {
+            item = summary,
+            row = entry.row or 99,
+            column = entry.column or 99,
+            x = safe_number(first_non_nil(transform.x, visual_transform.x)),
+            y = safe_number(first_non_nil(transform.y, visual_transform.y)),
+            sequence = sequence,
+          }
+        end
       end
     end
   end
 
+  table.sort(decorated, function(left, right)
+    if left.row ~= right.row then
+      return left.row < right.row
+    end
+
+    if left.column ~= right.column then
+      return left.column < right.column
+    end
+
+    local left_y = left.y or math.huge
+    local right_y = right.y or math.huge
+    if left_y ~= right_y then
+      return left_y < right_y
+    end
+
+    local left_x = left.x or math.huge
+    local right_x = right.x or math.huge
+    if left_x ~= right_x then
+      return left_x < right_x
+    end
+
+    return left.sequence < right.sequence
+  end)
+
+  local result = {}
+  for _, entry in ipairs(decorated) do
+    result[#result + 1] = entry.item
+  end
   return result
 end
 
@@ -1064,7 +1132,7 @@ local function collect_selected_cards(root)
     { area = root and first_non_nil(root and rawget(root, "consumeables"), root and rawget(root, "consumables")), zone = "consumables" },
     { area = root and rawget(root, "shop_jokers"), zone = "shop_items" },
     { area = root and rawget(root, "shop_booster"), zone = "shop_items" },
-    { area = root and rawget(root, "shop_vouchers"), zone = "shop_vouchers" },
+    { area = root and rawget(root, "shop_vouchers"), zone = "shop_items" },
     { area = root and rawget(root, "pack_cards"), zone = "pack_contents" },
   }
 
@@ -1090,7 +1158,7 @@ local function collect_highlighted_card(root)
     { area = root and first_non_nil(root and rawget(root, "consumeables"), root and rawget(root, "consumables")), zone = "consumables" },
     { area = root and rawget(root, "shop_jokers"), zone = "shop_items" },
     { area = root and rawget(root, "shop_booster"), zone = "shop_items" },
-    { area = root and rawget(root, "shop_vouchers"), zone = "shop_vouchers" },
+    { area = root and rawget(root, "shop_vouchers"), zone = "shop_items" },
     { area = root and rawget(root, "pack_cards"), zone = "pack_contents" },
     { area = root and rawget(root, "deck"), zone = "cards_in_deck" },
   }
@@ -1172,26 +1240,6 @@ local function collect_deck_cards(root, game)
   )
 end
 
-local function collect_shop_vouchers(root)
-  local result = {}
-  local seen = {}
-  for _, card in ipairs(card_list_from_area(root and rawget(root, "shop_vouchers"))) do
-    if #result >= EXPORT_MAX_VOUCHERS then
-      break
-    end
-    local ability = safe_table(card.ability) or {}
-    local summary = summarize_voucher(
-      ability,
-      safe_tostring(first_non_nil(card.key, ability.key)),
-      first_non_nil(card.cost, card.base_cost, ability.cost)
-    )
-    if summary then
-      push_unique(result, seen, summary.key, summary)
-    end
-  end
-  return result
-end
-
 local function infer_phase(root, game)
   local current_state = root and root.STATE
   local states = root and root.STATES
@@ -1238,7 +1286,7 @@ local function snapshot_game()
   end
 
   local hand_cards, _hand_count = collect_cards(root and root.hand, EXPORT_MAX_HAND_CARDS, "hand")
-  local jokers, joker_count = collect_jokers(root and root.jokers, EXPORT_MAX_JOKERS)
+  local jokers = collect_jokers(root and root.jokers, EXPORT_MAX_JOKERS)
   local deck_cards = collect_deck_cards(root, game)
   hand_cards = sort_canonical_cards(hand_cards)
   deck_cards = sort_canonical_cards(deck_cards)
@@ -1249,9 +1297,9 @@ local function snapshot_game()
   local consumeables_area = first_non_nil(root and rawget(root, "consumeables"), root and rawget(root, "consumables"))
   local jokers_area = safe_table(root and rawget(root, "jokers"))
   local hand_area = safe_table(root and rawget(root, "hand"))
+  local interaction_phase = infer_phase(root, game)
   local consumables = collect_consumables_from_area(consumeables_area, EXPORT_MAX_CONSUMABLES)
-  local shop_items = collect_shop_items(root)
-  local shop_vouchers = collect_shop_vouchers(root)
+  local shop_items = collect_shop_items(root, interaction_phase)
   local deck = summarize_deck(game)
   local stake = summarize_stake(game, root)
   local vouchers = collect_used_vouchers(game, root)
@@ -1276,7 +1324,6 @@ local function snapshot_game()
     hand_area and safe_table(hand_area.config) and hand_area.config.temp_limit,
     safe_table(game.starting_params) and game.starting_params.hand_size
   ))
-  local interaction_phase = infer_phase(root, game)
   local pack_contents = collect_pack_contents(root, game, interaction_phase, shop_items)
 
   return {
@@ -1305,14 +1352,12 @@ local function snapshot_game()
       blinds = blinds,
       deck_key = deck and deck.key or nil,
       cards_in_deck = deck_cards,
-      shop_vouchers = shop_vouchers,
       vouchers = vouchers,
       score = {
         current = safe_number(first_non_nil(game.chips, game.current_round_score, game.score)),
         target = safe_number(first_non_nil(blind.chips, game.score_to_beat, game.target_score)),
       },
       cards_in_hand = hand_cards,
-      joker_count = joker_count,
       jokers = jokers,
       consumables = consumables,
       skip_tags = skip_tags,

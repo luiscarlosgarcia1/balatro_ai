@@ -186,7 +186,6 @@ def format_observation(observation: dict[str, object]) -> str:
         f"  inflation: {observation.get('inflation') if observation.get('inflation') is not None else '-'}",
         f"  hand_size: {observation.get('hand_size') if observation.get('hand_size') is not None else '-'}",
         f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
-        f"  joker_count: {observation.get('joker_count') if observation.get('joker_count') is not None else '-'}",
     ]
     jokers = observation.get("jokers") or []
     if jokers:
@@ -206,14 +205,6 @@ def format_observation(observation: dict[str, object]) -> str:
                 extras.extend(f"sticker={value}" for value in stickers)
             extra_text = f" [{', '.join(extras)}]" if extras else ""
             lines.append(f"    - {joker.get('key') or '?'}{extra_text}")
-    shop_vouchers = observation.get("shop_vouchers") or []
-    if shop_vouchers:
-        lines.append("  shop_vouchers:")
-        for voucher in shop_vouchers:
-            if not isinstance(voucher, dict):
-                continue
-            suffix = f" cost={voucher['cost']}" if voucher.get("cost") is not None else ""
-            lines.append(f"    - {voucher.get('key') or '?'}{suffix}")
     vouchers = observation.get("vouchers") or []
     if vouchers:
         lines.append("  vouchers:")

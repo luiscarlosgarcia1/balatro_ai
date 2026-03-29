@@ -29,11 +29,9 @@ CANONICAL_TOP_LEVEL_KEYS = [
     "ante",
     "round_count",
     "joker_slots",
-    "joker_count",
     "jokers",
     "consumable_slots",
     "consumables",
-    "shop_vouchers",
     "vouchers",
     "skip_tags",
     "tags",
@@ -119,7 +117,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 "round_count": 17,
                 "stake_id": "gold_stake",
                 "joker_slots": 5,
-                "joker_count": 1,
                 "reroll_cost": 5,
                 "interest": 3,
                 "inflation": 2,
@@ -213,14 +210,12 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["stake_id"], "gold_stake")
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
-        self.assertEqual(observation["joker_count"], 1)
         self.assertEqual(observation["hand_size"], 8)
         self.assertEqual(observation["interest"], 3)
         self.assertEqual(observation["inflation"], 2)
         self.assertEqual(observation["reroll_cost"], 5)
         self.assertEqual(observation["vouchers"][0]["key"], "v_clearance_sale")
         self.assertNotIn("name", observation["vouchers"][0])
-        self.assertEqual(observation["shop_vouchers"], [{"key": "v_overstock", "cost": 10}])
         self.assertEqual(observation["consumables"][0]["kind"], "tarot")
         self.assertEqual(observation["consumables"][0]["key"], "c_fool")
         self.assertEqual(observation["consumables"][0]["edition"], "negative")
@@ -250,7 +245,9 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["shop_items"][1]["kind"], "consumable")
         self.assertEqual(observation["shop_items"][2]["kind"], "pack")
         self.assertEqual(observation["shop_items"][2]["key"], "p_arcana_normal_1")
-        self.assertNotIn({"key": "v_overstock", "cost": 10}, observation["shop_items"])
+        self.assertEqual(observation["shop_items"][3]["kind"], "voucher")
+        self.assertEqual(observation["shop_items"][3]["key"], "v_overstock")
+        self.assertEqual(observation["shop_items"][3]["cost"], 10)
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(any(note.startswith("seen_at=") for note in observation["notes"]))
 
@@ -394,7 +391,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 "ante": 4,
                 "round_count": 18,
                 "joker_slots": 5,
-                "joker_count": 2,
                 "consumable_slots": 2,
                 "reroll_cost": 6,
                 "interest": 4,
@@ -412,7 +408,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["stake_id"], 5)
         self.assertEqual(observation["score"], {"current": 150, "target": 600})
         self.assertEqual(observation["joker_slots"], 5)
-        self.assertEqual(observation["joker_count"], 2)
         self.assertEqual(observation["consumable_slots"], 2)
         self.assertEqual(observation["interest"], 4)
         self.assertEqual(observation["inflation"], 1)
@@ -900,6 +895,53 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["consumables"], [])
         self.assertEqual(observation["blinds"], [])
 
+    def test_observe_only_merges_legacy_shop_vouchers_into_shop_items_during_shop(self) -> None:
+        shop = self.observe_live_payload(
+            {
+                "state": {
+                    "source": "live_state_exporter",
+                    "interaction_phase": "shop",
+                    "score": {"current": 0, "target": 300},
+                    "money": 5,
+                    "hands_left": 4,
+                    "discards_left": 4,
+                    "shop_vouchers": [
+                        {"key": "v_overstock", "cost": 10},
+                    ],
+                    "shop_items": [],
+                }
+            }
+        )
+        play_hand = self.observe_live_payload(
+            {
+                "state": {
+                    "source": "live_state_exporter",
+                    "interaction_phase": "play_hand",
+                    "score": {"current": 120, "target": 300},
+                    "money": 5,
+                    "hands_left": 4,
+                    "discards_left": 4,
+                    "shop_vouchers": [
+                        {"key": "v_overstock", "cost": 10},
+                    ],
+                    "shop_items": [],
+                }
+            }
+        )
+
+        self.assertEqual(
+            shop["shop_items"],
+            [
+                {
+                    "kind": "voucher",
+                    "name": "v_overstock",
+                    "key": "v_overstock",
+                    "cost": 10,
+                }
+            ],
+        )
+        self.assertEqual(play_hand["shop_items"], [])
+
     def test_format_observation_renders_from_canonical_payload(self) -> None:
         observation = {
             "source": "live_state_exporter",
@@ -915,7 +957,6 @@ class LiveObserverContractTests(unittest.TestCase):
             "ante": 3,
             "round_count": 17,
             "joker_slots": 5,
-            "joker_count": 1,
             "jokers": [
                 {
                     "key": "j_greedy_joker",
@@ -932,12 +973,12 @@ class LiveObserverContractTests(unittest.TestCase):
                     "sell_price": 1,
                 }
             ],
-            "shop_vouchers": [{"key": "v_overstock", "cost": 10}],
             "vouchers": [{"key": "v_clearance_sale"}],
             "skip_tags": [{"slot": "big", "key": "tag_economy"}],
             "tags": [{"key": "tag_economy"}],
             "shop_items": [
                 {"key": "j_vampire", "kind": "joker", "cost": 7},
+                {"key": "v_overstock", "kind": "voucher", "name": "v_overstock", "cost": 10},
             ],
             "shop_discounts": [
                 {"kind": "discount_percent", "value": 25},
@@ -981,7 +1022,6 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("inflation: 2", formatted)
         self.assertIn("hand_size: 8", formatted)
         self.assertIn("consumables:", formatted)
-        self.assertIn("shop_vouchers:", formatted)
         self.assertIn("shop_items:", formatted)
         self.assertIn("shop_discounts:", formatted)
         self.assertIn("discount_percent=25", formatted)
@@ -1051,11 +1091,9 @@ class LiveObserverContractTests(unittest.TestCase):
             "ante": 3,
             "round_count": 17,
             "joker_slots": 5,
-            "joker_count": 1,
             "jokers": [],
             "consumable_slots": 2,
             "consumables": [],
-            "shop_vouchers": [],
             "vouchers": [],
             "skip_tags": [],
             "tags": [],
@@ -1177,11 +1215,9 @@ class LiveObserverContractTests(unittest.TestCase):
                 "ante": None,
                 "round_count": None,
                 "joker_slots": None,
-                "joker_count": 0,
                 "jokers": [],
                 "consumable_slots": None,
                 "consumables": [],
-                "shop_vouchers": [],
                 "vouchers": [],
                 "skip_tags": [],
                 "tags": [],
