@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import GameObservation, ObservedCard
+from ..models import GameObservation, ObservedCard, ObservedInterest
 from .save_decoder import SaveSnapshot
 
 
@@ -36,7 +36,17 @@ class SaveObservationParser:
         ante = self._extract_int(round_resets_block, "ante")
         round_count = self._extract_int(game_block, "round")
         stake_id = self._extract_int(game_block, "stake")
-        interest = self._extract_int(game_block, "interest_amount")
+        modifiers_block = self._extract_block(game_block, "modifiers") or ""
+        interest_amount = self._extract_int(game_block, "interest_amount")
+        interest_cap = self._extract_int(game_block, "interest_cap")
+        no_interest = self._extract_top_level_bool(modifiers_block, "no_interest")
+        interest = None
+        if interest_amount is not None or interest_cap is not None or no_interest is not None:
+            interest = ObservedInterest(
+                amount=interest_amount,
+                cap=interest_cap,
+                no_interest=bool(no_interest),
+            )
         cards_in_hand = self._extract_area_card_count(card_areas_block, "hand")
         seed = self._extract_string(pseudorandom_block, "seed")
         blind_in_progress = self._extract_top_level_bool(blind_block, "in_blind")

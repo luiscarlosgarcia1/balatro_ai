@@ -24,25 +24,25 @@ CANONICAL_TOP_LEVEL_KEYS = [
     "stake_id",
     "score",
     "money",
+    "interest",
     "hands_left",
     "discards_left",
-    "ante",
-    "round_count",
     "joker_slots",
     "jokers",
     "consumable_slots",
     "consumables",
     "vouchers",
     "tags",
+    "ante",
+    "round_count",
+    "blinds",
     "shop_items",
     "reroll_cost",
-    "interest",
     "pack_contents",
     "hand_size",
     "cards_in_hand",
     "selected_cards",
     "cards_in_deck",
-    "blinds",
     "notes",
 ]
 
@@ -113,7 +113,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 "stake_id": "gold_stake",
                 "joker_slots": 5,
                 "reroll_cost": 5,
-                "interest": 3,
+                "interest": {"amount": 3, "cap": 25, "no_interest": False},
                 "hand_size": 8,
                 "vouchers": [
                     {
@@ -199,7 +199,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
         self.assertEqual(observation["hand_size"], 8)
-        self.assertEqual(observation["interest"], 3)
+        self.assertEqual(observation["interest"], {"amount": 3, "cap": 25, "no_interest": False})
         self.assertEqual(observation["reroll_cost"], 5)
         self.assertEqual(observation["vouchers"][0]["key"], "v_clearance_sale")
         self.assertNotIn("name", observation["vouchers"][0])
@@ -369,7 +369,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 "joker_slots": 5,
                 "consumable_slots": 2,
                 "reroll_cost": 6,
-                "interest": 4,
+                "interest": {"amount": 4, "cap": 50, "no_interest": True},
                 "hand_size": 8,
                 "notes": ["exporter=live_state_exporter", "screenshot_status=true"],
             }
@@ -384,7 +384,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["score"], {"current": 150, "target": 600})
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
-        self.assertEqual(observation["interest"], 4)
+        self.assertEqual(observation["interest"], {"amount": 4, "cap": 50, "no_interest": True})
         self.assertEqual(observation["hand_size"], 8)
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
@@ -900,7 +900,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 {"key": "v_overstock", "cost": 10},
             ],
             "reroll_cost": 5,
-            "interest": 3,
+            "interest": {"amount": 3, "cap": 25, "no_interest": False},
             "pack_contents": None,
             "hand_size": 8,
             "cards_in_hand": [
@@ -925,7 +925,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("score: 150/800", formatted)
         self.assertIn("stake_id: gold_stake", formatted)
         self.assertIn("joker_slots: 5", formatted)
-        self.assertIn("interest: 3", formatted)
+        self.assertIn("interest: amount=3, cap=25, no_interest=false", formatted)
         self.assertIn("hand_size: 8", formatted)
         self.assertIn("consumables:", formatted)
         self.assertIn("shop_items:", formatted)
@@ -1000,7 +1000,7 @@ class LiveObserverContractTests(unittest.TestCase):
             "tags": [],
             "shop_items": [],
             "reroll_cost": 5,
-            "interest": 3,
+            "interest": {"amount": 3, "cap": 25, "no_interest": False},
             "pack_contents": {
                 "pack_key": "p_arcana_normal_1",
                 "pack_size": 5,
@@ -1092,6 +1092,22 @@ class LiveObserverContractTests(unittest.TestCase):
             ["c_k", "d_a"],
         )
         self.assertEqual(observation["selected_cards"], [])
+
+    def test_observe_save_fallback_extracts_raw_interest_object(self) -> None:
+        legacy_save_payload = (
+            'return {["STATE"]=5,["BLIND"]={["config_blind"]="bl_big",["chips"]=to_big({300}, 1)},'
+            '["GAME"]={["chips"]=to_big({120}, 1),["dollars"]=10,["interest_amount"]=2,["interest_cap"]=50,'
+            '["modifiers"]={["no_interest"]=true},["current_round"]={["hands_left"]=3,["discards_left"]=1},'
+            '["round_resets"]={["hands"]=4,["discards"]=2},["blind_on_deck"]="bl_big"},'
+            '["cardAreas"]={["hand"]={["cards"]={},["config"]={["card_count"]=0}},["jokers"]={["cards"]={},["config"]={["card_count"]=0}}}}'
+        )
+
+        observation = self.observe_legacy_save_payload(legacy_save_payload)
+
+        self.assertEqual(
+            observation["interest"],
+            {"amount": 2, "cap": 50, "no_interest": True},
+        )
 
     def test_runtime_and_policy_consume_canonical_payload(self) -> None:
         observations = [

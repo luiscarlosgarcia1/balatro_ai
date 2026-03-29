@@ -1275,6 +1275,7 @@ local function snapshot_game()
   local blind = safe_table(game.blind) or {}
   local current_round = safe_table(game.current_round) or {}
   local round_resets = safe_table(game.round_resets) or {}
+  local modifiers = safe_table(game.modifiers) or {}
   local consumeables_area = first_non_nil(root and rawget(root, "consumeables"), root and rawget(root, "consumables"))
   local jokers_area = safe_table(root and rawget(root, "jokers"))
   local hand_area = safe_table(root and rawget(root, "hand"))
@@ -1322,7 +1323,11 @@ local function snapshot_game()
       joker_slots = joker_slots,
       consumable_slots = consumable_slots,
       hand_size = hand_size,
-      interest = safe_number(game.interest_amount),
+      interest = {
+        amount = safe_number(game.interest_amount),
+        cap = safe_number(game.interest_cap),
+        no_interest = safe_bool(modifiers.no_interest),
+      },
       reroll_cost = safe_number(current_round.reroll_cost),
       blind_key = BlindKey.derive(interaction_phase, blinds),
       blinds = blinds,

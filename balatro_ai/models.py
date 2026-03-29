@@ -103,6 +103,15 @@ class ObservedShopItem:
 
 
 @dataclass(frozen=True)
+class ObservedInterest:
+    """Raw interest-state determinants exported from the game."""
+
+    amount: int | None = None
+    cap: int | None = None
+    no_interest: bool = False
+
+
+@dataclass(frozen=True)
 class ObservedPackContents:
     """Canonical opened-pack state with required exact pack identity."""
 
@@ -156,7 +165,7 @@ class GameObservation:
     consumables: tuple[ObservedConsumable, ...] = ()
     consumable_slots: int | None = None
     reroll_cost: int | None = None
-    interest: int | None = None
+    interest: ObservedInterest | None = None
     hand_size: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
     pack_contents: ObservedPackContents | None = None

@@ -10,6 +10,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedInterest,
     ObservedPackContents,
     ObservedReference,
     ObservedShopItem,
@@ -27,25 +28,25 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "stake_id",
     "score",
     "money",
+    "interest",
     "hands_left",
     "discards_left",
-    "ante",
-    "round_count",
     "joker_slots",
     "jokers",
     "consumable_slots",
     "consumables",
     "vouchers",
     "tags",
+    "ante",
+    "round_count",
+    "blinds",
     "shop_items",
     "reroll_cost",
-    "interest",
     "pack_contents",
     "hand_size",
     "cards_in_hand",
     "selected_cards",
     "cards_in_deck",
-    "blinds",
     "notes",
 )
 
@@ -113,7 +114,7 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "tags": serialized_tags,
         "shop_items": _serialize_shop_items(observation),
         "reroll_cost": observation.reroll_cost,
-        "interest": observation.interest,
+        "interest": _serialize_interest(observation.interest),
         "pack_contents": _serialize_pack_contents(observation.pack_contents),
         "hand_size": observation.hand_size,
         "cards_in_hand": serialized_cards_in_hand,
@@ -167,6 +168,17 @@ def _serialize_voucher(voucher: ObservedVoucher) -> dict[str, Any]:
     if voucher.cost is not None:
         payload["cost"] = voucher.cost
     return payload
+
+
+def _serialize_interest(interest: ObservedInterest | None) -> dict[str, Any] | None:
+    if interest is None:
+        return None
+
+    return {
+        "amount": interest.amount,
+        "cap": interest.cap,
+        "no_interest": interest.no_interest,
+    }
 
 
 def _serialize_tag(tag: ObservedTag) -> dict[str, Any]:

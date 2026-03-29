@@ -202,6 +202,30 @@ local function test_shop_item_structure_changes_signature()
   assert_not_equal(first, second, "signature should track canonical shop item structure, not only item keys")
 end
 
+local function test_interest_object_changes_signature()
+  local first = Signature.make({
+    state = {
+      interest = {
+        amount = 1,
+        cap = 25,
+        no_interest = false,
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      interest = {
+        amount = 1,
+        cap = 50,
+        no_interest = false,
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track raw interest determinants")
+end
+
 local function test_card_zones_change_signature()
   local first = Signature.make({
     state = {
@@ -310,6 +334,7 @@ test_pack_reward_pack_key_changes_signature()
 test_legacy_open_pack_kind_does_not_affect_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
+test_interest_object_changes_signature()
 test_card_zones_change_signature()
 test_selection_references_change_signature()
 test_removed_highlighted_card_does_not_affect_signature()

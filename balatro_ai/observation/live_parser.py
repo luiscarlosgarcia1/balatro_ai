@@ -9,6 +9,7 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedInterest,
     ObservedPackContents,
     ObservedReference,
     ObservedShopItem,
@@ -60,6 +61,7 @@ class LiveObservationParser:
         pack_contents = self._parse_live_pack_contents(state.get("pack_contents"))
         tags = self._parse_live_tags(state.get("tags"))
         jokers = self._parse_live_jokers(state.get("jokers"))
+        interest = self._parse_interest(state.get("interest"))
 
         seen_at_raw = state.get("seen_at")
         seen_at = None
@@ -95,7 +97,7 @@ class LiveObservationParser:
             consumables=tuple(consumables),
             consumable_slots=self._int_or_none(state.get("consumable_slots")),
             reroll_cost=self._int_or_none(state.get("reroll_cost")),
-            interest=self._int_or_none(state.get("interest")),
+            interest=interest,
             hand_size=self._int_or_none(state.get("hand_size")),
             shop_items=tuple(shop_items),
             pack_contents=pack_contents,
@@ -103,6 +105,20 @@ class LiveObservationParser:
             notes=tuple(str(value) for value in notes if value is not None),
             seen_at=seen_at,
         )
+
+    def _parse_interest(self, payload: object) -> ObservedInterest | None:
+        if isinstance(payload, dict):
+            return ObservedInterest(
+                amount=self._int_or_none(payload.get("amount", payload.get("interest_amount"))),
+                cap=self._int_or_none(payload.get("cap", payload.get("interest_cap"))),
+                no_interest=bool(payload.get("no_interest", False)),
+            )
+
+        # Compatibility bridge for older scalar payloads.
+        scalar = self._int_or_none(payload)
+        if scalar is None:
+            return None
+        return ObservedInterest(amount=scalar, cap=None, no_interest=False)
 
     def _parse_cards(self, payload: object) -> list[ObservedCard]:
         cards: list[ObservedCard] = []

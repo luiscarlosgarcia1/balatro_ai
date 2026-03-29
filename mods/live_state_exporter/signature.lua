@@ -54,6 +54,7 @@ function Signature.make(snapshot)
   local state = safe_table(snapshot.state) or {}
   local score = safe_table(state.score) or {}
   local pack_contents = safe_table(state.pack_contents) or {}
+  local interest = safe_table(state.interest) or {}
   local parts = {
     string_part(state.interaction_phase),
     string_part(state.state_id),
@@ -64,7 +65,9 @@ function Signature.make(snapshot)
     string_part(state.hands_left),
     string_part(state.discards_left),
     string_part(state.reroll_cost),
-    string_part(state.interest),
+    string_part(interest.amount),
+    string_part(interest.cap),
+    string_part(interest.no_interest),
     string_part(state.blind_key),
     string_part(state.deck_key),
     string_part(score.current),

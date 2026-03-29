@@ -165,6 +165,19 @@ def format_observation(observation: dict[str, object]) -> str:
     # Transitional legacy bridge: this remains a derived debug view downstream of the
     # canonical payload and should not grow new legacy-specific branches.
     score = observation.get("score") or {}
+    interest = observation.get("interest")
+    interest_text = "-"
+    if isinstance(interest, dict):
+        interest_parts = []
+        if interest.get("amount") is not None:
+            interest_parts.append(f"amount={interest['amount']}")
+        if interest.get("cap") is not None:
+            interest_parts.append(f"cap={interest['cap']}")
+        if "no_interest" in interest:
+            interest_parts.append(f"no_interest={'true' if interest.get('no_interest') else 'false'}")
+        interest_text = ", ".join(interest_parts) if interest_parts else "{}"
+    elif interest is not None:
+        interest_text = str(interest)
     lines = [
         "",
         "[observation]",
@@ -182,7 +195,7 @@ def format_observation(observation: dict[str, object]) -> str:
         f"  round_count: {observation.get('round_count') if observation.get('round_count') is not None else '-'}",
         f"  joker_slots: {observation.get('joker_slots') if observation.get('joker_slots') is not None else '-'}",
         f"  reroll_cost: {observation.get('reroll_cost') if observation.get('reroll_cost') is not None else '-'}",
-        f"  interest: {observation.get('interest') if observation.get('interest') is not None else '-'}",
+        f"  interest: {interest_text}",
         f"  hand_size: {observation.get('hand_size') if observation.get('hand_size') is not None else '-'}",
         f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
     ]

@@ -23,29 +23,26 @@ The agreed top-level order is:
 6. `stake_id`
 7. `score`
 8. `money`
-9. `hands_left`
-10. `discards_left`
-11. `ante`
-12. `round_count`
-13. `joker_slots`
-14. `joker_count`
-15. `jokers`
-16. `consumable_slots`
-17. `consumables`
-18. `shop_vouchers`
-19. `vouchers`
-20. `skip_tags`
-21. `tags`
-22. `shop_items`
-23. `reroll_cost`
-24. `interest`
-25. `pack_contents`
-26. `hand_size`
-27. `cards_in_hand`
-28. `selected_cards`
-29. `cards_in_deck`
-30. `blinds`
-31. `notes`
+9. `interest`
+10. `hands_left`
+11. `discards_left`
+12. `joker_slots`
+13. `jokers`
+14. `consumable_slots`
+15. `consumables`
+16. `vouchers`
+17. `tags`
+18. `ante`
+19. `round_count`
+20. `blinds`
+21. `shop_items`
+22. `reroll_cost`
+23. `pack_contents`
+24. `hand_size`
+25. `cards_in_hand`
+26. `selected_cards`
+27. `cards_in_deck`
+28. `notes`
 
 This matters because the AI will eventually consume the observer directly. If the observer stays half-human, half-machine, then policy logic, evaluation, and future automation will all be built on an unstable surface.
 
@@ -85,7 +82,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 5. As the Balatro agent developer, I want `interaction_phase` preserved separately from the main state id, so that the agent can tell shop, blind select, and pack interaction apart.
 6. As the Balatro agent developer, I want `blind_key`, `deck_key`, and `stake_id` represented as raw ids, so that the agent can look up meaning elsewhere instead of relying on display text.
 7. As the Balatro agent developer, I want score represented as a machine-readable structure, so that the AI can compare current and target score without string parsing.
-8. As the Balatro agent developer, I want core scalar run state like money, hands, discards, ante, round count, reroll cost, and interest exposed directly, so that the AI can evaluate economy and tempo.
+8. As the Balatro agent developer, I want core run state like money, hands, discards, ante, round count, reroll cost, and raw interest determinants exposed directly, so that the AI can evaluate economy and tempo.
 9. As the Balatro agent developer, I want `joker_slots`, `joker_count`, `consumable_slots`, and `hand_size` exposed explicitly, so that the AI knows both current occupancy and capacity.
 10. As the Balatro agent developer, I want `jokers` emitted as structured objects, so that the AI can inspect edition, rarity, sell price, stickers, and debuff state without pulling effect summaries from the observer.
 11. As the Balatro agent developer, I want `consumables` emitted as structured inventory objects, so that the AI can evaluate current inventory without screenshots.
@@ -121,6 +118,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 - `shop_vouchers` should be separate from `shop_items`; vouchers must not be duplicated inside `shop_items`.
 - `shop_vouchers` should always be represented as an array, even when there is only one current shop voucher.
 - `shop_items` remains the canonical market list for other buyable items such as jokers, consumables, and booster packs, and it should preserve visible UI order.
+- `interest` should be represented as a raw-state object with `amount`, `cap`, and `no_interest` rather than a derived payout scalar.
 - `pack_contents` should be a dedicated object placed after `shop_items` and contain both metadata and the visible pack cards.
 - `selected_cards` should use lightweight references where that is more efficient than repeating the full card payload. The preferred shape is a compact object such as `{zone, card_key}` or `{zone, joker_key}` rather than a full repeated object.
 - `selected_cards` should be an array and use `[]` when nothing is selected.
@@ -148,6 +146,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
   - score object structure
   - top-level empty-array versus null behavior
   - raw id fields for state, blind, deck, and stake
+  - raw interest object behavior for `interest.amount`, `interest.cap`, and `interest.no_interest`
   - lowercase-with-underscores normalization behavior for machine-readable ids and categories
   - structured joker, consumable, voucher, tag, shop item, blind, and card objects
   - exclusion of vouchers from `shop_items`
