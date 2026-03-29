@@ -209,12 +209,12 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["reroll_cost"], 5)
         self.assertEqual(observation["vouchers"][0]["key"], "v_clearance_sale")
         self.assertNotIn("name", observation["vouchers"][0])
-        self.assertEqual(observation["consumables"][0]["kind"], "tarot")
         self.assertEqual(observation["consumables"][0]["key"], "c_fool")
         self.assertEqual(observation["consumables"][0]["edition"], "negative")
         self.assertEqual(observation["consumables"][0]["sell_price"], 1)
         self.assertEqual(observation["consumables"][0]["stickers"], ["eternal"])
         self.assertNotIn("name", observation["consumables"][0])
+        self.assertNotIn("kind", observation["consumables"][0])
         self.assertEqual(observation["jokers"][0]["key"], "j_greedy_joker")
         self.assertEqual(observation["jokers"][0]["rarity"], "common")
         self.assertEqual(observation["jokers"][0]["edition"], "foil")
@@ -223,21 +223,21 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertNotIn("name", observation["jokers"][0])
         self.assertEqual(observation["tags"][0]["key"], "tag_top_up")
         self.assertNotIn("name", observation["tags"][0])
-        self.assertEqual(observation["blinds"][0]["slot"], "small")
         self.assertEqual(observation["blinds"][0]["state"], "current")
         self.assertEqual(observation["blinds"][0]["tag_key"], "tag_economy")
+        self.assertNotIn("slot", observation["blinds"][0])
         self.assertEqual(observation["cards_in_hand"][0]["card_key"], "s_a")
-        self.assertEqual(observation["cards_in_hand"][0]["card_kind"], "base")
-        self.assertEqual(observation["cards_in_hand"][0]["suit"], "spades")
-        self.assertEqual(observation["cards_in_hand"][0]["rank"], "ace")
         self.assertEqual(observation["cards_in_hand"][0]["enhancement"], "bonus")
-        self.assertEqual(observation["shop_items"][0]["kind"], "joker")
-        self.assertEqual(observation["shop_items"][1]["kind"], "consumable")
-        self.assertEqual(observation["shop_items"][2]["kind"], "pack")
+        self.assertNotIn("card_kind", observation["cards_in_hand"][0])
+        self.assertNotIn("suit", observation["cards_in_hand"][0])
+        self.assertNotIn("rank", observation["cards_in_hand"][0])
+        self.assertEqual(observation["shop_items"][0]["key"], "j_vampire")
+        self.assertEqual(observation["shop_items"][1]["key"], "c_sun")
         self.assertEqual(observation["shop_items"][2]["key"], "p_arcana_normal_1")
-        self.assertEqual(observation["shop_items"][3]["kind"], "voucher")
         self.assertEqual(observation["shop_items"][3]["key"], "v_overstock")
         self.assertEqual(observation["shop_items"][3]["cost"], 10)
+        self.assertNotIn("kind", observation["shop_items"][0])
+        self.assertNotIn("name", observation["shop_items"][0])
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(any(note.startswith("seen_at=") for note in observation["notes"]))
 
@@ -312,9 +312,6 @@ class LiveObserverContractTests(unittest.TestCase):
             observation["cards_in_hand"][2],
             {
                 "card_key": "s_10",
-                "card_kind": "base",
-                "suit": "spades",
-                "rank": "10",
                 "enhancement": "bonus",
                 "edition": "foil",
                 "seal": "gold",
@@ -465,8 +462,6 @@ class LiveObserverContractTests(unittest.TestCase):
             observation["shop_items"],
             [
                 {
-                    "kind": "joker",
-                    "name": "Credit Card",
                     "key": "j_credit_card",
                     "cost": 1,
                     "rarity": "common",
@@ -475,19 +470,12 @@ class LiveObserverContractTests(unittest.TestCase):
                     "stickers": ["rental"],
                 },
                 {
-                    "kind": "pack",
-                    "name": "Buffoon Pack",
                     "key": "p_buffoon_normal_1",
                     "cost": 4,
-                    "pack_key": "p_buffoon_normal_1",
-                    "pack_kind": "buffoon",
                 },
                 {
-                    "kind": "consumable",
-                    "name": "The Fool",
                     "key": "c_fool",
                     "cost": 3,
-                    "consumable_kind": "tarot",
                     "edition": "negative",
                     "sell_price": 1,
                     "stickers": ["eternal"],
@@ -540,7 +528,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             observation["shop_items"],
             [
-                {"kind": "pack", "name": "Jumbo Standard Pack", "key": "p_standard_jumbo_1", "cost": 6}
+                {"key": "p_standard_jumbo_1", "cost": 6}
             ],
         )
 
@@ -649,7 +637,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 "cards": [
                     {
                         "card_key": "c_fool",
-                        "card_kind": "tarot",
                         "cost": 0,
                         "sell_price": 1,
                     }
@@ -774,9 +761,9 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             observation["blinds"],
             [
-                {"slot": "small", "key": "bl_small", "state": "skipped", "tag_key": "tag_small", "tag_claimed": True},
-                {"slot": "big", "key": "bl_big", "state": "select", "tag_key": "tag_big"},
-                {"slot": "boss", "key": "bl_head", "state": "upcoming"},
+                {"key": "bl_head", "state": "upcoming"},
+                {"key": "bl_small", "state": "skipped", "tag_key": "tag_small", "tag_claimed": True},
+                {"key": "bl_big", "state": "select", "tag_key": "tag_big"},
             ],
         )
 
@@ -921,8 +908,6 @@ class LiveObserverContractTests(unittest.TestCase):
             shop["shop_items"],
             [
                 {
-                    "kind": "voucher",
-                    "name": "v_overstock",
                     "key": "v_overstock",
                     "cost": 10,
                 }
@@ -957,15 +942,14 @@ class LiveObserverContractTests(unittest.TestCase):
             "consumables": [
                 {
                     "key": "c_fool",
-                    "kind": "tarot",
                     "sell_price": 1,
                 }
             ],
             "vouchers": [{"key": "v_clearance_sale"}],
             "tags": [{"key": "tag_economy"}],
             "shop_items": [
-                {"key": "j_vampire", "kind": "joker", "cost": 7},
-                {"key": "v_overstock", "kind": "voucher", "name": "v_overstock", "cost": 10},
+                {"key": "j_vampire", "cost": 7},
+                {"key": "v_overstock", "cost": 10},
             ],
             "shop_discounts": [
                 {"kind": "discount_percent", "value": 25},
@@ -979,9 +963,6 @@ class LiveObserverContractTests(unittest.TestCase):
             "cards_in_hand": [
                 {
                     "card_key": "s_a",
-                    "card_kind": "base",
-                    "suit": "spades",
-                    "rank": "ace",
                     "enhancement": "bonus",
                 }
             ],
@@ -990,12 +971,9 @@ class LiveObserverContractTests(unittest.TestCase):
             "cards_in_deck": [
                 {
                     "card_key": "c_k",
-                    "card_kind": "base",
-                    "suit": "clubs",
-                    "rank": "king",
                 }
             ],
-            "blinds": [{"slot": "small", "key": "bl_small", "state": "current", "tag_key": "tag_economy"}],
+            "blinds": [{"key": "bl_small", "state": "current", "tag_key": "tag_economy"}],
             "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
         }
 
@@ -1060,7 +1038,7 @@ class LiveObserverContractTests(unittest.TestCase):
         observation = self.observe_live_payload(live_payload)
         formatted = format_observation(observation)
 
-        self.assertEqual(formatted.count("Jumbo Standard Pack"), 1)
+        self.assertEqual(formatted.count("p_standard_jumbo_1"), 1)
         self.assertNotIn("shop_packs", formatted)
 
     def test_format_observation_renders_canonical_pack_contents(self) -> None:
@@ -1168,9 +1146,6 @@ class LiveObserverContractTests(unittest.TestCase):
             [
                 {
                     "card_key": "s_a",
-                    "card_kind": "base",
-                    "suit": "spades",
-                    "rank": "ace",
                     "enhancement": "bonus",
                     "edition": "foil",
                     "seal": "gold",

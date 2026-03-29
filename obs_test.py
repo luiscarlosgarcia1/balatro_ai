@@ -229,9 +229,7 @@ def format_observation(observation: dict[str, object]) -> str:
             if isinstance(stickers, list):
                 extras.extend(f"sticker={value}" for value in stickers)
             suffix = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(
-                f"    - {consumable.get('kind')}: {consumable.get('key') or '?'}{suffix}"
-            )
+            lines.append(f"    - {consumable.get('key') or '?'}{suffix}")
     tags = observation.get("tags") or []
     if tags:
         lines.append("  tags:")
@@ -249,9 +247,7 @@ def format_observation(observation: dict[str, object]) -> str:
             if item.get("cost") is not None:
                 extras.append(f"cost={item['cost']}")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(
-                f"    - {item.get('kind')}: {item.get('name') or item.get('key') or '?'}{extra_text}"
-            )
+            lines.append(f"    - {item.get('name') or item.get('key') or '?'}{extra_text}")
     shop_discounts = observation.get("shop_discounts") or []
     if shop_discounts:
         lines.append("  shop_discounts:")
@@ -285,12 +281,6 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(card, dict):
                 continue
             card_extras = []
-            if card.get("card_kind"):
-                card_extras.append(f"kind={card['card_kind']}")
-            if card.get("suit"):
-                card_extras.append(f"suit={card['suit']}")
-            if card.get("rank"):
-                card_extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 card_extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):
@@ -324,9 +314,7 @@ def format_observation(observation: dict[str, object]) -> str:
             if blind_choice.get("tag_claimed"):
                 extras.append("tag_claimed=true")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(
-                f"    - {blind_choice.get('slot')}: {blind_choice.get('key')}{extra_text}"
-            )
+            lines.append(f"    - {blind_choice.get('key')}{extra_text}")
     cards_in_hand = observation.get("cards_in_hand") or []
     if cards_in_hand:
         lines.append("  cards_in_hand:")
@@ -334,12 +322,6 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(card, dict):
                 continue
             extras = []
-            if card.get("card_kind"):
-                extras.append(f"kind={card['card_kind']}")
-            if card.get("suit"):
-                extras.append(f"suit={card['suit']}")
-            if card.get("rank"):
-                extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):
@@ -368,12 +350,6 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(card, dict):
                 continue
             extras = []
-            if card.get("card_kind"):
-                extras.append(f"kind={card['card_kind']}")
-            if card.get("suit"):
-                extras.append(f"suit={card['suit']}")
-            if card.get("rank"):
-                extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):

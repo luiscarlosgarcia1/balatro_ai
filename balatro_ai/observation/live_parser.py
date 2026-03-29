@@ -17,14 +17,6 @@ from ..models import (
     ObservedVoucher,
 )
 
-
-_BLIND_SLOT_ORDER = {
-    "small": 0,
-    "big": 1,
-    "boss": 2,
-}
-
-
 class LiveObservationParser:
     def parse_file(self, path) -> GameObservation | None:
         if not path.exists():
@@ -237,14 +229,12 @@ class LiveObservationParser:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            kind = self._string_or_none(item.get("kind"))
             key = self._string_or_none(item.get("key"))
-            if not kind or not key:
+            if not key:
                 continue
             stickers = item.get("stickers")
             consumables.append(
                 ObservedConsumable(
-                    kind=kind,
                     key=key,
                     edition=self._string_or_none(item.get("edition")),
                     sell_price=self._int_or_none(item.get("sell_price")),
@@ -280,13 +270,13 @@ class LiveObservationParser:
             kind = self._string_or_none(item.get("kind"))
             name = self._string_or_none(item.get("name"))
             key = self._string_or_none(item.get("key"))
-            if not kind or (not name and not key):
+            if not key and not name:
                 continue
             stickers = item.get("stickers")
             shop_items.append(
                 ObservedShopItem(
-                    kind=kind,
-                    name=name or key,
+                    kind=kind or "shop",
+                    name=name or key or "shop_item",
                     key=key,
                     cost=self._int_or_none(item.get("cost")),
                     rarity=self._string_or_none(item.get("rarity")),
@@ -319,11 +309,11 @@ class LiveObservationParser:
 
         merged = list(shop_items)
         seen = {
-            (item.kind, item.key or item.name)
+            item.key or item.name
             for item in merged
         }
         for voucher in shop_vouchers:
-            dedupe_key = ("voucher", voucher.key)
+            dedupe_key = voucher.key
             if dedupe_key in seen:
                 continue
             merged.append(
@@ -381,26 +371,19 @@ class LiveObservationParser:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            slot = self._string_or_none(item.get("slot"))
             key = self._string_or_none(item.get("key"))
             state = self._string_or_none(item.get("state"))
-            if not slot or not key or not state:
+            if not key or not state:
                 continue
             blinds.append(
                 ObservedBlind(
-                    slot=slot,
                     key=key,
                     state=state,
                     tag_key=self._string_or_none(item.get("tag_key", item.get("tag"))),
                     tag_claimed=bool(item.get("tag_claimed", False)),
                 )
             )
-        blinds.sort(key=lambda blind: self._slot_sort_key(blind.slot))
         return blinds
-
-    def _slot_sort_key(self, slot: str) -> tuple[int, str]:
-        normalized = str(slot).strip().lower()
-        return (_BLIND_SLOT_ORDER.get(normalized, len(_BLIND_SLOT_ORDER)), normalized)
 
     def _int_or_zero(self, value: object) -> int:
         return self._int_or_none(value) or 0

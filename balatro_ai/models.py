@@ -51,7 +51,6 @@ class ObservedVoucher:
 class ObservedConsumable:
     """Consumable item that can be in inventory or visible in the shop."""
 
-    kind: str
     key: str
     edition: str | None = None
     sell_price: int | None = None
@@ -127,7 +126,6 @@ class ObservedPackContents:
 class ObservedBlind:
     """Blind choice available during blind selection."""
 
-    slot: str
     key: str
     state: str
     tag_key: str | None = None

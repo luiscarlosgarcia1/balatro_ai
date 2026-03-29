@@ -46,7 +46,7 @@ local function test_missing_item_keys_do_not_crash()
         { key = nil },
       },
       consumables = {
-        { key = "c_fool", kind = "tarot" },
+        { key = "c_fool" },
       },
     },
   })
@@ -117,7 +117,7 @@ local function test_pack_reward_pack_key_changes_signature()
       pack_contents = {
         pack_key = "p_arcana_normal_1",
         cards = {
-          { card_key = "c_fool", card_kind = "tarot" },
+          { card_key = "c_fool" },
         },
       },
     },
@@ -129,7 +129,7 @@ local function test_pack_reward_pack_key_changes_signature()
       pack_contents = {
         pack_key = "p_arcana_mega_2",
         cards = {
-          { card_key = "c_fool", card_kind = "tarot" },
+          { card_key = "c_fool" },
         },
       },
     },
@@ -166,7 +166,7 @@ local function test_blind_and_skip_claim_fields_change_signature()
   local first = Signature.make({
     state = {
       blinds = {
-        { slot = "small", key = "bl_small", state = "skipped", tag_key = "tag_small", tag_claimed = true },
+        { key = "bl_small", state = "skipped", tag_key = "tag_small", tag_claimed = true },
       },
     },
   })
@@ -174,7 +174,7 @@ local function test_blind_and_skip_claim_fields_change_signature()
   local second = Signature.make({
     state = {
       blinds = {
-        { slot = "small", key = "bl_small", state = "upcoming", tag_key = "tag_small", tag_claimed = false },
+        { key = "bl_small", state = "upcoming", tag_key = "tag_small", tag_claimed = false },
       },
     },
   })
@@ -186,7 +186,7 @@ local function test_shop_item_structure_changes_signature()
   local first = Signature.make({
     state = {
       shop_items = {
-        { key = "j_credit_card", kind = "joker", edition = "foil", sell_price = 2, stickers = { "rental" } },
+        { key = "j_credit_card", edition = "foil", sell_price = 2, stickers = { "rental" } },
       },
     },
   })
@@ -194,7 +194,7 @@ local function test_shop_item_structure_changes_signature()
   local second = Signature.make({
     state = {
       shop_items = {
-        { key = "j_credit_card", kind = "joker", edition = "negative", sell_price = 2, stickers = { "rental" } },
+        { key = "j_credit_card", edition = "negative", sell_price = 2, stickers = { "rental" } },
       },
     },
   })
@@ -226,10 +226,10 @@ local function test_card_zones_change_signature()
   local first = Signature.make({
     state = {
       cards_in_hand = {
-        { card_key = "c_a", card_kind = "base", suit = "clubs", rank = "ace" },
+        { card_key = "c_a" },
       },
       cards_in_deck = {
-        { card_key = "c_k", card_kind = "base", suit = "clubs", rank = "king" },
+        { card_key = "c_k" },
       },
     },
   })
@@ -237,10 +237,10 @@ local function test_card_zones_change_signature()
   local second = Signature.make({
     state = {
       cards_in_hand = {
-        { card_key = "s_a", card_kind = "base", suit = "spades", rank = "ace" },
+        { card_key = "s_a" },
       },
       cards_in_deck = {
-        { card_key = "c_k", card_kind = "base", suit = "clubs", rank = "king" },
+        { card_key = "c_k" },
       },
     },
   })
@@ -280,7 +280,7 @@ local function test_legacy_booster_packs_do_not_affect_signature()
   local first = Signature.make({
     state = {
       shop_items = {
-        { key = "p_buffoon_normal_1", kind = "pack" },
+        { key = "p_buffoon_normal_1" },
       },
       booster_packs = {
         { key = "p_ghost_legacy_1" },
@@ -291,7 +291,7 @@ local function test_legacy_booster_packs_do_not_affect_signature()
   local second = Signature.make({
     state = {
       shop_items = {
-        { key = "p_buffoon_normal_1", kind = "pack" },
+        { key = "p_buffoon_normal_1" },
       },
       booster_packs = {
         { key = "p_arcana_legacy_2" },

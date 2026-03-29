@@ -95,9 +95,6 @@ function Signature.make(snapshot)
 
   add_structured_items(parts, state.cards_in_hand, {
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
     "rarity",
     "enhancement",
     "edition",
@@ -109,9 +106,6 @@ function Signature.make(snapshot)
   })
   add_structured_items(parts, state.cards_in_deck, {
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
     "rarity",
     "enhancement",
     "edition",
@@ -139,31 +133,21 @@ function Signature.make(snapshot)
   })
   add_structured_items(parts, state.jokers, { "key", "rarity", "edition", "sell_price", "debuffed" })
   add_named_items(parts, state.vouchers, "key")
-  add_structured_items(parts, state.consumables, { "key", "kind", "edition", "sell_price", "debuffed" })
+  add_structured_items(parts, state.consumables, { "key", "edition", "sell_price", "debuffed" })
   add_structured_items(parts, state.shop_items, {
     "key",
-    "kind",
     "cost",
     "rarity",
     "edition",
     "sell_price",
     "enhancement",
     "seal",
-    "consumable_kind",
     "debuffed",
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
-    "pack_key",
-    "pack_kind",
   })
   add_structured_items(parts, state.shop_discounts, { "kind", "value" })
   add_structured_items(parts, pack_contents.cards, {
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
     "rarity",
     "enhancement",
     "edition",
@@ -174,7 +158,7 @@ function Signature.make(snapshot)
     "debuffed",
   })
   add_named_items(parts, state.tags, "key")
-  add_structured_items(parts, state.blinds, { "slot", "key", "state", "tag_key", "tag_claimed" })
+  add_structured_items(parts, state.blinds, { "key", "state", "tag_key", "tag_claimed" })
 
   return table.concat(parts, "::")
 end

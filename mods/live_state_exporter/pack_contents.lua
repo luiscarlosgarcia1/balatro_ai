@@ -61,15 +61,135 @@ local function pack_offer_keys(shop_items)
   local keys = {}
   local seen = {}
   for _, item in ipairs(safe_table(shop_items) or {}) do
-    if type(item) == "table" and normalize_token(item.kind) == "pack" then
-      local key = normalize_token(first_non_nil(item.key, item.pack_key))
-      if key and not seen[key] then
+    if type(item) == "table" then
+      local key = normalize_token(item.key)
+      if key and string.find(key, "p_", 1, true) == 1 and not seen[key] then
         seen[key] = true
         keys[#keys + 1] = key
       end
     end
   end
   return keys
+end
+
+local TAROT_KEYS = {
+  c_fool = true,
+  c_magician = true,
+  c_high_priestess = true,
+  c_empress = true,
+  c_emperor = true,
+  c_hierophant = true,
+  c_lovers = true,
+  c_chariot = true,
+  c_justice = true,
+  c_hermit = true,
+  c_wheel_of_fortune = true,
+  c_strength = true,
+  c_hanged_man = true,
+  c_death = true,
+  c_temperance = true,
+  c_devil = true,
+  c_tower = true,
+  c_star = true,
+  c_moon = true,
+  c_sun = true,
+  c_judgement = true,
+  c_world = true,
+}
+
+local PLANET_KEYS = {
+  c_mercury = true,
+  c_venus = true,
+  c_earth = true,
+  c_mars = true,
+  c_jupiter = true,
+  c_saturn = true,
+  c_uranus = true,
+  c_neptune = true,
+  c_pluto = true,
+  c_planet_x = true,
+  c_ceres = true,
+  c_eris = true,
+}
+
+local SPECTRAL_KEYS = {
+  c_familiar = true,
+  c_grim = true,
+  c_incantation = true,
+  c_talisman = true,
+  c_aura = true,
+  c_wraith = true,
+  c_sigil = true,
+  c_ouija = true,
+  c_ectoplasm = true,
+  c_immolate = true,
+  c_ankh = true,
+  c_deja_vu = true,
+  c_hex = true,
+  c_trance = true,
+  c_medium = true,
+  c_cryptid = true,
+  c_soul = true,
+  c_black_hole = true,
+}
+
+local function is_standard_playing_card_key(key)
+  local normalized = normalize_token(key)
+  if not normalized then
+    return false
+  end
+  local suit, rank = normalized:match("^([cdhs])_(.+)$")
+  if not suit or not rank then
+    return false
+  end
+  return rank == "a"
+    or rank == "j"
+    or rank == "q"
+    or rank == "k"
+    or rank == "10"
+    or rank == "2"
+    or rank == "3"
+    or rank == "4"
+    or rank == "5"
+    or rank == "6"
+    or rank == "7"
+    or rank == "8"
+    or rank == "9"
+end
+
+local function infer_family_from_key(key)
+  local normalized = normalize_token(key)
+  if not normalized then
+    return nil
+  end
+  if is_standard_playing_card_key(normalized) then
+    return "standard"
+  end
+  if string.find(normalized, "j_", 1, true) == 1 then
+    return "buffoon"
+  end
+  if TAROT_KEYS[normalized] then
+    return "arcana"
+  end
+  if PLANET_KEYS[normalized] then
+    return "celestial"
+  end
+  if SPECTRAL_KEYS[normalized] then
+    return "spectral"
+  end
+  return nil
+end
+
+local function infer_family_from_cards(cards)
+  for _, card in ipairs(safe_table(cards) or {}) do
+    if type(card) == "table" then
+      local family = infer_family_from_key(first_non_nil(card.card_key, card.key))
+      if family then
+        return family
+      end
+    end
+  end
+  return nil
 end
 
 local function extract_suffix(key)
@@ -106,52 +226,6 @@ local function extract_family_from_key(key)
     if string.find(normalized, "p_" .. family .. "_", 1, true) == 1 then
       return family
     end
-  end
-  return nil
-end
-
-local function infer_family_from_cards(cards)
-  local saw_standard = false
-  local saw_buffoon = false
-  local saw_arcana = false
-  local saw_celestial = false
-  local saw_spectral = false
-
-  for _, card in ipairs(safe_table(cards) or {}) do
-    if type(card) == "table" then
-      local card_kind = normalize_token(first_non_nil(card.card_kind, card.kind))
-      local consumable_kind = normalize_token(card.consumable_kind)
-      local key = normalize_token(first_non_nil(card.key, card.card_key))
-      if normalize_token(card.suit) and normalize_token(card.rank) then
-        saw_standard = true
-      end
-      if card_kind == "joker" or (key and string.find(key, "j_", 1, true) == 1) then
-        saw_buffoon = true
-      end
-      if consumable_kind == "tarot" then
-        saw_arcana = true
-      elseif consumable_kind == "planet" then
-        saw_celestial = true
-      elseif consumable_kind == "spectral" then
-        saw_spectral = true
-      end
-    end
-  end
-
-  if saw_standard then
-    return "standard"
-  end
-  if saw_buffoon then
-    return "buffoon"
-  end
-  if saw_arcana then
-    return "arcana"
-  end
-  if saw_celestial then
-    return "celestial"
-  end
-  if saw_spectral then
-    return "spectral"
   end
   return nil
 end

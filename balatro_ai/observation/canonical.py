@@ -154,7 +154,6 @@ def _serialize_joker(joker: ObservedJoker) -> dict[str, Any]:
 
 def _serialize_consumable(consumable: ObservedConsumable) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(consumable.kind),
         "key": _normalize_machine_value(consumable.key),
     }
     if consumable.edition is not None:
@@ -187,14 +186,16 @@ def _serialize_tag(tag: ObservedTag) -> dict[str, Any]:
 
 def _serialize_card(card: ObservedCard) -> dict[str, Any]:
     payload: dict[str, Any] = {}
-    if card.card_key is not None:
-        payload["card_key"] = _normalize_machine_value(card.card_key)
-    if card.card_kind is not None:
+    normalized_card_key = _normalize_machine_value(card.card_key)
+    if normalized_card_key is not None:
+        payload["card_key"] = normalized_card_key
+    elif card.card_kind is not None:
         payload["card_kind"] = _normalize_machine_value(card.card_kind)
-    if card.suit is not None:
-        payload["suit"] = _normalize_machine_value(card.suit)
-    if card.rank is not None:
-        payload["rank"] = _normalize_machine_value(card.rank)
+    if normalized_card_key is None:
+        if card.suit is not None:
+            payload["suit"] = _normalize_machine_value(card.suit)
+        if card.rank is not None:
+            payload["rank"] = _normalize_machine_value(card.rank)
     if card.rarity is not None:
         payload["rarity"] = _normalize_machine_value(card.rarity)
     if card.enhancement is not None:
@@ -251,7 +252,6 @@ def _card_sort_key(card: ObservedCard, original_index: int) -> tuple[int, int, s
 
 def _serialize_blind(blind: ObservedBlind) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "slot": _normalize_machine_value(blind.slot),
         "key": _normalize_machine_value(blind.key),
         "state": _normalize_machine_value(blind.state),
     }
@@ -267,11 +267,13 @@ def _serialize_shop_items(observation: GameObservation) -> list[dict[str, Any]]:
 
 
 def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(item.kind),
-        "name": item.name,
-        "key": _normalize_machine_value(item.key),
-    }
+    payload: dict[str, Any] = {}
+    normalized_key = _normalize_machine_value(item.key)
+    if normalized_key is not None:
+        payload["key"] = normalized_key
+    else:
+        payload["kind"] = _normalize_machine_value(item.kind)
+        payload["name"] = item.name
     if item.cost is not None:
         payload["cost"] = item.cost
     if item.rarity is not None:
@@ -284,24 +286,25 @@ def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
         payload["enhancement"] = _normalize_machine_value(item.enhancement)
     if item.seal is not None:
         payload["seal"] = _normalize_machine_value(item.seal)
-    if item.consumable_kind is not None:
-        payload["consumable_kind"] = _normalize_machine_value(item.consumable_kind)
     if item.stickers:
         payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
     if item.debuffed:
         payload["debuffed"] = True
     if item.card_key is not None:
         payload["card_key"] = _normalize_machine_value(item.card_key)
-    if item.card_kind is not None:
+    elif item.card_kind is not None:
         payload["card_kind"] = _normalize_machine_value(item.card_kind)
-    if item.suit is not None:
-        payload["suit"] = _normalize_machine_value(item.suit)
-    if item.rank is not None:
-        payload["rank"] = _normalize_machine_value(item.rank)
-    if item.pack_key is not None:
-        payload["pack_key"] = _normalize_machine_value(item.pack_key)
-    if item.pack_kind is not None:
-        payload["pack_kind"] = _normalize_machine_value(item.pack_kind)
+    if normalized_key is None:
+        if item.suit is not None:
+            payload["suit"] = _normalize_machine_value(item.suit)
+        if item.rank is not None:
+            payload["rank"] = _normalize_machine_value(item.rank)
+        if item.consumable_kind is not None:
+            payload["consumable_kind"] = _normalize_machine_value(item.consumable_kind)
+        if item.pack_key is not None:
+            payload["pack_key"] = _normalize_machine_value(item.pack_key)
+        if item.pack_kind is not None:
+            payload["pack_kind"] = _normalize_machine_value(item.pack_kind)
     return payload
 
 

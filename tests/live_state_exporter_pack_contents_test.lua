@@ -16,17 +16,17 @@ local function test_build_prefers_active_pack_cards_over_stale_shop_pack_identit
   local pack_contents = PackContents.build({
     interaction_phase = "pack_reward",
     cards = {
-      { card_key = "c_j", suit = "clubs", rank = "jack", card_kind = "default" },
-      { card_key = "h_6", suit = "hearts", rank = "6", card_kind = "enhanced" },
-      { card_key = "s_2", suit = "spades", rank = "2", card_kind = "default" },
-      { card_key = "d_5", suit = "diamonds", rank = "5", card_kind = "default" },
-      { card_key = "c_q", suit = "clubs", rank = "queen", card_kind = "enhanced" },
+      { card_key = "c_j" },
+      { card_key = "h_6" },
+      { card_key = "s_2" },
+      { card_key = "d_5" },
+      { card_key = "c_q" },
     },
     choose_limit = 1,
     selected_count = 0,
     skip_available = true,
     shop_items = {
-      { kind = "pack", key = "p_buffoon_normal_1", pack_key = "p_buffoon_normal_1" },
+      { key = "p_buffoon_normal_1" },
     },
     remembered_pack_key = "p_buffoon_normal_1",
     pack_size = 2,
@@ -40,15 +40,15 @@ local function test_build_derives_arcana_pack_from_tarot_cards()
   local pack_contents = PackContents.build({
     interaction_phase = "pack_reward",
     cards = {
-      { key = "c_fool", consumable_kind = "tarot" },
-      { key = "c_magician", consumable_kind = "tarot" },
-      { key = "c_world", consumable_kind = "tarot" },
+      { card_key = "c_fool" },
+      { card_key = "c_magician" },
+      { card_key = "c_world" },
     },
     choose_limit = 1,
     selected_count = 0,
     skip_available = true,
     shop_items = {
-      { kind = "pack", key = "p_buffoon_normal_2", pack_key = "p_buffoon_normal_2" },
+      { key = "p_buffoon_normal_2" },
     },
     remembered_pack_key = "p_buffoon_normal_2",
     pack_size = 99,
@@ -78,8 +78,8 @@ end
 
 local function test_remembered_key_tracks_single_visible_pack_offer_in_shop()
   local remembered = PackContents.remembered_key("shop", {
-    { kind = "joker", key = "j_greedy_joker" },
-    { kind = "pack", key = "p_standard_jumbo_1", pack_key = "p_standard_jumbo_1" },
+    { key = "j_greedy_joker" },
+    { key = "p_standard_jumbo_1" },
   }, nil)
 
   assert_equal(remembered, "p_standard_jumbo_1", "shop phase should remember a single visible pack offer")
