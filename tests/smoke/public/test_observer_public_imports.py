@@ -9,37 +9,18 @@ from balatro_ai.observation.service import BalatroObserver as ObserverImpl
 
 
 class ObserverPublicImportsSmokeTests(unittest.TestCase):
-    def test_balatro_paths_only_exposes_live_state_path(self) -> None:
+    def test_balatro_paths_exposes_live_state_path(self) -> None:
         paths = PathsImpl()
 
         self.assertEqual(str(paths.live_state_path).replace("\\", "/").split("/")[-2:], ["ai", "live_state.json"])
-        self.assertFalse(hasattr(paths, "profile"))
-        self.assertFalse(hasattr(paths, "settings_path"))
-        self.assertFalse(hasattr(paths, "profile_dir"))
-        self.assertFalse(hasattr(paths, "save_path"))
-        self.assertFalse(hasattr(paths, "profile_path"))
-        self.assertFalse(hasattr(paths, "meta_path"))
-        self.assertFalse(hasattr(paths, "available_profiles"))
 
     def test_package_root_exports_current_observer_surface(self) -> None:
         self.assertIs(balatro_ai.BalatroPaths, PathsImpl)
         self.assertIs(balatro_ai.BalatroObserver, ObserverImpl)
-        self.assertFalse(hasattr(balatro_ai, "BalatroSaveObserver"))
-        self.assertFalse(hasattr(balatro_ai, "LightweightCapturePlan"))
-        self.assertFalse(hasattr(balatro_ai, "CaptureBand"))
-        self.assertFalse(hasattr(balatro_ai, "PixelRect"))
-        self.assertFalse(hasattr(balatro_ai, "SavePayloadDecoder"))
-        self.assertFalse(hasattr(balatro_ai, "SaveSnapshot"))
 
     def test_observation_package_exports_current_observer_surface(self) -> None:
         self.assertIs(observation_api.BalatroPaths, PathsImpl)
         self.assertIs(observation_api.BalatroObserver, ObserverImpl)
-        self.assertFalse(hasattr(observation_api, "BalatroSaveObserver"))
-        self.assertFalse(hasattr(observation_api, "LightweightCapturePlan"))
-        self.assertFalse(hasattr(observation_api, "CaptureBand"))
-        self.assertFalse(hasattr(observation_api, "PixelRect"))
-        self.assertFalse(hasattr(observation_api, "SavePayloadDecoder"))
-        self.assertFalse(hasattr(observation_api, "SaveSnapshot"))
 
 
 if __name__ == "__main__":

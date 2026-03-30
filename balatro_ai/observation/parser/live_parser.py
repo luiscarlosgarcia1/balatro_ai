@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ..models import GameObservation
+from ...models import GameObservation
 from .coercion import int_or_none, int_or_zero, parse_seen_at, string_or_none
 from .run_state import parse_interest, parse_pack_contents, parse_run_info
 from .shop import merge_shop_vouchers_into_shop_items, parse_shop_items

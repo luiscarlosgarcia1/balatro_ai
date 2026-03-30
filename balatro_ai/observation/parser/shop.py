@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..models import ObservedShopItem, ObservedVoucher
+from ...models import ObservedShopItem, ObservedVoucher
 from .coercion import int_or_none, string_or_none
 
 

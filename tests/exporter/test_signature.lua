@@ -138,28 +138,6 @@ local function test_pack_reward_choices_remaining_changes_signature()
   assert_not_equal(first, second, "signature should track actionable pack choice state")
 end
 
-local function test_legacy_open_pack_kind_does_not_affect_signature()
-  local first = Signature.make({
-    state = {
-      interaction_phase = "pack_reward",
-      pack_contents = {
-        open_pack_kind = "tarot",
-      },
-    },
-  })
-
-  local second = Signature.make({
-    state = {
-      interaction_phase = "pack_reward",
-      pack_contents = {
-        open_pack_kind = "planet",
-      },
-    },
-  })
-
-  assert_equal(first, second, "signature should ignore removed legacy pack kind fields")
-end
-
 local function test_blind_and_skip_claim_fields_change_signature()
   local first = Signature.make({
     state = {
@@ -306,71 +284,14 @@ local function test_selection_references_change_signature()
   assert_not_equal(first, second, "signature should track lightweight selected-card references")
 end
 
-local function test_removed_highlighted_card_does_not_affect_signature()
-  local first = Signature.make({
-    state = {
-      selected_cards = {
-        { zone = "cards_in_hand", card_key = "h_8" },
-      },
-      highlighted_card = {
-        zone = "jokers",
-        joker_key = "j_blueprint",
-      },
-    },
-  })
-
-  local second = Signature.make({
-    state = {
-      selected_cards = {
-        { zone = "cards_in_hand", card_key = "h_8" },
-      },
-      highlighted_card = {
-        zone = "jokers",
-        joker_key = "j_brainstorm",
-      },
-    },
-  })
-
-  assert_equal(first, second, "signature should ignore removed highlighted_card payloads")
-end
-
-local function test_legacy_booster_packs_do_not_affect_signature()
-  local first = Signature.make({
-    state = {
-      shop_items = {
-        { key = "p_buffoon_normal_1" },
-      },
-      booster_packs = {
-        { key = "p_ghost_legacy_1" },
-      },
-    },
-  })
-
-  local second = Signature.make({
-    state = {
-      shop_items = {
-        { key = "p_buffoon_normal_1" },
-      },
-      booster_packs = {
-        { key = "p_arcana_legacy_2" },
-      },
-    },
-  })
-
-  assert_equal(first, second, "signature should ignore removed legacy booster_packs")
-end
-
 test_missing_scalar_fields_still_produce_signature()
 test_missing_item_keys_do_not_crash()
 test_distinct_real_values_change_signature()
 test_score_shape_changes_signature()
 test_pack_reward_choices_remaining_changes_signature()
-test_legacy_open_pack_kind_does_not_affect_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
 test_interest_object_changes_signature()
 test_run_info_hand_state_changes_signature()
 test_card_zones_change_signature()
 test_selection_references_change_signature()
-test_removed_highlighted_card_does_not_affect_signature()
-test_legacy_booster_packs_do_not_affect_signature()

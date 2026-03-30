@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..models import (
+from ...models import (
     ObservedBlind,
     ObservedCard,
     ObservedConsumable,
