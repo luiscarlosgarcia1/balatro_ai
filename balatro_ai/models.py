@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, TypeAlias
-
-
-ObservationPayload: TypeAlias = dict[str, Any]
 
 
 RUN_INFO_HAND_ORDER = (
@@ -164,12 +160,7 @@ class ObservedBlind:
 
 @dataclass(frozen=True)
 class GameObservation:
-    """Structured snapshot of the current game state.
-
-    Transitional legacy bridge: later phases will keep shrinking the object-model
-    side of cards, shop, and blind details, but the scalar backbone already follows
-    the canonical observer contract.
-    """
+    """Structured snapshot of the current game state."""
 
     interaction_phase: str
     money: int
@@ -225,6 +216,6 @@ class ValidationResult:
 class StepRecord:
     """Single loop iteration for logging and later evaluation."""
 
-    observation: ObservationPayload
+    observation: GameObservation
     action: GameAction
     validation: ValidationResult

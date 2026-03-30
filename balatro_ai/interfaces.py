@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import GameAction, ObservationPayload, ValidationResult
+from .models import GameAction, GameObservation, ValidationResult
 
 
 class Observer(Protocol):
-    def observe(self) -> ObservationPayload:
+    def observe(self) -> GameObservation:
         """Return the latest visible game state."""
 
 
 class Policy(Protocol):
-    def choose_action(self, observation: ObservationPayload) -> GameAction:
+    def choose_action(self, observation: GameObservation) -> GameAction:
         """Choose the next high-level action for the current state."""
 
 
 class Validator(Protocol):
     def validate(
         self,
-        observation: ObservationPayload,
+        observation: GameObservation,
         action: GameAction,
     ) -> ValidationResult:
         """Approve or reject the proposed game action."""

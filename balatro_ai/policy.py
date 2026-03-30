@@ -1,14 +1,21 @@
 from __future__ import annotations
 
-from .models import GameAction, ObservationPayload, ValidationResult
+from .models import GameAction, GameObservation, ValidationResult
 
 
 class DemoPolicy:
     """A tiny heuristic policy to exercise the runtime."""
 
-    def choose_action(self, observation: ObservationPayload) -> GameAction:
-        phase = str(observation.get("interaction_phase") or "unknown")
-        money = int(observation.get("money") or 0)
+    def choose_action(self, observation: GameObservation) -> GameAction:
+        phase = observation.interaction_phase or "unknown"
+        money = observation.money
+
+        if phase == "blind_select":
+            return GameAction(
+                kind="select_blind",
+                target=observation.blind_key,
+                reason="Advance into the round by selecting the available blind.",
+            )
 
         if phase == "shop":
             if money >= 5:
@@ -46,11 +53,11 @@ class RuleBasedValidator:
 
     def validate(
         self,
-        observation: ObservationPayload,
+        observation: GameObservation,
         action: GameAction,
     ) -> ValidationResult:
-        phase = str(observation.get("interaction_phase") or "unknown")
-        money = int(observation.get("money") or 0)
+        phase = observation.interaction_phase or "unknown"
+        money = observation.money
         allowed = self._allowed_actions.get(phase, {"continue"})
         if action.kind not in allowed:
             return ValidationResult(
