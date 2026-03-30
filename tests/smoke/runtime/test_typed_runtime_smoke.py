@@ -5,16 +5,18 @@ from typing import get_type_hints
 import unittest
 from unittest.mock import patch
 
-from balatro_ai.interfaces import Observer
+from balatro_ai.interfaces import Observer, Policy, Validator
 from balatro_ai.models import GameAction, GameObservation
 from balatro_ai.models import StepRecord
 from balatro_ai.policy import DemoPolicy, RuleBasedValidator
-from balatro_ai.runtime import EpisodeRunner, ScriptedObserver
+from balatro_ai.runtime import EpisodeRunner
 
 
 class TypedRuntimeSmokeTests(unittest.TestCase):
-    def test_typed_runtime_contract_uses_game_observation_for_observer_and_step_record(self) -> None:
+    def test_typed_runtime_contract_uses_game_observation_everywhere(self) -> None:
         self.assertIs(get_type_hints(Observer.observe)["return"], GameObservation)
+        self.assertIs(get_type_hints(Policy.choose_action)["observation"], GameObservation)
+        self.assertIs(get_type_hints(Validator.validate)["observation"], GameObservation)
         self.assertIs(get_type_hints(StepRecord)["observation"], GameObservation)
 
     def test_python_side_observation_serializer_module_is_removed(self) -> None:
@@ -36,7 +38,7 @@ class TypedRuntimeSmokeTests(unittest.TestCase):
         executor = RecordingExecutor()
 
         runner = EpisodeRunner(
-            observer=ScriptedObserver([observation]),
+            observer=FixedObserver([observation]),
             policy=policy,
             validator=validator,
             executor=executor,
@@ -73,13 +75,14 @@ class TypedRuntimeSmokeTests(unittest.TestCase):
         executor = RecordingExecutor()
 
         records = EpisodeRunner(
-            observer=ScriptedObserver([observation]),
+            observer=FixedObserver([observation]),
             policy=InvalidShopPolicy(),
             validator=RuleBasedValidator(),
             executor=executor,
         ).run()
 
         self.assertFalse(records[0].validation.accepted)
+        self.assertEqual(records[0].action.kind, "play_best_hand")
         self.assertEqual(executor.actions, [])
 
 
@@ -104,6 +107,14 @@ class RecordingRuleBasedValidator(RuleBasedValidator):
 class InvalidShopPolicy:
     def choose_action(self, observation: GameObservation) -> GameAction:
         return GameAction(kind="play_best_hand", reason="force rejection")
+
+
+class FixedObserver:
+    def __init__(self, observations: list[GameObservation]) -> None:
+        self._observations = iter(observations)
+
+    def observe(self) -> GameObservation:
+        return next(self._observations)
 
 
 class RecordingExecutor:

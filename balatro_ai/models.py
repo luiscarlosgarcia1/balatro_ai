@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, TypeAlias
-
-
-ObservationPayload: TypeAlias = dict[str, Any]
 
 
 RUN_INFO_HAND_ORDER = (
@@ -202,9 +198,6 @@ class GameObservation:
     tags: tuple[ObservedTag, ...] = ()
     notes: tuple[str, ...] = ()
     seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-RuntimeObservation: TypeAlias = GameObservation | ObservationPayload
 
 
 @dataclass(frozen=True)
