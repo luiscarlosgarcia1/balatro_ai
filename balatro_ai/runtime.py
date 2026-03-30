@@ -5,16 +5,16 @@ from typing import Iterable
 
 from .policy import DemoPolicy, RuleBasedValidator
 from .interfaces import Executor, Observer, Policy, Validator
-from .models import GameAction, ObservationPayload, StepRecord
+from .models import GameAction, GameObservation, ObservationPayload, RuntimeObservation, StepRecord
 
 
 class ScriptedObserver:
     """Returns a fixed sequence of mock states for local development."""
 
-    def __init__(self, observations: Iterable[ObservationPayload]) -> None:
+    def __init__(self, observations: Iterable[RuntimeObservation]) -> None:
         self._observations = iter(observations)
 
-    def observe(self) -> ObservationPayload:
+    def observe(self) -> RuntimeObservation:
         return next(self._observations)
 
 
@@ -43,12 +43,12 @@ class EpisodeRunner:
             except StopIteration:
                 break
 
-            score = observation.get("score") or {}
+            score_current, score_target = _observation_score(observation)
             print(
                 "OBSERVE  "
-                f"phase={observation.get('interaction_phase')} money={observation.get('money')} "
-                f"hands={observation.get('hands_left')} discards={observation.get('discards_left')} "
-                f"score={score.get('current')}/{score.get('target')}"
+                f"phase={_observation_phase(observation)} money={_observation_money(observation)} "
+                f"hands={_observation_hands_left(observation)} discards={_observation_discards_left(observation)} "
+                f"score={score_current}/{score_target}"
             )
             action = self.policy.choose_action(observation)
             validation = self.validator.validate(observation, action)
@@ -182,3 +182,34 @@ def main() -> None:
     records = create_demo_runner().run()
     accepted = sum(1 for record in records if record.validation.accepted)
     print(f"SUMMARY  steps={len(records)} accepted_actions={accepted}")
+
+
+def _observation_phase(observation: RuntimeObservation) -> str:
+    if isinstance(observation, GameObservation):
+        return observation.interaction_phase
+    return str(observation.get("interaction_phase") or "unknown")
+
+
+def _observation_money(observation: RuntimeObservation) -> int:
+    if isinstance(observation, GameObservation):
+        return observation.money
+    return int(observation.get("money") or 0)
+
+
+def _observation_hands_left(observation: RuntimeObservation) -> int:
+    if isinstance(observation, GameObservation):
+        return observation.hands_left
+    return int(observation.get("hands_left") or 0)
+
+
+def _observation_discards_left(observation: RuntimeObservation) -> int:
+    if isinstance(observation, GameObservation):
+        return observation.discards_left
+    return int(observation.get("discards_left") or 0)
+
+
+def _observation_score(observation: RuntimeObservation) -> tuple[int | None, int | None]:
+    if isinstance(observation, GameObservation):
+        return observation.score_current, observation.score_target
+    score = observation.get("score") or {}
+    return score.get("current"), score.get("target")

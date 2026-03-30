@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from .models import GameAction, ObservationPayload, ValidationResult
+from .models import GameAction, GameObservation, RuntimeObservation, ValidationResult
 
 
 class DemoPolicy:
     """A tiny heuristic policy to exercise the runtime."""
 
-    def choose_action(self, observation: ObservationPayload) -> GameAction:
-        phase = str(observation.get("interaction_phase") or "unknown")
-        money = int(observation.get("money") or 0)
+    def choose_action(self, observation: RuntimeObservation) -> GameAction:
+        phase = _observation_phase(observation)
+        money = _observation_money(observation)
 
         if phase == "shop":
             if money >= 5:
@@ -46,11 +46,11 @@ class RuleBasedValidator:
 
     def validate(
         self,
-        observation: ObservationPayload,
+        observation: RuntimeObservation,
         action: GameAction,
     ) -> ValidationResult:
-        phase = str(observation.get("interaction_phase") or "unknown")
-        money = int(observation.get("money") or 0)
+        phase = _observation_phase(observation)
+        money = _observation_money(observation)
         allowed = self._allowed_actions.get(phase, {"continue"})
         if action.kind not in allowed:
             return ValidationResult(
@@ -70,3 +70,15 @@ class RuleBasedValidator:
             accepted=True,
             notes=("Action passed rule-based validation.",),
         )
+
+
+def _observation_phase(observation: RuntimeObservation) -> str:
+    if isinstance(observation, GameObservation):
+        return observation.interaction_phase or "unknown"
+    return str(observation.get("interaction_phase") or "unknown")
+
+
+def _observation_money(observation: RuntimeObservation) -> int:
+    if isinstance(observation, GameObservation):
+        return observation.money
+    return int(observation.get("money") or 0)

@@ -204,6 +204,9 @@ class GameObservation:
     seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+RuntimeObservation: TypeAlias = GameObservation | ObservationPayload
+
+
 @dataclass(frozen=True)
 class GameAction:
     """A high-level in-game action before it is translated into UI input."""
@@ -225,6 +228,6 @@ class ValidationResult:
 class StepRecord:
     """Single loop iteration for logging and later evaluation."""
 
-    observation: ObservationPayload
+    observation: RuntimeObservation
     action: GameAction
     validation: ValidationResult
