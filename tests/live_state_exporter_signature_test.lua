@@ -224,6 +224,42 @@ local function test_interest_object_changes_signature()
   assert_not_equal(first, second, "signature should track raw interest determinants")
 end
 
+local function test_run_info_hand_state_changes_signature()
+  local first = Signature.make({
+    state = {
+      run_info = {
+        hands = {
+          ["Straight Flush"] = {
+            level = 1,
+            mult = 8,
+            chips = 100,
+            played = 0,
+            played_this_round = 0,
+          },
+        },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      run_info = {
+        hands = {
+          ["Straight Flush"] = {
+            level = 2,
+            mult = 12,
+            chips = 140,
+            played = 1,
+            played_this_round = 1,
+          },
+        },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track per-hand run state")
+end
+
 local function test_card_zones_change_signature()
   local first = Signature.make({
     state = {
@@ -333,6 +369,7 @@ test_legacy_open_pack_kind_does_not_affect_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
 test_interest_object_changes_signature()
+test_run_info_hand_state_changes_signature()
 test_card_zones_change_signature()
 test_selection_references_change_signature()
 test_removed_highlighted_card_does_not_affect_signature()

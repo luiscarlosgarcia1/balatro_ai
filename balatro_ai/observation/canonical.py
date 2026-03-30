@@ -13,6 +13,7 @@ from ..models import (
     ObservedInterest,
     ObservedPackContents,
     ObservedReference,
+    ObservedRunInfo,
     ObservedShopItem,
     ObservedTag,
     ObservedVoucher,
@@ -39,6 +40,7 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "tags",
     "ante",
     "round_count",
+    "run_info",
     "blinds",
     "shop_items",
     "reroll_cost",
@@ -106,6 +108,7 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "discards_left": observation.discards_left,
         "ante": observation.ante,
         "round_count": observation.round_count,
+        "run_info": _serialize_run_info(observation.run_info),
         "joker_slots": observation.joker_slots,
         "jokers": serialized_jokers,
         "consumable_slots": observation.consumable_slots,
@@ -185,6 +188,23 @@ def _serialize_tag(tag: ObservedTag) -> dict[str, Any]:
     return {
         "key": _normalize_machine_value(tag.key),
     }
+
+
+def _serialize_run_info(run_info: ObservedRunInfo | None) -> dict[str, Any] | None:
+    if run_info is None:
+        return None
+
+    hands: dict[str, Any] = {}
+    for hand in run_info.hands:
+        hands[hand.hand_name] = {
+            "level": hand.level,
+            "chips": hand.chips,
+            "mult": hand.mult,
+            "played": hand.played,
+            "played_this_round": hand.played_this_round,
+        }
+
+    return {"hands": hands}
 
 
 def _serialize_card(card: ObservedCard) -> dict[str, Any]:

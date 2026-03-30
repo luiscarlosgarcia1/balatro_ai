@@ -199,6 +199,20 @@ def format_observation(observation: dict[str, object]) -> str:
         f"  hand_size: {observation.get('hand_size') if observation.get('hand_size') is not None else '-'}",
         f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
     ]
+    run_info = observation.get("run_info")
+    if isinstance(run_info, dict):
+        hands = run_info.get("hands")
+        if isinstance(hands, dict) and hands:
+            lines.append("  run_info:")
+            lines.append("    hands:")
+            for hand_name, hand in hands.items():
+                if not isinstance(hand, dict):
+                    continue
+                extras = []
+                for field_name in ("level", "chips", "mult", "played", "played_this_round"):
+                    if hand.get(field_name) is not None:
+                        extras.append(f"{field_name}={hand[field_name]}")
+                lines.append(f"      - {hand_name}: {', '.join(extras)}")
     jokers = observation.get("jokers") or []
     if jokers:
         lines.append("  jokers:")

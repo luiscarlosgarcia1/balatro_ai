@@ -8,6 +8,22 @@ from typing import Any, TypeAlias
 ObservationPayload: TypeAlias = dict[str, Any]
 
 
+RUN_INFO_HAND_ORDER = (
+    "Flush Five",
+    "Flush House",
+    "Five of a Kind",
+    "Straight Flush",
+    "Four of a Kind",
+    "Full House",
+    "Flush",
+    "Straight",
+    "Three of a Kind",
+    "Two Pair",
+    "Pair",
+    "High Card",
+)
+
+
 @dataclass(frozen=True)
 class ObservedCard:
     """Canonical card object for hand, deck, and pack zones."""
@@ -121,6 +137,25 @@ class ObservedPackContents:
 
 
 @dataclass(frozen=True)
+class ObservedRunHand:
+    """Raw stored per-hand state exported from G.GAME.hands."""
+
+    hand_name: str
+    level: int | None = None
+    mult: int | None = None
+    chips: int | None = None
+    played: int | None = None
+    played_this_round: int | None = None
+
+
+@dataclass(frozen=True)
+class ObservedRunInfo:
+    """Grouped run-scoped state that is not tied to a card zone."""
+
+    hands: tuple[ObservedRunHand, ...] = ()
+
+
+@dataclass(frozen=True)
 class ObservedBlind:
     """Blind choice available during blind selection."""
 
@@ -156,6 +191,7 @@ class GameObservation:
     stake_id: str | int | None = None
     ante: int | None = None
     round_count: int | None = None
+    run_info: ObservedRunInfo | None = None
     blinds: tuple[ObservedBlind, ...] = ()
     joker_slots: int | None = None
     vouchers: tuple[ObservedVoucher, ...] = ()

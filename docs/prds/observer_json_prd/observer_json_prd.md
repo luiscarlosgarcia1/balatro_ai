@@ -34,15 +34,16 @@ The agreed top-level order is:
 17. `tags`
 18. `ante`
 19. `round_count`
-20. `blinds`
-21. `shop_items`
-22. `reroll_cost`
-23. `pack_contents`
-24. `hand_size`
-25. `cards_in_hand`
-26. `selected_cards`
-27. `cards_in_deck`
-28. `notes`
+20. `run_info`
+21. `blinds`
+22. `shop_items`
+23. `reroll_cost`
+24. `pack_contents`
+25. `hand_size`
+26. `cards_in_hand`
+27. `selected_cards`
+28. `cards_in_deck`
+29. `notes`
 
 This matters because the AI will eventually consume the observer directly. If the observer stays half-human, half-machine, then policy logic, evaluation, and future automation will all be built on an unstable surface.
 
@@ -61,6 +62,7 @@ The observer should:
 - expose selected state as lightweight references when that is more efficient than repeating full objects
 - avoid duplicating shop vouchers inside `shop_items`
 - preserve visible UI order for `shop_items` so the AI sees the market in the same order the player does
+- represent per-run hand progression through a dedicated `run_info` object placed after `round_count`
 - represent opened packs through a dedicated `pack_contents` object placed after `shop_items`
 - keep notes as structured strings in `notes`, including operational entries like screenshot status and observation timestamp when those are part of the observer output
 
@@ -119,6 +121,7 @@ The canonical JSON output is the contract. Any human-readable console rendering 
 - `shop_vouchers` should always be represented as an array, even when there is only one current shop voucher.
 - `shop_items` remains the canonical market list for other buyable items such as jokers, consumables, and booster packs, and it should preserve visible UI order.
 - `interest` should be represented as a raw-state object with `amount`, `cap`, and `no_interest` rather than a derived payout scalar.
+- `run_info.hands` should use the upstream hand names as keys and expose only `level`, `chips`, `mult`, `played`, and `played_this_round` in that order.
 - `pack_contents` should be a dedicated object placed after `shop_items` and contain actionable pack state plus the visible pack cards.
 - When `interaction_phase` is `pack_reward`, `pack_contents` should remain present even if some metadata is unavailable; only inactive pack screens should use top-level `null`.
 - `selected_cards` should use lightweight references where that is more efficient than repeating the full card payload. The preferred shape is a compact object such as `{zone, card_key}` or `{zone, joker_key}` rather than a full repeated object.

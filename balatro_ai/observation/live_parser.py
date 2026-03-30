@@ -12,6 +12,9 @@ from ..models import (
     ObservedInterest,
     ObservedPackContents,
     ObservedReference,
+    ObservedRunHand,
+    ObservedRunInfo,
+    RUN_INFO_HAND_ORDER,
     ObservedShopItem,
     ObservedTag,
     ObservedVoucher,
@@ -62,6 +65,7 @@ class LiveObservationParser:
         tags = self._parse_live_tags(state.get("tags"))
         jokers = self._parse_live_jokers(state.get("jokers"))
         interest = self._parse_interest(state.get("interest"))
+        run_info = self._parse_run_info(state.get("run_info"))
 
         seen_at_raw = state.get("seen_at")
         seen_at = None
@@ -91,6 +95,7 @@ class LiveObservationParser:
             stake_id=state.get("stake_id"),
             ante=self._int_or_none(state.get("ante")),
             round_count=self._int_or_none(state.get("round_count", state.get("round_number"))),
+            run_info=run_info,
             blinds=tuple(blinds),
             joker_slots=self._int_or_none(state.get("joker_slots")),
             vouchers=tuple(vouchers),
@@ -119,6 +124,32 @@ class LiveObservationParser:
         if scalar is None:
             return None
         return ObservedInterest(amount=scalar, cap=None, no_interest=False)
+
+    def _parse_run_info(self, payload: object) -> ObservedRunInfo | None:
+        if not isinstance(payload, dict):
+            return None
+
+        hands_payload = payload.get("hands")
+        if not isinstance(hands_payload, dict):
+            return None
+
+        hands: list[ObservedRunHand] = []
+        for hand_name in RUN_INFO_HAND_ORDER:
+            hand_payload = hands_payload.get(hand_name)
+            if not isinstance(hand_payload, dict):
+                continue
+            hands.append(
+                ObservedRunHand(
+                    hand_name=hand_name,
+                    level=self._int_or_none(hand_payload.get("level")),
+                    mult=self._int_or_none(hand_payload.get("mult")),
+                    chips=self._int_or_none(hand_payload.get("chips")),
+                    played=self._int_or_none(hand_payload.get("played")),
+                    played_this_round=self._int_or_none(hand_payload.get("played_this_round")),
+                )
+            )
+
+        return ObservedRunInfo(hands=tuple(hands)) if hands else None
 
     def _parse_cards(self, payload: object) -> list[ObservedCard]:
         cards: list[ObservedCard] = []

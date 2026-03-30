@@ -19,6 +19,20 @@ local EXPORT_MAX_DECK_CARDS = 80
 local EXPORT_MAX_PACK_CARDS = 16
 local EXPORT_MAX_STRING = 80
 local unpack_fn = table.unpack or unpack
+local RUN_INFO_HAND_ORDER = {
+  "Flush Five",
+  "Flush House",
+  "Five of a Kind",
+  "Straight Flush",
+  "Four of a Kind",
+  "Full House",
+  "Flush",
+  "Straight",
+  "Three of a Kind",
+  "Two Pair",
+  "Pair",
+  "High Card",
+}
 local function load_module(filename)
   local mod = rawget(_G, "SMODS") and SMODS.current_mod
   local mod_path = mod and mod.path
@@ -935,6 +949,38 @@ local function summarize_deck(game)
   }
 end
 
+local function collect_run_info(game)
+  local hands = safe_table(game and game.hands)
+  if not hands then
+    return nil
+  end
+
+  local payload = {
+    hands = {},
+  }
+  local count = 0
+
+  for _, hand_name in ipairs(RUN_INFO_HAND_ORDER) do
+    local hand = safe_table(hands[hand_name])
+    if hand then
+      payload.hands[hand_name] = {
+        level = safe_number(hand.level),
+        mult = safe_number(hand.mult),
+        chips = safe_number(hand.chips),
+        played = safe_number(hand.played),
+        played_this_round = safe_number(hand.played_this_round),
+      }
+      count = count + 1
+    end
+  end
+
+  if count == 0 then
+    return nil
+  end
+
+  return payload
+end
+
 local function summarize_stake(game, root)
   local stake_index = safe_number(game.stake)
   if not stake_index then
@@ -1278,6 +1324,7 @@ local function snapshot_game()
   local deck = summarize_deck(game)
   local stake = summarize_stake(game, root)
   local vouchers = collect_used_vouchers(game, root)
+  local run_info = collect_run_info(game)
   local blinds = collect_blinds(game)
   local tags = collect_tags(game, root)
   local selected_cards = collect_selected_cards(root)
@@ -1309,6 +1356,7 @@ local function snapshot_game()
       state_id = safe_number(first_non_nil(root and root.STATE, game.state, game.current_round_state)),
       ante = safe_number(round_resets.ante),
       round_count = safe_number(game.round),
+      run_info = run_info,
       stake_id = stake and first_non_nil(stake.key, stake.index) or nil,
       money = safe_number(first_non_nil(game.dollars, game.money)),
       hands_left = safe_number(first_non_nil(current_round.hands_left, round_resets.hands, game.hands_left, game.hands)),

@@ -35,6 +35,7 @@ CANONICAL_TOP_LEVEL_KEYS = [
     "tags",
     "ante",
     "round_count",
+    "run_info",
     "blinds",
     "shop_items",
     "reroll_cost",
@@ -45,6 +46,38 @@ CANONICAL_TOP_LEVEL_KEYS = [
     "cards_in_deck",
     "notes",
 ]
+
+RUN_INFO_HAND_ORDER = [
+    "Flush Five",
+    "Flush House",
+    "Five of a Kind",
+    "Straight Flush",
+    "Four of a Kind",
+    "Full House",
+    "Flush",
+    "Straight",
+    "Three of a Kind",
+    "Two Pair",
+    "Pair",
+    "High Card",
+]
+
+RUN_INFO_EXAMPLE = {
+    "hands": {
+        "Flush Five": {"level": 1, "chips": 160, "mult": 16, "played": 0, "played_this_round": 0},
+        "Flush House": {"level": 1, "chips": 140, "mult": 14, "played": 0, "played_this_round": 0},
+        "Five of a Kind": {"level": 1, "chips": 120, "mult": 12, "played": 0, "played_this_round": 0},
+        "Straight Flush": {"level": 2, "chips": 140, "mult": 12, "played": 1, "played_this_round": 1},
+        "Four of a Kind": {"level": 1, "chips": 60, "mult": 7, "played": 0, "played_this_round": 0},
+        "Full House": {"level": 1, "chips": 40, "mult": 4, "played": 0, "played_this_round": 0},
+        "Flush": {"level": 1, "chips": 35, "mult": 4, "played": 0, "played_this_round": 0},
+        "Straight": {"level": 1, "chips": 30, "mult": 4, "played": 0, "played_this_round": 0},
+        "Three of a Kind": {"level": 1, "chips": 30, "mult": 3, "played": 0, "played_this_round": 0},
+        "Two Pair": {"level": 1, "chips": 20, "mult": 2, "played": 0, "played_this_round": 0},
+        "Pair": {"level": 1, "chips": 10, "mult": 2, "played": 0, "played_this_round": 0},
+        "High Card": {"level": 2, "chips": 15, "mult": 2, "played": 4, "played_this_round": 2},
+    }
+}
 
 FORBIDDEN_LEGACY_KEYS = {
     "phase",
@@ -93,6 +126,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["shop_items"], [])
         self.assertEqual(observation["selected_cards"], [])
         self.assertEqual(observation["cards_in_deck"], [])
+        self.assertIsNone(observation["run_info"])
         self.assertIsNone(observation["pack_contents"])
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
 
@@ -110,6 +144,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 "discards_left": 2,
                 "ante": 3,
                 "round_count": 17,
+                "run_info": RUN_INFO_EXAMPLE,
                 "stake_id": "gold_stake",
                 "joker_slots": 5,
                 "reroll_cost": 5,
@@ -196,6 +231,15 @@ class LiveObserverContractTests(unittest.TestCase):
         observation = self.observe_live_payload(live_payload)
 
         self.assertEqual(observation["stake_id"], "gold_stake")
+        self.assertEqual(list(observation["run_info"]["hands"].keys()), RUN_INFO_HAND_ORDER)
+        self.assertEqual(
+            list(observation["run_info"]["hands"]["Straight Flush"].keys()),
+            ["level", "chips", "mult", "played", "played_this_round"],
+        )
+        self.assertEqual(
+            observation["run_info"]["hands"]["High Card"],
+            {"level": 2, "chips": 15, "mult": 2, "played": 4, "played_this_round": 2},
+        )
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
         self.assertEqual(observation["hand_size"], 8)
@@ -366,6 +410,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 "discards_left": 1,
                 "ante": 4,
                 "round_count": 18,
+                "run_info": RUN_INFO_EXAMPLE,
                 "joker_slots": 5,
                 "consumable_slots": 2,
                 "reroll_cost": 6,
@@ -382,6 +427,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["deck_key"], "b_erratic")
         self.assertEqual(observation["stake_id"], 5)
         self.assertEqual(observation["score"], {"current": 150, "target": 600})
+        self.assertEqual(observation["run_info"]["hands"]["Straight Flush"]["mult"], 12)
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
         self.assertEqual(observation["interest"], {"amount": 4, "cap": 50, "no_interest": True})
@@ -880,6 +926,7 @@ class LiveObserverContractTests(unittest.TestCase):
             "discards_left": 2,
             "ante": 3,
             "round_count": 17,
+            "run_info": RUN_INFO_EXAMPLE,
             "joker_slots": 5,
             "jokers": [
                 {
@@ -929,6 +976,8 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("stake_id: gold_stake", formatted)
         self.assertIn("joker_slots: 5", formatted)
         self.assertIn("interest: amount=3, cap=25, no_interest=false", formatted)
+        self.assertIn("run_info:", formatted)
+        self.assertIn("High Card: level=2, chips=15, mult=2, played=4, played_this_round=2", formatted)
         self.assertIn("hand_size: 8", formatted)
         self.assertIn("consumables:", formatted)
         self.assertIn("shop_items:", formatted)
@@ -1130,6 +1179,7 @@ class LiveObserverContractTests(unittest.TestCase):
                 "shop_items": [],
                 "reroll_cost": None,
                 "interest": None,
+                "run_info": None,
                 "pack_contents": None,
                 "hand_size": None,
                 "cards_in_hand": [],

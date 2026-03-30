@@ -1,4 +1,18 @@
 local Signature = {}
+local RUN_INFO_HAND_ORDER = {
+  "Flush Five",
+  "Flush House",
+  "Five of a Kind",
+  "Straight Flush",
+  "Four of a Kind",
+  "Full House",
+  "Flush",
+  "Straight",
+  "Three of a Kind",
+  "Two Pair",
+  "Pair",
+  "High Card",
+}
 
 local function safe_table(value)
   if type(value) == "table" then
@@ -55,6 +69,8 @@ function Signature.make(snapshot)
   local score = safe_table(state.score) or {}
   local pack_contents = safe_table(state.pack_contents) or {}
   local interest = safe_table(state.interest) or {}
+  local run_info = safe_table(state.run_info) or {}
+  local run_hands = safe_table(run_info.hands) or {}
   local parts = {
     string_part(state.interaction_phase),
     string_part(state.state_id),
@@ -78,6 +94,17 @@ function Signature.make(snapshot)
     string_part(pack_contents.choices_remaining),
     string_part(pack_contents.skip_available),
   }
+
+  for _, hand_name in ipairs(RUN_INFO_HAND_ORDER) do
+    local hand = safe_table(run_hands[hand_name]) or {}
+    parts[#parts + 1] = table.concat({
+      string_part(hand.level),
+      string_part(hand.mult),
+      string_part(hand.chips),
+      string_part(hand.played),
+      string_part(hand.played_this_round),
+    }, "/")
+  end
 
   add_structured_items(parts, state.cards_in_hand, {
     "card_key",
