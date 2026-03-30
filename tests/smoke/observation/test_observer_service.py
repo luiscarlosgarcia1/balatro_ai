@@ -31,7 +31,7 @@ class ObserverServiceSmokeTests(unittest.TestCase):
             live_state_path.parent.mkdir(parents=True, exist_ok=True)
             live_state_path.write_text(json.dumps(payload), encoding="utf-8")
 
-            observation = BalatroObserver(paths=BalatroPaths(root=root, profile=2)).observe()
+            observation = BalatroObserver(paths=BalatroPaths(root=root)).observe()
         finally:
             shutil.rmtree(root, ignore_errors=True)
             self.cleanup_fixture_base()
@@ -46,12 +46,8 @@ class ObserverServiceSmokeTests(unittest.TestCase):
     def test_observe_raises_file_not_found_when_live_state_is_missing(self) -> None:
         root = self.make_fixture_root()
         try:
-            save_path = root / "1" / "save.jkr"
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            save_path.write_text("legacy save should not be consulted", encoding="utf-8")
-
             with self.assertRaises(FileNotFoundError):
-                BalatroObserver(paths=BalatroPaths(root=root, profile=1)).observe()
+                BalatroObserver(paths=BalatroPaths(root=root)).observe()
         finally:
             shutil.rmtree(root, ignore_errors=True)
             self.cleanup_fixture_base()
@@ -64,7 +60,7 @@ class ObserverServiceSmokeTests(unittest.TestCase):
             live_state_path.write_text("{invalid", encoding="utf-8")
 
             with self.assertRaises(ValueError):
-                BalatroObserver(paths=BalatroPaths(root=root, profile=2)).observe()
+                BalatroObserver(paths=BalatroPaths(root=root)).observe()
         finally:
             shutil.rmtree(root, ignore_errors=True)
             self.cleanup_fixture_base()
@@ -77,7 +73,7 @@ class ObserverServiceSmokeTests(unittest.TestCase):
             live_state_path.write_text(json.dumps(["not", "an", "observation"]), encoding="utf-8")
 
             with self.assertRaises(ValueError):
-                BalatroObserver(paths=BalatroPaths(root=root, profile=2)).observe()
+                BalatroObserver(paths=BalatroPaths(root=root)).observe()
         finally:
             shutil.rmtree(root, ignore_errors=True)
             self.cleanup_fixture_base()

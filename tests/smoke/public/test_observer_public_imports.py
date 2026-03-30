@@ -9,6 +9,18 @@ from balatro_ai.observation.service import BalatroObserver as ObserverImpl
 
 
 class ObserverPublicImportsSmokeTests(unittest.TestCase):
+    def test_balatro_paths_only_exposes_live_state_path(self) -> None:
+        paths = PathsImpl()
+
+        self.assertEqual(str(paths.live_state_path).replace("\\", "/").split("/")[-2:], ["ai", "live_state.json"])
+        self.assertFalse(hasattr(paths, "profile"))
+        self.assertFalse(hasattr(paths, "settings_path"))
+        self.assertFalse(hasattr(paths, "profile_dir"))
+        self.assertFalse(hasattr(paths, "save_path"))
+        self.assertFalse(hasattr(paths, "profile_path"))
+        self.assertFalse(hasattr(paths, "meta_path"))
+        self.assertFalse(hasattr(paths, "available_profiles"))
+
     def test_package_root_exports_current_observer_surface(self) -> None:
         self.assertIs(balatro_ai.BalatroPaths, PathsImpl)
         self.assertIs(balatro_ai.BalatroObserver, ObserverImpl)

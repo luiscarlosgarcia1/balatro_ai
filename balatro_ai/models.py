@@ -160,12 +160,7 @@ class ObservedBlind:
 
 @dataclass(frozen=True)
 class GameObservation:
-    """Structured snapshot of the current game state.
-
-    Transitional legacy bridge: later phases will keep shrinking the object-model
-    side of cards, shop, and blind details, but the scalar backbone already follows
-    the canonical observer contract.
-    """
+    """Structured snapshot of the current game state."""
 
     interaction_phase: str
     money: int
