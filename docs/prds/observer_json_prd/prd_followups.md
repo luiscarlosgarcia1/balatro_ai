@@ -21,7 +21,9 @@ This is a living backlog document for later cleanup, simplification, and expansi
 - Revisit whether `selected_cards` and `highlighted_card` are actually the same concept.
 - Stop reconstructing `pack_contents.pack_key`; the observer should expose the true upstream opened-pack key instead of deriving it from visible card/shop state.
 - Remove `cost` and `sell_price` from `cards_in_hand` and `cards_in_deck`; those keys should not appear on hand/deck card objects.
+- Go through all object types and make sure we actually like the format of every other object type that can appear nested within them.
 - Add a `run_info` payload that includes played-hand levels plus their chips and multiplier status.
+- Derive on-screen coordinates of various objects to maybe avoid screenshots entirely. 
 
 ## Desired Order After The Current PRD
 

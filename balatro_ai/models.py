@@ -8,6 +8,22 @@ from typing import Any, TypeAlias
 ObservationPayload: TypeAlias = dict[str, Any]
 
 
+RUN_INFO_HAND_ORDER = (
+    "Flush Five",
+    "Flush House",
+    "Five of a Kind",
+    "Straight Flush",
+    "Four of a Kind",
+    "Full House",
+    "Flush",
+    "Straight",
+    "Three of a Kind",
+    "Two Pair",
+    "Pair",
+    "High Card",
+)
+
+
 @dataclass(frozen=True)
 class ObservedCard:
     """Canonical card object for hand, deck, and pack zones."""
@@ -29,7 +45,7 @@ class ObservedCard:
 
 @dataclass(frozen=True)
 class ObservedReference:
-    """Compact typed reference used for selected/highlighted objects."""
+    """Compact typed reference used for selected objects."""
 
     zone: str
     card_key: str | None = None
@@ -51,13 +67,9 @@ class ObservedVoucher:
 class ObservedConsumable:
     """Consumable item that can be in inventory or visible in the shop."""
 
-    kind: str
     key: str
     edition: str | None = None
     sell_price: int | None = None
-    debuffed: bool = False
-    stickers: tuple[str, ...] = ()
-    cost: int | None = None
 
 
 @dataclass(frozen=True)
@@ -77,15 +89,6 @@ class ObservedTag:
     """Run-relevant tag summary."""
 
     key: str
-
-
-@dataclass(frozen=True)
-class ObservedSkipTag:
-    """Claimable or claimed skip tag summary."""
-
-    slot: str
-    key: str
-    claimed: bool = False
 
 
 @dataclass(frozen=True)
@@ -113,30 +116,46 @@ class ObservedShopItem:
 
 
 @dataclass(frozen=True)
-class ObservedShopDiscount:
-    """Compact canonical shop discount entry."""
+class ObservedInterest:
+    """Raw interest-state determinants exported from the game."""
 
-    kind: str
-    value: int | None = None
+    amount: int | None = None
+    cap: int | None = None
+    no_interest: bool = False
 
 
 @dataclass(frozen=True)
 class ObservedPackContents:
-    """Canonical opened-pack state with required exact pack identity."""
+    """Canonical opened-pack state for finishing an active pack interaction."""
 
-    pack_key: str
-    pack_size: int | None = None
-    choose_limit: int | None = None
     choices_remaining: int | None = None
     skip_available: bool = False
     cards: tuple[ObservedCard, ...] = ()
 
 
 @dataclass(frozen=True)
+class ObservedRunHand:
+    """Raw stored per-hand state exported from G.GAME.hands."""
+
+    hand_name: str
+    level: int | None = None
+    mult: int | None = None
+    chips: int | None = None
+    played: int | None = None
+    played_this_round: int | None = None
+
+
+@dataclass(frozen=True)
+class ObservedRunInfo:
+    """Grouped run-scoped state that is not tied to a card zone."""
+
+    hands: tuple[ObservedRunHand, ...] = ()
+
+
+@dataclass(frozen=True)
 class ObservedBlind:
     """Blind choice available during blind selection."""
 
-    slot: str
     key: str
     state: str
     tag_key: str | None = None
@@ -161,7 +180,6 @@ class GameObservation:
     jokers: tuple[ObservedJoker, ...] = ()
     cards_in_hand: tuple[ObservedCard, ...] = ()
     selected_cards: tuple[ObservedReference, ...] = ()
-    highlighted_card: ObservedReference | None = None
     cards_in_deck: tuple[ObservedCard, ...] = ()
     source: str = "unknown"
     state_id: int | None = None
@@ -170,22 +188,18 @@ class GameObservation:
     stake_id: str | int | None = None
     ante: int | None = None
     round_count: int | None = None
+    run_info: ObservedRunInfo | None = None
     blinds: tuple[ObservedBlind, ...] = ()
     joker_slots: int | None = None
-    joker_count: int | None = None
-    shop_vouchers: tuple[ObservedVoucher, ...] = ()
     vouchers: tuple[ObservedVoucher, ...] = ()
     consumables: tuple[ObservedConsumable, ...] = ()
     consumable_slots: int | None = None
     reroll_cost: int | None = None
-    interest: int | None = None
-    inflation: int | None = None
+    interest: ObservedInterest | None = None
     hand_size: int | None = None
     shop_items: tuple[ObservedShopItem, ...] = ()
-    shop_discounts: tuple[ObservedShopDiscount, ...] = ()
     pack_contents: ObservedPackContents | None = None
     tags: tuple[ObservedTag, ...] = ()
-    skip_tags: tuple[ObservedSkipTag, ...] = ()
     notes: tuple[str, ...] = ()
     seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

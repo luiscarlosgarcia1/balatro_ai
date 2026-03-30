@@ -10,11 +10,11 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedInterest,
     ObservedPackContents,
     ObservedReference,
-    ObservedShopDiscount,
+    ObservedRunInfo,
     ObservedShopItem,
-    ObservedSkipTag,
     ObservedTag,
     ObservedVoucher,
 )
@@ -29,31 +29,26 @@ CANONICAL_TOP_LEVEL_KEYS = (
     "stake_id",
     "score",
     "money",
+    "interest",
     "hands_left",
     "discards_left",
-    "ante",
-    "round_count",
     "joker_slots",
-    "joker_count",
     "jokers",
     "consumable_slots",
     "consumables",
-    "shop_vouchers",
     "vouchers",
-    "skip_tags",
     "tags",
+    "ante",
+    "round_count",
+    "run_info",
+    "blinds",
     "shop_items",
-    "shop_discounts",
     "reroll_cost",
-    "interest",
-    "inflation",
     "pack_contents",
     "hand_size",
     "cards_in_hand",
     "selected_cards",
-    "highlighted_card",
     "cards_in_deck",
-    "blinds",
     "notes",
 )
 
@@ -85,10 +80,8 @@ _RANK_ORDER = {
 def serialize_observation(observation: GameObservation) -> dict[str, Any]:
     serialized_jokers = [_serialize_joker(joker) for joker in observation.jokers]
     serialized_consumables = [_serialize_consumable(consumable) for consumable in observation.consumables]
-    serialized_shop_vouchers = [_serialize_voucher(voucher) for voucher in observation.shop_vouchers]
     serialized_vouchers = [_serialize_voucher(voucher) for voucher in observation.vouchers]
     serialized_tags = [_serialize_tag(tag) for tag in observation.tags]
-    serialized_skip_tags = [_serialize_skip_tag(skip_tag) for skip_tag in observation.skip_tags]
     serialized_cards_in_hand = _serialize_cards(observation.cards_in_hand)
     serialized_selected_cards = [
         serialized_reference
@@ -96,10 +89,8 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         for serialized_reference in [_serialize_reference(reference)]
         if serialized_reference is not None
     ]
-    serialized_highlighted_card = _serialize_reference(observation.highlighted_card)
     serialized_cards_in_deck = _serialize_cards(observation.cards_in_deck)
     serialized_blinds = [_serialize_blind(blind) for blind in observation.blinds]
-    serialized_shop_discounts = [_serialize_shop_discount(discount) for discount in observation.shop_discounts]
 
     payload: dict[str, Any] = {
         "source": observation.source,
@@ -117,25 +108,20 @@ def serialize_observation(observation: GameObservation) -> dict[str, Any]:
         "discards_left": observation.discards_left,
         "ante": observation.ante,
         "round_count": observation.round_count,
+        "run_info": _serialize_run_info(observation.run_info),
         "joker_slots": observation.joker_slots,
-        "joker_count": observation.joker_count if observation.joker_count is not None else len(serialized_jokers),
         "jokers": serialized_jokers,
         "consumable_slots": observation.consumable_slots,
         "consumables": serialized_consumables,
-        "shop_vouchers": serialized_shop_vouchers,
         "vouchers": serialized_vouchers,
-        "skip_tags": serialized_skip_tags,
         "tags": serialized_tags,
         "shop_items": _serialize_shop_items(observation),
-        "shop_discounts": serialized_shop_discounts,
         "reroll_cost": observation.reroll_cost,
-        "interest": observation.interest,
-        "inflation": observation.inflation,
+        "interest": _serialize_interest(observation.interest),
         "pack_contents": _serialize_pack_contents(observation.pack_contents),
         "hand_size": observation.hand_size,
         "cards_in_hand": serialized_cards_in_hand,
         "selected_cards": serialized_selected_cards,
-        "highlighted_card": serialized_highlighted_card,
         "cards_in_deck": serialized_cards_in_deck,
         "blinds": serialized_blinds,
         "notes": _serialize_notes(observation.notes, observation.seen_at),
@@ -152,30 +138,23 @@ def _serialize_joker(joker: ObservedJoker) -> dict[str, Any]:
         payload["rarity"] = _normalize_machine_value(joker.rarity)
     if joker.edition is not None:
         payload["edition"] = _normalize_machine_value(joker.edition)
-    if joker.sell_price is not None:
-        payload["sell_price"] = joker.sell_price
-    if joker.debuffed:
-        payload["debuffed"] = True
     if joker.stickers:
         payload["stickers"] = [_normalize_machine_value(sticker) for sticker in joker.stickers]
+    if joker.debuffed:
+        payload["debuffed"] = True
+    if joker.sell_price is not None:
+        payload["sell_price"] = joker.sell_price
     return payload
 
 
 def _serialize_consumable(consumable: ObservedConsumable) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(consumable.kind),
         "key": _normalize_machine_value(consumable.key),
     }
     if consumable.edition is not None:
         payload["edition"] = _normalize_machine_value(consumable.edition)
     if consumable.sell_price is not None:
         payload["sell_price"] = consumable.sell_price
-    if consumable.debuffed:
-        payload["debuffed"] = True
-    if consumable.stickers:
-        payload["stickers"] = [_normalize_machine_value(sticker) for sticker in consumable.stickers]
-    if consumable.cost is not None:
-        payload["cost"] = consumable.cost
     return payload
 
 
@@ -188,32 +167,52 @@ def _serialize_voucher(voucher: ObservedVoucher) -> dict[str, Any]:
     return payload
 
 
+def _serialize_interest(interest: ObservedInterest | None) -> dict[str, Any] | None:
+    if interest is None:
+        return None
+
+    return {
+        "amount": interest.amount,
+        "cap": interest.cap,
+        "no_interest": interest.no_interest,
+    }
+
+
 def _serialize_tag(tag: ObservedTag) -> dict[str, Any]:
     return {
         "key": _normalize_machine_value(tag.key),
     }
 
 
-def _serialize_skip_tag(tag: ObservedSkipTag) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "slot": _normalize_machine_value(tag.slot),
-        "key": _normalize_machine_value(tag.key),
-    }
-    if tag.claimed:
-        payload["claimed"] = True
-    return payload
+def _serialize_run_info(run_info: ObservedRunInfo | None) -> dict[str, Any] | None:
+    if run_info is None:
+        return None
+
+    hands: dict[str, Any] = {}
+    for hand in run_info.hands:
+        hands[hand.hand_name] = {
+            "level": hand.level,
+            "chips": hand.chips,
+            "mult": hand.mult,
+            "played": hand.played,
+            "played_this_round": hand.played_this_round,
+        }
+
+    return {"hands": hands}
 
 
 def _serialize_card(card: ObservedCard) -> dict[str, Any]:
     payload: dict[str, Any] = {}
-    if card.card_key is not None:
-        payload["card_key"] = _normalize_machine_value(card.card_key)
-    if card.card_kind is not None:
+    normalized_card_key = _normalize_machine_value(card.card_key)
+    if normalized_card_key is not None:
+        payload["card_key"] = normalized_card_key
+    elif card.card_kind is not None:
         payload["card_kind"] = _normalize_machine_value(card.card_kind)
-    if card.suit is not None:
-        payload["suit"] = _normalize_machine_value(card.suit)
-    if card.rank is not None:
-        payload["rank"] = _normalize_machine_value(card.rank)
+    if normalized_card_key is None:
+        if card.suit is not None:
+            payload["suit"] = _normalize_machine_value(card.suit)
+        if card.rank is not None:
+            payload["rank"] = _normalize_machine_value(card.rank)
     if card.rarity is not None:
         payload["rarity"] = _normalize_machine_value(card.rarity)
     if card.enhancement is not None:
@@ -270,7 +269,6 @@ def _card_sort_key(card: ObservedCard, original_index: int) -> tuple[int, int, s
 
 def _serialize_blind(blind: ObservedBlind) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "slot": _normalize_machine_value(blind.slot),
         "key": _normalize_machine_value(blind.key),
         "state": _normalize_machine_value(blind.state),
     }
@@ -286,50 +284,73 @@ def _serialize_shop_items(observation: GameObservation) -> list[dict[str, Any]]:
 
 
 def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(item.kind),
-        "name": item.name,
-        "key": _normalize_machine_value(item.key),
-    }
-    if item.cost is not None:
-        payload["cost"] = item.cost
+    normalized_key = _normalize_machine_value(item.key)
+    if normalized_key is None:
+        payload: dict[str, Any] = {
+            "kind": _normalize_machine_value(item.kind),
+            "name": item.name,
+        }
+        if item.rarity is not None:
+            payload["rarity"] = _normalize_machine_value(item.rarity)
+        if item.enhancement is not None:
+            payload["enhancement"] = _normalize_machine_value(item.enhancement)
+        if item.edition is not None:
+            payload["edition"] = _normalize_machine_value(item.edition)
+        if item.seal is not None:
+            payload["seal"] = _normalize_machine_value(item.seal)
+        if item.stickers:
+            payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
+        if item.debuffed:
+            payload["debuffed"] = True
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    payload = {"key": normalized_key}
+    if normalized_key.startswith("j_"):
+        if item.rarity is not None:
+            payload["rarity"] = _normalize_machine_value(item.rarity)
+        if item.edition is not None:
+            payload["edition"] = _normalize_machine_value(item.edition)
+        if item.stickers:
+            payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
+        if item.debuffed:
+            payload["debuffed"] = True
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    if normalized_key.startswith("c_"):
+        if item.edition is not None:
+            payload["edition"] = _normalize_machine_value(item.edition)
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    if normalized_key.startswith("v_"):
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    if normalized_key.startswith("p_"):
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
     if item.rarity is not None:
         payload["rarity"] = _normalize_machine_value(item.rarity)
-    if item.edition is not None:
-        payload["edition"] = _normalize_machine_value(item.edition)
-    if item.sell_price is not None:
-        payload["sell_price"] = item.sell_price
     if item.enhancement is not None:
         payload["enhancement"] = _normalize_machine_value(item.enhancement)
+    if item.edition is not None:
+        payload["edition"] = _normalize_machine_value(item.edition)
     if item.seal is not None:
         payload["seal"] = _normalize_machine_value(item.seal)
-    if item.consumable_kind is not None:
-        payload["consumable_kind"] = _normalize_machine_value(item.consumable_kind)
     if item.stickers:
         payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
     if item.debuffed:
         payload["debuffed"] = True
-    if item.card_key is not None:
-        payload["card_key"] = _normalize_machine_value(item.card_key)
-    if item.card_kind is not None:
-        payload["card_kind"] = _normalize_machine_value(item.card_kind)
-    if item.suit is not None:
-        payload["suit"] = _normalize_machine_value(item.suit)
-    if item.rank is not None:
-        payload["rank"] = _normalize_machine_value(item.rank)
-    if item.pack_key is not None:
-        payload["pack_key"] = _normalize_machine_value(item.pack_key)
-    if item.pack_kind is not None:
-        payload["pack_kind"] = _normalize_machine_value(item.pack_kind)
-    return payload
-
-
-def _serialize_shop_discount(discount: ObservedShopDiscount) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "kind": _normalize_machine_value(discount.kind),
-    }
-    if discount.value is not None:
-        payload["value"] = discount.value
+    if item.cost is not None:
+        payload["cost"] = item.cost
     return payload
 
 
@@ -338,9 +359,6 @@ def _serialize_pack_contents(pack_contents: ObservedPackContents | None) -> dict
         return None
 
     return {
-        "pack_key": _normalize_machine_value(pack_contents.pack_key),
-        "pack_size": pack_contents.pack_size,
-        "choose_limit": pack_contents.choose_limit,
         "choices_remaining": pack_contents.choices_remaining,
         "skip_available": pack_contents.skip_available,
         "cards": [_serialize_card(card) for card in pack_contents.cards],

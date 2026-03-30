@@ -165,6 +165,19 @@ def format_observation(observation: dict[str, object]) -> str:
     # Transitional legacy bridge: this remains a derived debug view downstream of the
     # canonical payload and should not grow new legacy-specific branches.
     score = observation.get("score") or {}
+    interest = observation.get("interest")
+    interest_text = "-"
+    if isinstance(interest, dict):
+        interest_parts = []
+        if interest.get("amount") is not None:
+            interest_parts.append(f"amount={interest['amount']}")
+        if interest.get("cap") is not None:
+            interest_parts.append(f"cap={interest['cap']}")
+        if "no_interest" in interest:
+            interest_parts.append(f"no_interest={'true' if interest.get('no_interest') else 'false'}")
+        interest_text = ", ".join(interest_parts) if interest_parts else "{}"
+    elif interest is not None:
+        interest_text = str(interest)
     lines = [
         "",
         "[observation]",
@@ -182,12 +195,24 @@ def format_observation(observation: dict[str, object]) -> str:
         f"  round_count: {observation.get('round_count') if observation.get('round_count') is not None else '-'}",
         f"  joker_slots: {observation.get('joker_slots') if observation.get('joker_slots') is not None else '-'}",
         f"  reroll_cost: {observation.get('reroll_cost') if observation.get('reroll_cost') is not None else '-'}",
-        f"  interest: {observation.get('interest') if observation.get('interest') is not None else '-'}",
-        f"  inflation: {observation.get('inflation') if observation.get('inflation') is not None else '-'}",
+        f"  interest: {interest_text}",
         f"  hand_size: {observation.get('hand_size') if observation.get('hand_size') is not None else '-'}",
         f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
-        f"  joker_count: {observation.get('joker_count') if observation.get('joker_count') is not None else '-'}",
     ]
+    run_info = observation.get("run_info")
+    if isinstance(run_info, dict):
+        hands = run_info.get("hands")
+        if isinstance(hands, dict) and hands:
+            lines.append("  run_info:")
+            lines.append("    hands:")
+            for hand_name, hand in hands.items():
+                if not isinstance(hand, dict):
+                    continue
+                extras = []
+                for field_name in ("level", "chips", "mult", "played", "played_this_round"):
+                    if hand.get(field_name) is not None:
+                        extras.append(f"{field_name}={hand[field_name]}")
+                lines.append(f"      - {hand_name}: {', '.join(extras)}")
     jokers = observation.get("jokers") or []
     if jokers:
         lines.append("  jokers:")
@@ -206,14 +231,6 @@ def format_observation(observation: dict[str, object]) -> str:
                 extras.extend(f"sticker={value}" for value in stickers)
             extra_text = f" [{', '.join(extras)}]" if extras else ""
             lines.append(f"    - {joker.get('key') or '?'}{extra_text}")
-    shop_vouchers = observation.get("shop_vouchers") or []
-    if shop_vouchers:
-        lines.append("  shop_vouchers:")
-        for voucher in shop_vouchers:
-            if not isinstance(voucher, dict):
-                continue
-            suffix = f" cost={voucher['cost']}" if voucher.get("cost") is not None else ""
-            lines.append(f"    - {voucher.get('key') or '?'}{suffix}")
     vouchers = observation.get("vouchers") or []
     if vouchers:
         lines.append("  vouchers:")
@@ -238,17 +255,7 @@ def format_observation(observation: dict[str, object]) -> str:
             if isinstance(stickers, list):
                 extras.extend(f"sticker={value}" for value in stickers)
             suffix = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(
-                f"    - {consumable.get('kind')}: {consumable.get('key') or '?'}{suffix}"
-            )
-    skip_tags = observation.get("skip_tags") or []
-    if skip_tags:
-        lines.append("  skip_tags:")
-        for skip_tag in skip_tags:
-            if not isinstance(skip_tag, dict):
-                continue
-            suffix = " [claimed=true]" if skip_tag.get("claimed") else ""
-            lines.append(f"    - {skip_tag.get('slot')}: {skip_tag.get('key') or '?'}{suffix}")
+            lines.append(f"    - {consumable.get('key') or '?'}{suffix}")
     tags = observation.get("tags") or []
     if tags:
         lines.append("  tags:")
@@ -266,30 +273,11 @@ def format_observation(observation: dict[str, object]) -> str:
             if item.get("cost") is not None:
                 extras.append(f"cost={item['cost']}")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(
-                f"    - {item.get('kind')}: {item.get('name') or item.get('key') or '?'}{extra_text}"
-            )
-    shop_discounts = observation.get("shop_discounts") or []
-    if shop_discounts:
-        lines.append("  shop_discounts:")
-        for discount in shop_discounts:
-            if not isinstance(discount, dict):
-                continue
-            kind = discount.get("kind") or "?"
-            if discount.get("value") is not None:
-                lines.append(f"    - {kind}={discount['value']}")
-            else:
-                lines.append(f"    - {kind}")
+            lines.append(f"    - {item.get('name') or item.get('key') or '?'}{extra_text}")
     pack_contents = observation.get("pack_contents")
     if isinstance(pack_contents, dict):
         lines.append("  pack_contents:")
         extras = []
-        if pack_contents.get("pack_key"):
-            extras.append(f"pack_key={pack_contents['pack_key']}")
-        if pack_contents.get("pack_size") is not None:
-            extras.append(f"pack_size={pack_contents['pack_size']}")
-        if pack_contents.get("choose_limit") is not None:
-            extras.append(f"choose_limit={pack_contents['choose_limit']}")
         if pack_contents.get("choices_remaining") is not None:
             extras.append(f"choices_remaining={pack_contents['choices_remaining']}")
         if "skip_available" in pack_contents:
@@ -302,12 +290,6 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(card, dict):
                 continue
             card_extras = []
-            if card.get("card_kind"):
-                card_extras.append(f"kind={card['card_kind']}")
-            if card.get("suit"):
-                card_extras.append(f"suit={card['suit']}")
-            if card.get("rank"):
-                card_extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 card_extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):
@@ -341,9 +323,7 @@ def format_observation(observation: dict[str, object]) -> str:
             if blind_choice.get("tag_claimed"):
                 extras.append("tag_claimed=true")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(
-                f"    - {blind_choice.get('slot')}: {blind_choice.get('key')}{extra_text}"
-            )
+            lines.append(f"    - {blind_choice.get('key')}{extra_text}")
     cards_in_hand = observation.get("cards_in_hand") or []
     if cards_in_hand:
         lines.append("  cards_in_hand:")
@@ -351,12 +331,6 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(card, dict):
                 continue
             extras = []
-            if card.get("card_kind"):
-                extras.append(f"kind={card['card_kind']}")
-            if card.get("suit"):
-                extras.append(f"suit={card['suit']}")
-            if card.get("rank"):
-                extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):
@@ -385,12 +359,6 @@ def format_observation(observation: dict[str, object]) -> str:
             if not isinstance(card, dict):
                 continue
             extras = []
-            if card.get("card_kind"):
-                extras.append(f"kind={card['card_kind']}")
-            if card.get("suit"):
-                extras.append(f"suit={card['suit']}")
-            if card.get("rank"):
-                extras.append(f"rank={card['rank']}")
             if card.get("enhancement"):
                 extras.append(f"enh={card['enhancement']}")
             if card.get("edition"):
@@ -406,12 +374,6 @@ def format_observation(observation: dict[str, object]) -> str:
             rendered = format_reference(reference)
             if rendered:
                 lines.append(f"    - {rendered}")
-    highlighted_card = observation.get("highlighted_card")
-    if isinstance(highlighted_card, dict):
-        rendered = format_reference(highlighted_card)
-        if rendered:
-            lines.append("  highlighted_card:")
-            lines.append(f"    - {rendered}")
     notes = observation.get("notes") or []
     if notes:
         lines.append("  notes:")

@@ -24,33 +24,60 @@ CANONICAL_TOP_LEVEL_KEYS = [
     "stake_id",
     "score",
     "money",
+    "interest",
     "hands_left",
     "discards_left",
-    "ante",
-    "round_count",
     "joker_slots",
-    "joker_count",
     "jokers",
     "consumable_slots",
     "consumables",
-    "shop_vouchers",
     "vouchers",
-    "skip_tags",
     "tags",
+    "ante",
+    "round_count",
+    "run_info",
+    "blinds",
     "shop_items",
-    "shop_discounts",
     "reroll_cost",
-    "interest",
-    "inflation",
     "pack_contents",
     "hand_size",
     "cards_in_hand",
     "selected_cards",
-    "highlighted_card",
     "cards_in_deck",
-    "blinds",
     "notes",
 ]
+
+RUN_INFO_HAND_ORDER = [
+    "Flush Five",
+    "Flush House",
+    "Five of a Kind",
+    "Straight Flush",
+    "Four of a Kind",
+    "Full House",
+    "Flush",
+    "Straight",
+    "Three of a Kind",
+    "Two Pair",
+    "Pair",
+    "High Card",
+]
+
+RUN_INFO_EXAMPLE = {
+    "hands": {
+        "Flush Five": {"level": 1, "chips": 160, "mult": 16, "played": 0, "played_this_round": 0},
+        "Flush House": {"level": 1, "chips": 140, "mult": 14, "played": 0, "played_this_round": 0},
+        "Five of a Kind": {"level": 1, "chips": 120, "mult": 12, "played": 0, "played_this_round": 0},
+        "Straight Flush": {"level": 2, "chips": 140, "mult": 12, "played": 1, "played_this_round": 1},
+        "Four of a Kind": {"level": 1, "chips": 60, "mult": 7, "played": 0, "played_this_round": 0},
+        "Full House": {"level": 1, "chips": 40, "mult": 4, "played": 0, "played_this_round": 0},
+        "Flush": {"level": 1, "chips": 35, "mult": 4, "played": 0, "played_this_round": 0},
+        "Straight": {"level": 1, "chips": 30, "mult": 4, "played": 0, "played_this_round": 0},
+        "Three of a Kind": {"level": 1, "chips": 30, "mult": 3, "played": 0, "played_this_round": 0},
+        "Two Pair": {"level": 1, "chips": 20, "mult": 2, "played": 0, "played_this_round": 0},
+        "Pair": {"level": 1, "chips": 10, "mult": 2, "played": 0, "played_this_round": 0},
+        "High Card": {"level": 2, "chips": 15, "mult": 2, "played": 4, "played_this_round": 2},
+    }
+}
 
 FORBIDDEN_LEGACY_KEYS = {
     "phase",
@@ -99,8 +126,8 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["shop_items"], [])
         self.assertEqual(observation["selected_cards"], [])
         self.assertEqual(observation["cards_in_deck"], [])
+        self.assertIsNone(observation["run_info"])
         self.assertIsNone(observation["pack_contents"])
-        self.assertIsNone(observation["highlighted_card"])
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
 
     def test_observe_populates_canonical_shop_owned_and_card_fields(self) -> None:
@@ -117,12 +144,11 @@ class LiveObserverContractTests(unittest.TestCase):
                 "discards_left": 2,
                 "ante": 3,
                 "round_count": 17,
+                "run_info": RUN_INFO_EXAMPLE,
                 "stake_id": "gold_stake",
                 "joker_slots": 5,
-                "joker_count": 1,
                 "reroll_cost": 5,
-                "interest": 3,
-                "inflation": 2,
+                "interest": {"amount": 3, "cap": 25, "no_interest": False},
                 "hand_size": 8,
                 "vouchers": [
                     {
@@ -170,12 +196,6 @@ class LiveObserverContractTests(unittest.TestCase):
                         "key": "tag_top_up",
                     }
                 ],
-                "skip_tags": [
-                    {
-                        "slot": "Big",
-                        "key": "tag_economy",
-                    }
-                ],
                 "jokers": [
                     {
                         "key": "j_greedy_joker",
@@ -211,22 +231,30 @@ class LiveObserverContractTests(unittest.TestCase):
         observation = self.observe_live_payload(live_payload)
 
         self.assertEqual(observation["stake_id"], "gold_stake")
+        self.assertEqual(list(observation["run_info"]["hands"].keys()), RUN_INFO_HAND_ORDER)
+        self.assertEqual(
+            list(observation["run_info"]["hands"]["Straight Flush"].keys()),
+            ["level", "chips", "mult", "played", "played_this_round"],
+        )
+        self.assertEqual(
+            observation["run_info"]["hands"]["High Card"],
+            {"level": 2, "chips": 15, "mult": 2, "played": 4, "played_this_round": 2},
+        )
         self.assertEqual(observation["joker_slots"], 5)
         self.assertEqual(observation["consumable_slots"], 2)
-        self.assertEqual(observation["joker_count"], 1)
         self.assertEqual(observation["hand_size"], 8)
-        self.assertEqual(observation["interest"], 3)
-        self.assertEqual(observation["inflation"], 2)
+        self.assertEqual(observation["interest"], {"amount": 3, "cap": 25, "no_interest": False})
         self.assertEqual(observation["reroll_cost"], 5)
         self.assertEqual(observation["vouchers"][0]["key"], "v_clearance_sale")
         self.assertNotIn("name", observation["vouchers"][0])
-        self.assertEqual(observation["shop_vouchers"], [{"key": "v_overstock", "cost": 10}])
-        self.assertEqual(observation["consumables"][0]["kind"], "tarot")
         self.assertEqual(observation["consumables"][0]["key"], "c_fool")
         self.assertEqual(observation["consumables"][0]["edition"], "negative")
         self.assertEqual(observation["consumables"][0]["sell_price"], 1)
-        self.assertEqual(observation["consumables"][0]["stickers"], ["eternal"])
+        self.assertNotIn("stickers", observation["consumables"][0])
+        self.assertNotIn("debuffed", observation["consumables"][0])
+        self.assertNotIn("cost", observation["consumables"][0])
         self.assertNotIn("name", observation["consumables"][0])
+        self.assertNotIn("kind", observation["consumables"][0])
         self.assertEqual(observation["jokers"][0]["key"], "j_greedy_joker")
         self.assertEqual(observation["jokers"][0]["rarity"], "common")
         self.assertEqual(observation["jokers"][0]["edition"], "foil")
@@ -235,22 +263,21 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertNotIn("name", observation["jokers"][0])
         self.assertEqual(observation["tags"][0]["key"], "tag_top_up")
         self.assertNotIn("name", observation["tags"][0])
-        self.assertEqual(observation["skip_tags"][0]["key"], "tag_economy")
-        self.assertEqual(observation["skip_tags"][0]["slot"], "big")
-        self.assertNotIn("name", observation["skip_tags"][0])
-        self.assertEqual(observation["blinds"][0]["slot"], "small")
         self.assertEqual(observation["blinds"][0]["state"], "current")
         self.assertEqual(observation["blinds"][0]["tag_key"], "tag_economy")
+        self.assertNotIn("slot", observation["blinds"][0])
         self.assertEqual(observation["cards_in_hand"][0]["card_key"], "s_a")
-        self.assertEqual(observation["cards_in_hand"][0]["card_kind"], "base")
-        self.assertEqual(observation["cards_in_hand"][0]["suit"], "spades")
-        self.assertEqual(observation["cards_in_hand"][0]["rank"], "ace")
         self.assertEqual(observation["cards_in_hand"][0]["enhancement"], "bonus")
-        self.assertEqual(observation["shop_items"][0]["kind"], "joker")
-        self.assertEqual(observation["shop_items"][1]["kind"], "consumable")
-        self.assertEqual(observation["shop_items"][2]["kind"], "pack")
+        self.assertNotIn("card_kind", observation["cards_in_hand"][0])
+        self.assertNotIn("suit", observation["cards_in_hand"][0])
+        self.assertNotIn("rank", observation["cards_in_hand"][0])
+        self.assertEqual(observation["shop_items"][0]["key"], "j_vampire")
+        self.assertEqual(observation["shop_items"][1]["key"], "c_sun")
         self.assertEqual(observation["shop_items"][2]["key"], "p_arcana_normal_1")
-        self.assertNotIn({"key": "v_overstock", "cost": 10}, observation["shop_items"])
+        self.assertEqual(observation["shop_items"][3]["key"], "v_overstock")
+        self.assertEqual(observation["shop_items"][3]["cost"], 10)
+        self.assertNotIn("kind", observation["shop_items"][0])
+        self.assertNotIn("name", observation["shop_items"][0])
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(any(note.startswith("seen_at=") for note in observation["notes"]))
 
@@ -325,9 +352,6 @@ class LiveObserverContractTests(unittest.TestCase):
             observation["cards_in_hand"][2],
             {
                 "card_key": "s_10",
-                "card_kind": "base",
-                "suit": "spades",
-                "rank": "10",
                 "enhancement": "bonus",
                 "edition": "foil",
                 "seal": "gold",
@@ -344,7 +368,7 @@ class LiveObserverContractTests(unittest.TestCase):
         )
         self.assertNotIn("name", observation["cards_in_hand"][0])
 
-    def test_observe_emits_lightweight_selected_and_highlighted_references(self) -> None:
+    def test_observe_emits_lightweight_selected_references(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
@@ -357,7 +381,6 @@ class LiveObserverContractTests(unittest.TestCase):
                     {"zone": "cards_in_hand", "card_key": "h_8"},
                     {"zone": "jokers", "joker_key": "j_blueprint"},
                 ],
-                "highlighted_card": {"zone": "cards_in_deck", "card_key": "c_a"},
             }
         }
 
@@ -369,10 +392,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 {"zone": "cards_in_hand", "card_key": "h_8"},
                 {"zone": "jokers", "joker_key": "j_blueprint"},
             ],
-        )
-        self.assertEqual(
-            observation["highlighted_card"],
-            {"zone": "cards_in_deck", "card_key": "c_a"},
         )
 
     def test_observe_accepts_canonical_scalar_live_payload_without_legacy_aliases(self) -> None:
@@ -393,12 +412,11 @@ class LiveObserverContractTests(unittest.TestCase):
                 "discards_left": 1,
                 "ante": 4,
                 "round_count": 18,
+                "run_info": RUN_INFO_EXAMPLE,
                 "joker_slots": 5,
-                "joker_count": 2,
                 "consumable_slots": 2,
                 "reroll_cost": 6,
-                "interest": 4,
-                "inflation": 1,
+                "interest": {"amount": 4, "cap": 50, "no_interest": True},
                 "hand_size": 8,
                 "notes": ["exporter=live_state_exporter", "screenshot_status=true"],
             }
@@ -411,11 +429,10 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["deck_key"], "b_erratic")
         self.assertEqual(observation["stake_id"], 5)
         self.assertEqual(observation["score"], {"current": 150, "target": 600})
+        self.assertEqual(observation["run_info"]["hands"]["Straight Flush"]["mult"], 12)
         self.assertEqual(observation["joker_slots"], 5)
-        self.assertEqual(observation["joker_count"], 2)
         self.assertEqual(observation["consumable_slots"], 2)
-        self.assertEqual(observation["interest"], 4)
-        self.assertEqual(observation["inflation"], 1)
+        self.assertEqual(observation["interest"], {"amount": 4, "cap": 50, "no_interest": True})
         self.assertEqual(observation["hand_size"], 8)
         self.assertIn("screenshot_status=true", observation["notes"])
         self.assertTrue(FORBIDDEN_LEGACY_KEYS.isdisjoint(observation.keys()))
@@ -480,33 +497,20 @@ class LiveObserverContractTests(unittest.TestCase):
             observation["shop_items"],
             [
                 {
-                    "kind": "joker",
-                    "name": "Credit Card",
                     "key": "j_credit_card",
-                    "cost": 1,
                     "rarity": "common",
                     "edition": "foil",
-                    "sell_price": 2,
                     "stickers": ["rental"],
+                    "cost": 1,
                 },
                 {
-                    "kind": "pack",
-                    "name": "Buffoon Pack",
                     "key": "p_buffoon_normal_1",
                     "cost": 4,
-                    "pack_key": "p_buffoon_normal_1",
-                    "pack_kind": "buffoon",
                 },
                 {
-                    "kind": "consumable",
-                    "name": "The Fool",
                     "key": "c_fool",
-                    "cost": 3,
-                    "consumable_kind": "tarot",
                     "edition": "negative",
-                    "sell_price": 1,
-                    "stickers": ["eternal"],
-                    "debuffed": True,
+                    "cost": 3,
                 },
             ],
         )
@@ -555,41 +559,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             observation["shop_items"],
             [
-                {"kind": "pack", "name": "Jumbo Standard Pack", "key": "p_standard_jumbo_1", "cost": 6}
-            ],
-        )
-
-    def test_observe_exposes_canonical_shop_discounts_array(self) -> None:
-        live_payload = {
-            "state": {
-                "source": "live_state_exporter",
-                "interaction_phase": "shop",
-                "score": {
-                    "current": 75,
-                    "target": 300,
-                },
-                "money": 10,
-                "hands_left": 4,
-                "discards_left": 2,
-                "shop_discounts": [
-                    {
-                        "kind": "discount_percent",
-                        "value": 25,
-                    },
-                    {
-                        "kind": "shop_free",
-                    },
-                ],
-            }
-        }
-
-        observation = self.observe_live_payload(live_payload)
-
-        self.assertEqual(
-            observation["shop_discounts"],
-            [
-                {"kind": "discount_percent", "value": 25},
-                {"kind": "shop_free"},
+                {"key": "p_standard_jumbo_1", "cost": 6}
             ],
         )
 
@@ -624,9 +594,6 @@ class LiveObserverContractTests(unittest.TestCase):
                     "source": "live_state_exporter",
                     "interaction_phase": "pack_reward",
                     "pack_contents": {
-                        "pack_key": "p_arcana_normal_1",
-                        "pack_size": 5,
-                        "choose_limit": 1,
                         "choices_remaining": 1,
                         "skip_available": True,
                         "cards": [
@@ -641,7 +608,6 @@ class LiveObserverContractTests(unittest.TestCase):
                     "selected_cards": [
                         {"zone": "pack_contents", "card_key": "c_fool"},
                     ],
-                    "highlighted_card": {"zone": "pack_contents", "card_key": "c_fool"},
                     "score": {"current": 0, "target": 300},
                     "money": 8,
                     "hands_left": 4,
@@ -656,15 +622,11 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(
             pack_reward["pack_contents"],
             {
-                "pack_key": "p_arcana_normal_1",
-                "pack_size": 5,
-                "choose_limit": 1,
                 "choices_remaining": 1,
                 "skip_available": True,
                 "cards": [
                     {
                         "card_key": "c_fool",
-                        "card_kind": "tarot",
                         "cost": 0,
                         "sell_price": 1,
                     }
@@ -675,19 +637,13 @@ class LiveObserverContractTests(unittest.TestCase):
             pack_reward["selected_cards"],
             [{"zone": "pack_contents", "card_key": "c_fool"}],
         )
-        self.assertEqual(
-            pack_reward["highlighted_card"],
-            {"zone": "pack_contents", "card_key": "c_fool"},
-        )
 
-    def test_observe_rejects_active_pack_contents_without_exact_pack_key(self) -> None:
+    def test_observe_keeps_active_pack_contents_without_identity_metadata(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
                 "interaction_phase": "pack_reward",
                 "pack_contents": {
-                    "pack_size": 5,
-                    "choose_limit": 1,
                     "choices_remaining": 1,
                     "skip_available": True,
                     "cards": [
@@ -706,7 +662,18 @@ class LiveObserverContractTests(unittest.TestCase):
 
         observation = self.observe_live_payload(live_payload)
 
-        self.assertIsNone(observation["pack_contents"])
+        self.assertEqual(
+            observation["pack_contents"],
+            {
+                "choices_remaining": 1,
+                "skip_available": True,
+                "cards": [
+                    {
+                        "card_key": "c_fool",
+                    }
+                ],
+            },
+        )
 
     def test_observe_preserves_phase_specific_blind_key_from_live_payload(self) -> None:
         blind_select = self.observe_live_payload(
@@ -766,7 +733,7 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(play_hand["blind_key"], "bl_big")
         self.assertEqual(shop["blind_key"], "bl_big")
 
-    def test_observe_orders_skip_tags_and_blinds_with_canonical_claim_fields(self) -> None:
+    def test_observe_orders_blinds_with_canonical_claim_fields(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
@@ -776,11 +743,6 @@ class LiveObserverContractTests(unittest.TestCase):
                 "money": 4,
                 "hands_left": 4,
                 "discards_left": 4,
-                "skip_tags": [
-                    {"slot": "Boss", "key": "tag_boss"},
-                    {"slot": "Small", "key": "tag_small", "claimed": True},
-                    {"slot": "Big", "key": "tag_big"},
-                ],
                 "blinds": [
                     {"slot": "Boss", "key": "bl_head", "state": "Upcoming"},
                     {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_small", "tag_claimed": True},
@@ -792,23 +754,15 @@ class LiveObserverContractTests(unittest.TestCase):
         observation = self.observe_live_payload(live_payload)
 
         self.assertEqual(
-            observation["skip_tags"],
-            [
-                {"slot": "small", "key": "tag_small", "claimed": True},
-                {"slot": "big", "key": "tag_big"},
-                {"slot": "boss", "key": "tag_boss"},
-            ],
-        )
-        self.assertEqual(
             observation["blinds"],
             [
-                {"slot": "small", "key": "bl_small", "state": "skipped", "tag_key": "tag_small", "tag_claimed": True},
-                {"slot": "big", "key": "bl_big", "state": "select", "tag_key": "tag_big"},
-                {"slot": "boss", "key": "bl_head", "state": "upcoming"},
+                {"key": "bl_head", "state": "upcoming"},
+                {"key": "bl_small", "state": "skipped", "tag_key": "tag_small", "tag_claimed": True},
+                {"key": "bl_big", "state": "select", "tag_key": "tag_big"},
             ],
         )
 
-    def test_observe_keeps_skip_tags_distinct_from_empty_active_tags(self) -> None:
+    def test_observe_keeps_unclaimed_blind_tag_fields_distinct_from_empty_active_tags(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
@@ -818,13 +772,9 @@ class LiveObserverContractTests(unittest.TestCase):
                 "money": 4,
                 "hands_left": 4,
                 "discards_left": 4,
-                "skip_tags": [
-                    {"slot": "Small", "key": "tag_foil"},
-                    {"slot": "Big", "key": "tag_uncommon"},
-                ],
                 "tags": [],
                 "blinds": [
-                    {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_foil", "tag_claimed": True},
+                    {"slot": "Small", "key": "bl_small", "state": "Select", "tag_key": "tag_foil"},
                     {"slot": "Big", "key": "bl_big", "state": "Select", "tag_key": "tag_uncommon"},
                 ],
             }
@@ -832,16 +782,11 @@ class LiveObserverContractTests(unittest.TestCase):
 
         observation = self.observe_live_payload(live_payload)
 
-        self.assertEqual(
-            observation["skip_tags"],
-            [
-                {"slot": "small", "key": "tag_foil"},
-                {"slot": "big", "key": "tag_uncommon"},
-            ],
-        )
+        self.assertEqual(observation["blinds"][0]["tag_key"], "tag_foil")
+        self.assertEqual(observation["blinds"][1]["tag_key"], "tag_uncommon")
         self.assertEqual(observation["tags"], [])
 
-    def test_observe_separates_active_tags_from_claimable_skip_tags(self) -> None:
+    def test_observe_tags_follow_direct_source_exactly(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
@@ -851,32 +796,55 @@ class LiveObserverContractTests(unittest.TestCase):
                 "money": 5,
                 "hands_left": 4,
                 "discards_left": 4,
-                "skip_tags": [
-                    {"slot": "Big", "key": "tag_economy"},
-                ],
                 "tags": [
                     {"key": "tag_top_up"},
                     {"key": "tag_buffoon"},
+                    {"key": "tag_top_up"},
                 ],
                 "blinds": [
-                    {"slot": "Small", "key": "bl_small", "state": "Defeated"},
-                    {"slot": "Big", "key": "bl_big", "state": "Upcoming", "tag_key": "tag_economy"},
+                    {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_coupon", "tag_claimed": True},
+                    {"slot": "Big", "key": "bl_big", "state": "Skipped", "tag_key": "tag_economy", "tag_claimed": True},
                 ],
             }
         }
 
         observation = self.observe_live_payload(live_payload)
 
-        self.assertEqual(observation["skip_tags"], [{"slot": "big", "key": "tag_economy"}])
         self.assertEqual(
             observation["tags"],
             [
                 {"key": "tag_top_up"},
                 {"key": "tag_buffoon"},
+                {"key": "tag_top_up"},
             ],
         )
 
-    def test_observe_does_not_backfill_phase4_arrays_from_removed_aliases(self) -> None:
+    def test_observe_tags_stay_empty_even_if_blinds_have_claimed_tags(self) -> None:
+        live_payload = {
+            "state": {
+                "source": "live_state_exporter",
+                "interaction_phase": "shop",
+                "blind_key": "bl_big",
+                "score": {"current": 0, "target": 300},
+                "money": 5,
+                "hands_left": 4,
+                "discards_left": 4,
+                "tags": [],
+                "blinds": [
+                    {"slot": "Small", "key": "bl_small", "state": "Skipped", "tag_key": "tag_coupon", "tag_claimed": True},
+                    {"slot": "Big", "key": "bl_big", "state": "Skipped", "tag_key": "tag_economy", "tag_claimed": True},
+                ],
+            }
+        }
+
+        observation = self.observe_live_payload(live_payload)
+
+        self.assertEqual(
+            observation["tags"],
+            [],
+        )
+
+    def test_observe_ignores_removed_skip_tags_alias(self) -> None:
         live_payload = {
             "state": {
                 "source": "live_state_exporter",
@@ -886,19 +854,61 @@ class LiveObserverContractTests(unittest.TestCase):
                 "money": 4,
                 "hands_left": 4,
                 "discards_left": 4,
-                "consumables_inventory": [
-                    {"kind": "Tarot", "key": "c_fool"},
+                "skip_tags": [
+                    {"slot": "Small", "key": "tag_foil"},
                 ],
-                "blind_choices": [
-                    {"slot": "Small", "key": "bl_small", "state": "Select"},
-                ],
+                "blinds": [],
             }
         }
 
         observation = self.observe_live_payload(live_payload)
 
-        self.assertEqual(observation["consumables"], [])
         self.assertEqual(observation["blinds"], [])
+
+    def test_observe_only_merges_legacy_shop_vouchers_into_shop_items_during_shop(self) -> None:
+        shop = self.observe_live_payload(
+            {
+                "state": {
+                    "source": "live_state_exporter",
+                    "interaction_phase": "shop",
+                    "score": {"current": 0, "target": 300},
+                    "money": 5,
+                    "hands_left": 4,
+                    "discards_left": 4,
+                    "shop_vouchers": [
+                        {"key": "v_overstock", "cost": 10},
+                    ],
+                    "shop_items": [],
+                }
+            }
+        )
+        play_hand = self.observe_live_payload(
+            {
+                "state": {
+                    "source": "live_state_exporter",
+                    "interaction_phase": "play_hand",
+                    "score": {"current": 120, "target": 300},
+                    "money": 5,
+                    "hands_left": 4,
+                    "discards_left": 4,
+                    "shop_vouchers": [
+                        {"key": "v_overstock", "cost": 10},
+                    ],
+                    "shop_items": [],
+                }
+            }
+        )
+
+        self.assertEqual(
+            shop["shop_items"],
+            [
+                {
+                    "key": "v_overstock",
+                    "cost": 10,
+                }
+            ],
+        )
+        self.assertEqual(play_hand["shop_items"], [])
 
     def test_format_observation_renders_from_canonical_payload(self) -> None:
         observation = {
@@ -914,8 +924,8 @@ class LiveObserverContractTests(unittest.TestCase):
             "discards_left": 2,
             "ante": 3,
             "round_count": 17,
+            "run_info": RUN_INFO_EXAMPLE,
             "joker_slots": 5,
-            "joker_count": 1,
             "jokers": [
                 {
                     "key": "j_greedy_joker",
@@ -928,46 +938,32 @@ class LiveObserverContractTests(unittest.TestCase):
             "consumables": [
                 {
                     "key": "c_fool",
-                    "kind": "tarot",
                     "sell_price": 1,
                 }
             ],
-            "shop_vouchers": [{"key": "v_overstock", "cost": 10}],
             "vouchers": [{"key": "v_clearance_sale"}],
-            "skip_tags": [{"slot": "big", "key": "tag_economy"}],
             "tags": [{"key": "tag_economy"}],
             "shop_items": [
-                {"key": "j_vampire", "kind": "joker", "cost": 7},
-            ],
-            "shop_discounts": [
-                {"kind": "discount_percent", "value": 25},
-                {"kind": "shop_free"},
+                {"key": "j_vampire", "cost": 7},
+                {"key": "v_overstock", "cost": 10},
             ],
             "reroll_cost": 5,
-            "interest": 3,
-            "inflation": 2,
+            "interest": {"amount": 3, "cap": 25, "no_interest": False},
             "pack_contents": None,
             "hand_size": 8,
             "cards_in_hand": [
                 {
                     "card_key": "s_a",
-                    "card_kind": "base",
-                    "suit": "spades",
-                    "rank": "ace",
                     "enhancement": "bonus",
                 }
             ],
             "selected_cards": [{"zone": "cards_in_hand", "card_key": "s_a"}],
-            "highlighted_card": {"zone": "cards_in_deck", "card_key": "c_k"},
             "cards_in_deck": [
                 {
                     "card_key": "c_k",
-                    "card_kind": "base",
-                    "suit": "clubs",
-                    "rank": "king",
                 }
             ],
-            "blinds": [{"slot": "small", "key": "bl_small", "state": "current", "tag_key": "tag_economy"}],
+            "blinds": [{"key": "bl_small", "state": "current", "tag_key": "tag_economy"}],
             "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
         }
 
@@ -977,20 +973,16 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertIn("score: 150/800", formatted)
         self.assertIn("stake_id: gold_stake", formatted)
         self.assertIn("joker_slots: 5", formatted)
-        self.assertIn("interest: 3", formatted)
-        self.assertIn("inflation: 2", formatted)
+        self.assertIn("interest: amount=3, cap=25, no_interest=false", formatted)
+        self.assertIn("run_info:", formatted)
+        self.assertIn("High Card: level=2, chips=15, mult=2, played=4, played_this_round=2", formatted)
         self.assertIn("hand_size: 8", formatted)
         self.assertIn("consumables:", formatted)
-        self.assertIn("shop_vouchers:", formatted)
         self.assertIn("shop_items:", formatted)
-        self.assertIn("shop_discounts:", formatted)
-        self.assertIn("discount_percent=25", formatted)
-        self.assertIn("shop_free", formatted)
         self.assertNotIn("open_pack_kind", formatted)
         self.assertIn("cards_in_hand:", formatted)
         self.assertIn("cards_in_deck:", formatted)
         self.assertIn("selected_cards:", formatted)
-        self.assertIn("highlighted_card:", formatted)
         self.assertIn("j_greedy_joker", formatted)
         self.assertIn("v_overstock", formatted)
         self.assertNotIn("\n  deck:", formatted)
@@ -1033,7 +1025,7 @@ class LiveObserverContractTests(unittest.TestCase):
         observation = self.observe_live_payload(live_payload)
         formatted = format_observation(observation)
 
-        self.assertEqual(formatted.count("Jumbo Standard Pack"), 1)
+        self.assertEqual(formatted.count("p_standard_jumbo_1"), 1)
         self.assertNotIn("shop_packs", formatted)
 
     def test_format_observation_renders_canonical_pack_contents(self) -> None:
@@ -1051,23 +1043,15 @@ class LiveObserverContractTests(unittest.TestCase):
             "ante": 3,
             "round_count": 17,
             "joker_slots": 5,
-            "joker_count": 1,
             "jokers": [],
             "consumable_slots": 2,
             "consumables": [],
-            "shop_vouchers": [],
             "vouchers": [],
-            "skip_tags": [],
             "tags": [],
             "shop_items": [],
-            "shop_discounts": [],
             "reroll_cost": 5,
-            "interest": 3,
-            "inflation": 2,
+            "interest": {"amount": 3, "cap": 25, "no_interest": False},
             "pack_contents": {
-                "pack_key": "p_arcana_normal_1",
-                "pack_size": 5,
-                "choose_limit": 1,
                 "choices_remaining": 1,
                 "skip_available": True,
                 "cards": [
@@ -1081,7 +1065,6 @@ class LiveObserverContractTests(unittest.TestCase):
             "hand_size": 8,
             "cards_in_hand": [],
             "selected_cards": [{"zone": "pack_contents", "card_key": "c_fool"}],
-            "highlighted_card": {"zone": "pack_contents", "card_key": "c_fool"},
             "cards_in_deck": [],
             "blinds": [],
             "notes": ["seen_at=2026-03-26T00:00:00+00:00"],
@@ -1090,9 +1073,6 @@ class LiveObserverContractTests(unittest.TestCase):
         formatted = format_observation(observation)
 
         self.assertIn("pack_contents:", formatted)
-        self.assertIn("pack_key=p_arcana_normal_1", formatted)
-        self.assertIn("pack_size=5", formatted)
-        self.assertIn("choose_limit=1", formatted)
         self.assertIn("choices_remaining=1", formatted)
         self.assertIn("skip_available=true", formatted)
         self.assertIn("c_fool", formatted)
@@ -1144,9 +1124,6 @@ class LiveObserverContractTests(unittest.TestCase):
             [
                 {
                     "card_key": "s_a",
-                    "card_kind": "base",
-                    "suit": "spades",
-                    "rank": "ace",
                     "enhancement": "bonus",
                     "edition": "foil",
                     "seal": "gold",
@@ -1159,7 +1136,22 @@ class LiveObserverContractTests(unittest.TestCase):
             ["c_k", "d_a"],
         )
         self.assertEqual(observation["selected_cards"], [])
-        self.assertIsNone(observation["highlighted_card"])
+
+    def test_observe_save_fallback_extracts_raw_interest_object(self) -> None:
+        legacy_save_payload = (
+            'return {["STATE"]=5,["BLIND"]={["config_blind"]="bl_big",["chips"]=to_big({300}, 1)},'
+            '["GAME"]={["chips"]=to_big({120}, 1),["dollars"]=10,["interest_amount"]=2,["interest_cap"]=50,'
+            '["modifiers"]={["no_interest"]=true},["current_round"]={["hands_left"]=3,["discards_left"]=1},'
+            '["round_resets"]={["hands"]=4,["discards"]=2},["blind_on_deck"]="bl_big"},'
+            '["cardAreas"]={["hand"]={["cards"]={},["config"]={["card_count"]=0}},["jokers"]={["cards"]={},["config"]={["card_count"]=0}}}}'
+        )
+
+        observation = self.observe_legacy_save_payload(legacy_save_payload)
+
+        self.assertEqual(
+            observation["interest"],
+            {"amount": 2, "cap": 50, "no_interest": True},
+        )
 
     def test_runtime_and_policy_consume_canonical_payload(self) -> None:
         observations = [
@@ -1177,24 +1169,19 @@ class LiveObserverContractTests(unittest.TestCase):
                 "ante": None,
                 "round_count": None,
                 "joker_slots": None,
-                "joker_count": 0,
                 "jokers": [],
                 "consumable_slots": None,
                 "consumables": [],
-                "shop_vouchers": [],
                 "vouchers": [],
-                "skip_tags": [],
                 "tags": [],
                 "shop_items": [],
-                "shop_discounts": [],
                 "reroll_cost": None,
                 "interest": None,
-                "inflation": None,
+                "run_info": None,
                 "pack_contents": None,
                 "hand_size": None,
                 "cards_in_hand": [],
                 "selected_cards": [],
-                "highlighted_card": None,
                 "cards_in_deck": [],
                 "blinds": [],
                 "notes": [],

@@ -46,7 +46,7 @@ local function test_missing_item_keys_do_not_crash()
         { key = nil },
       },
       consumables = {
-        { key = "c_fool", kind = "tarot" },
+        { key = "c_fool" },
       },
     },
   })
@@ -110,14 +110,14 @@ local function test_score_shape_changes_signature()
   assert_not_equal(first, second, "signature should track canonical score fields")
 end
 
-local function test_pack_reward_pack_key_changes_signature()
+local function test_pack_reward_choices_remaining_changes_signature()
   local first = Signature.make({
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_normal_1",
+        choices_remaining = 1,
         cards = {
-          { card_key = "c_fool", card_kind = "tarot" },
+          { card_key = "c_fool" },
         },
       },
     },
@@ -127,15 +127,15 @@ local function test_pack_reward_pack_key_changes_signature()
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_mega_2",
+        choices_remaining = 2,
         cards = {
-          { card_key = "c_fool", card_kind = "tarot" },
+          { card_key = "c_fool" },
         },
       },
     },
   })
 
-  assert_not_equal(first, second, "signature should track exact pack identity through pack_contents")
+  assert_not_equal(first, second, "signature should track actionable pack choice state")
 end
 
 local function test_legacy_open_pack_kind_does_not_affect_signature()
@@ -143,7 +143,6 @@ local function test_legacy_open_pack_kind_does_not_affect_signature()
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_normal_1",
         open_pack_kind = "tarot",
       },
     },
@@ -153,7 +152,6 @@ local function test_legacy_open_pack_kind_does_not_affect_signature()
     state = {
       interaction_phase = "pack_reward",
       pack_contents = {
-        pack_key = "p_arcana_normal_1",
         open_pack_kind = "planet",
       },
     },
@@ -165,22 +163,16 @@ end
 local function test_blind_and_skip_claim_fields_change_signature()
   local first = Signature.make({
     state = {
-      skip_tags = {
-        { slot = "small", key = "tag_small", claimed = true },
-      },
       blinds = {
-        { slot = "small", key = "bl_small", state = "skipped", tag_key = "tag_small", tag_claimed = true },
+        { key = "bl_small", state = "skipped", tag_key = "tag_small", tag_claimed = true },
       },
     },
   })
 
   local second = Signature.make({
     state = {
-      skip_tags = {
-        { slot = "small", key = "tag_small", claimed = false },
-      },
       blinds = {
-        { slot = "small", key = "bl_small", state = "upcoming", tag_key = "tag_small", tag_claimed = false },
+        { key = "bl_small", state = "upcoming", tag_key = "tag_small", tag_claimed = false },
       },
     },
   })
@@ -192,7 +184,7 @@ local function test_shop_item_structure_changes_signature()
   local first = Signature.make({
     state = {
       shop_items = {
-        { key = "j_credit_card", kind = "joker", edition = "foil", sell_price = 2, stickers = { "rental" } },
+        { key = "j_credit_card", edition = "foil", sell_price = 2, stickers = { "rental" } },
       },
     },
   })
@@ -200,7 +192,7 @@ local function test_shop_item_structure_changes_signature()
   local second = Signature.make({
     state = {
       shop_items = {
-        { key = "j_credit_card", kind = "joker", edition = "negative", sell_price = 2, stickers = { "rental" } },
+        { key = "j_credit_card", edition = "negative", sell_price = 2, stickers = { "rental" } },
       },
     },
   })
@@ -208,34 +200,74 @@ local function test_shop_item_structure_changes_signature()
   assert_not_equal(first, second, "signature should track canonical shop item structure, not only item keys")
 end
 
-local function test_shop_discounts_change_signature()
+local function test_interest_object_changes_signature()
   local first = Signature.make({
     state = {
-      shop_discounts = {
-        { kind = "discount_percent", value = 25 },
+      interest = {
+        amount = 1,
+        cap = 25,
+        no_interest = false,
       },
     },
   })
 
   local second = Signature.make({
     state = {
-      shop_discounts = {
-        { kind = "shop_free" },
+      interest = {
+        amount = 1,
+        cap = 50,
+        no_interest = false,
       },
     },
   })
 
-  assert_not_equal(first, second, "signature should track canonical shop discounts")
+  assert_not_equal(first, second, "signature should track raw interest determinants")
+end
+
+local function test_run_info_hand_state_changes_signature()
+  local first = Signature.make({
+    state = {
+      run_info = {
+        hands = {
+          ["Straight Flush"] = {
+            level = 1,
+            mult = 8,
+            chips = 100,
+            played = 0,
+            played_this_round = 0,
+          },
+        },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      run_info = {
+        hands = {
+          ["Straight Flush"] = {
+            level = 2,
+            mult = 12,
+            chips = 140,
+            played = 1,
+            played_this_round = 1,
+          },
+        },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track per-hand run state")
 end
 
 local function test_card_zones_change_signature()
   local first = Signature.make({
     state = {
       cards_in_hand = {
-        { card_key = "c_a", card_kind = "base", suit = "clubs", rank = "ace" },
+        { card_key = "c_a" },
       },
       cards_in_deck = {
-        { card_key = "c_k", card_kind = "base", suit = "clubs", rank = "king" },
+        { card_key = "c_k" },
       },
     },
   })
@@ -243,10 +275,10 @@ local function test_card_zones_change_signature()
   local second = Signature.make({
     state = {
       cards_in_hand = {
-        { card_key = "s_a", card_kind = "base", suit = "spades", rank = "ace" },
+        { card_key = "s_a" },
       },
       cards_in_deck = {
-        { card_key = "c_k", card_kind = "base", suit = "clubs", rank = "king" },
+        { card_key = "c_k" },
       },
     },
   })
@@ -255,6 +287,26 @@ local function test_card_zones_change_signature()
 end
 
 local function test_selection_references_change_signature()
+  local first = Signature.make({
+    state = {
+      selected_cards = {
+        { zone = "cards_in_hand", card_key = "h_8" },
+      },
+    },
+  })
+
+  local second = Signature.make({
+    state = {
+      selected_cards = {
+        { zone = "jokers", joker_key = "j_blueprint" },
+      },
+    },
+  })
+
+  assert_not_equal(first, second, "signature should track lightweight selected-card references")
+end
+
+local function test_removed_highlighted_card_does_not_affect_signature()
   local first = Signature.make({
     state = {
       selected_cards = {
@@ -279,14 +331,14 @@ local function test_selection_references_change_signature()
     },
   })
 
-  assert_not_equal(first, second, "signature should track lightweight selection and highlight references")
+  assert_equal(first, second, "signature should ignore removed highlighted_card payloads")
 end
 
 local function test_legacy_booster_packs_do_not_affect_signature()
   local first = Signature.make({
     state = {
       shop_items = {
-        { key = "p_buffoon_normal_1", kind = "pack" },
+        { key = "p_buffoon_normal_1" },
       },
       booster_packs = {
         { key = "p_ghost_legacy_1" },
@@ -297,7 +349,7 @@ local function test_legacy_booster_packs_do_not_affect_signature()
   local second = Signature.make({
     state = {
       shop_items = {
-        { key = "p_buffoon_normal_1", kind = "pack" },
+        { key = "p_buffoon_normal_1" },
       },
       booster_packs = {
         { key = "p_arcana_legacy_2" },
@@ -312,11 +364,13 @@ test_missing_scalar_fields_still_produce_signature()
 test_missing_item_keys_do_not_crash()
 test_distinct_real_values_change_signature()
 test_score_shape_changes_signature()
-test_pack_reward_pack_key_changes_signature()
+test_pack_reward_choices_remaining_changes_signature()
 test_legacy_open_pack_kind_does_not_affect_signature()
 test_blind_and_skip_claim_fields_change_signature()
 test_shop_item_structure_changes_signature()
-test_shop_discounts_change_signature()
+test_interest_object_changes_signature()
+test_run_info_hand_state_changes_signature()
 test_card_zones_change_signature()
 test_selection_references_change_signature()
+test_removed_highlighted_card_does_not_affect_signature()
 test_legacy_booster_packs_do_not_affect_signature()

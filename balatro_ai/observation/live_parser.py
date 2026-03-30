@@ -9,22 +9,16 @@ from ..models import (
     ObservedCard,
     ObservedConsumable,
     ObservedJoker,
+    ObservedInterest,
     ObservedPackContents,
     ObservedReference,
-    ObservedShopDiscount,
+    ObservedRunHand,
+    ObservedRunInfo,
+    RUN_INFO_HAND_ORDER,
     ObservedShopItem,
-    ObservedSkipTag,
     ObservedTag,
     ObservedVoucher,
 )
-
-
-_BLIND_SLOT_ORDER = {
-    "small": 0,
-    "big": 1,
-    "boss": 2,
-}
-
 
 class LiveObservationParser:
     def parse_file(self, path) -> GameObservation | None:
@@ -47,7 +41,6 @@ class LiveObservationParser:
 
         cards_in_hand = self._parse_cards(state.get("cards_in_hand"))
         selected_cards = self._parse_references(state.get("selected_cards"))
-        highlighted_card = self._parse_reference(state.get("highlighted_card"))
         cards_in_deck = self._parse_cards(state.get("cards_in_deck"))
         notes = state.get("notes")
         if not isinstance(notes, list):
@@ -57,16 +50,22 @@ class LiveObservationParser:
         if not isinstance(score_payload, dict):
             score_payload = {}
 
+        interaction_phase = self._string_or_none(state.get("interaction_phase")) or "unknown"
         blinds = self._parse_live_blinds(state.get("blinds"))
         vouchers = self._parse_live_vouchers(state.get("vouchers"))
         shop_vouchers = self._parse_live_vouchers(state.get("shop_vouchers"))
         consumables = self._parse_live_consumables(state.get("consumables"))
         shop_items = self._parse_live_shop_items(state.get("shop_items"))
-        shop_discounts = self._parse_live_shop_discounts(state.get("shop_discounts"))
+        shop_items = self._merge_shop_vouchers_into_shop_items(
+            shop_items=shop_items,
+            shop_vouchers=shop_vouchers,
+            interaction_phase=interaction_phase,
+        )
         pack_contents = self._parse_live_pack_contents(state.get("pack_contents"))
         tags = self._parse_live_tags(state.get("tags"))
-        skip_tags = self._parse_live_skip_tags(state.get("skip_tags"))
         jokers = self._parse_live_jokers(state.get("jokers"))
+        interest = self._parse_interest(state.get("interest"))
+        run_info = self._parse_run_info(state.get("run_info"))
 
         seen_at_raw = state.get("seen_at")
         seen_at = None
@@ -79,7 +78,7 @@ class LiveObservationParser:
             seen_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
 
         return GameObservation(
-            interaction_phase=self._string_or_none(state.get("interaction_phase")) or "unknown",
+            interaction_phase=interaction_phase,
             money=self._int_or_zero(state.get("money")),
             hands_left=self._int_or_zero(state.get("hands_left")),
             discards_left=self._int_or_zero(state.get("discards_left")),
@@ -88,7 +87,6 @@ class LiveObservationParser:
             jokers=tuple(jokers),
             cards_in_hand=tuple(cards_in_hand),
             selected_cards=tuple(selected_cards),
-            highlighted_card=highlighted_card,
             cards_in_deck=tuple(cards_in_deck),
             source=str(state.get("source", "live_export")),
             state_id=self._int_or_none(state.get("state_id")),
@@ -97,25 +95,61 @@ class LiveObservationParser:
             stake_id=state.get("stake_id"),
             ante=self._int_or_none(state.get("ante")),
             round_count=self._int_or_none(state.get("round_count", state.get("round_number"))),
+            run_info=run_info,
             blinds=tuple(blinds),
             joker_slots=self._int_or_none(state.get("joker_slots")),
-            joker_count=self._int_or_none(state.get("joker_count")),
-            shop_vouchers=tuple(shop_vouchers),
             vouchers=tuple(vouchers),
             consumables=tuple(consumables),
             consumable_slots=self._int_or_none(state.get("consumable_slots")),
             reroll_cost=self._int_or_none(state.get("reroll_cost")),
-            interest=self._int_or_none(state.get("interest")),
-            inflation=self._int_or_none(state.get("inflation")),
+            interest=interest,
             hand_size=self._int_or_none(state.get("hand_size")),
             shop_items=tuple(shop_items),
-            shop_discounts=tuple(shop_discounts),
             pack_contents=pack_contents,
             tags=tuple(tags),
-            skip_tags=tuple(skip_tags),
             notes=tuple(str(value) for value in notes if value is not None),
             seen_at=seen_at,
         )
+
+    def _parse_interest(self, payload: object) -> ObservedInterest | None:
+        if isinstance(payload, dict):
+            return ObservedInterest(
+                amount=self._int_or_none(payload.get("amount", payload.get("interest_amount"))),
+                cap=self._int_or_none(payload.get("cap", payload.get("interest_cap"))),
+                no_interest=bool(payload.get("no_interest", False)),
+            )
+
+        # Compatibility bridge for older scalar payloads.
+        scalar = self._int_or_none(payload)
+        if scalar is None:
+            return None
+        return ObservedInterest(amount=scalar, cap=None, no_interest=False)
+
+    def _parse_run_info(self, payload: object) -> ObservedRunInfo | None:
+        if not isinstance(payload, dict):
+            return None
+
+        hands_payload = payload.get("hands")
+        if not isinstance(hands_payload, dict):
+            return None
+
+        hands: list[ObservedRunHand] = []
+        for hand_name in RUN_INFO_HAND_ORDER:
+            hand_payload = hands_payload.get(hand_name)
+            if not isinstance(hand_payload, dict):
+                continue
+            hands.append(
+                ObservedRunHand(
+                    hand_name=hand_name,
+                    level=self._int_or_none(hand_payload.get("level")),
+                    mult=self._int_or_none(hand_payload.get("mult")),
+                    chips=self._int_or_none(hand_payload.get("chips")),
+                    played=self._int_or_none(hand_payload.get("played")),
+                    played_this_round=self._int_or_none(hand_payload.get("played_this_round")),
+                )
+            )
+
+        return ObservedRunInfo(hands=tuple(hands)) if hands else None
 
     def _parse_cards(self, payload: object) -> list[ObservedCard]:
         cards: list[ObservedCard] = []
@@ -236,20 +270,14 @@ class LiveObservationParser:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            kind = self._string_or_none(item.get("kind"))
             key = self._string_or_none(item.get("key"))
-            if not kind or not key:
+            if not key:
                 continue
-            stickers = item.get("stickers")
             consumables.append(
                 ObservedConsumable(
-                    kind=kind,
                     key=key,
                     edition=self._string_or_none(item.get("edition")),
                     sell_price=self._int_or_none(item.get("sell_price")),
-                    debuffed=bool(item.get("debuffed", False)),
-                    stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
-                    cost=self._int_or_none(item.get("cost")),
                 )
             )
         return consumables
@@ -268,28 +296,6 @@ class LiveObservationParser:
             tags.append(ObservedTag(key=key))
         return tags
 
-    def _parse_live_skip_tags(self, payload: object) -> list[ObservedSkipTag]:
-        skip_tags: list[ObservedSkipTag] = []
-        if not isinstance(payload, list):
-            return skip_tags
-
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            slot = self._string_or_none(item.get("slot"))
-            key = self._string_or_none(item.get("key", item.get("tag_key")))
-            if not slot or not key:
-                continue
-            skip_tags.append(
-                ObservedSkipTag(
-                    slot=slot,
-                    key=key,
-                    claimed=bool(item.get("claimed", False)),
-                )
-            )
-        skip_tags.sort(key=lambda skip_tag: self._slot_sort_key(skip_tag.slot))
-        return skip_tags
-
     def _parse_live_shop_items(self, payload: object) -> list[ObservedShopItem]:
         shop_items: list[ObservedShopItem] = []
         if not isinstance(payload, list):
@@ -301,64 +307,60 @@ class LiveObservationParser:
             kind = self._string_or_none(item.get("kind"))
             name = self._string_or_none(item.get("name"))
             key = self._string_or_none(item.get("key"))
-            if not kind or (not name and not key):
+            if not key and not name:
                 continue
             stickers = item.get("stickers")
             shop_items.append(
                 ObservedShopItem(
-                    kind=kind,
-                    name=name or key,
+                    kind=kind or "shop",
+                    name=name or key or "shop_item",
                     key=key,
                     cost=self._int_or_none(item.get("cost")),
                     rarity=self._string_or_none(item.get("rarity")),
                     edition=self._string_or_none(item.get("edition")),
-                    sell_price=self._int_or_none(item.get("sell_price")),
                     enhancement=self._string_or_none(item.get("enhancement")),
                     seal=self._string_or_none(item.get("seal")),
-                    consumable_kind=self._string_or_none(item.get("consumable_kind")),
                     stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
                     debuffed=bool(item.get("debuffed", False)),
-                    card_key=self._string_or_none(item.get("card_key")),
-                    card_kind=self._string_or_none(item.get("card_kind")),
-                    suit=self._string_or_none(item.get("suit")),
-                    rank=self._string_or_none(item.get("rank")),
-                    pack_key=self._string_or_none(item.get("pack_key")),
-                    pack_kind=self._string_or_none(item.get("pack_kind")),
                 )
             )
         return shop_items
 
-    def _parse_live_shop_discounts(self, payload: object) -> list[ObservedShopDiscount]:
-        shop_discounts: list[ObservedShopDiscount] = []
-        if not isinstance(payload, list):
-            return shop_discounts
+    def _merge_shop_vouchers_into_shop_items(
+        self,
+        *,
+        shop_items: list[ObservedShopItem],
+        shop_vouchers: list[ObservedVoucher],
+        interaction_phase: str,
+    ) -> list[ObservedShopItem]:
+        if interaction_phase != "shop" or not shop_vouchers:
+            return shop_items
 
-        for item in payload:
-            if not isinstance(item, dict):
+        merged = list(shop_items)
+        seen = {
+            item.key or item.name
+            for item in merged
+        }
+        for voucher in shop_vouchers:
+            dedupe_key = voucher.key
+            if dedupe_key in seen:
                 continue
-            kind = self._string_or_none(item.get("kind"))
-            if not kind:
-                continue
-            shop_discounts.append(
-                ObservedShopDiscount(
-                    kind=kind,
-                    value=self._int_or_none(item.get("value")),
+            merged.append(
+                ObservedShopItem(
+                    kind="voucher",
+                    name=voucher.key,
+                    key=voucher.key,
+                    cost=voucher.cost,
                 )
             )
-        return shop_discounts
+            seen.add(dedupe_key)
+        return merged
 
     def _parse_live_pack_contents(self, payload: object) -> ObservedPackContents | None:
         if not isinstance(payload, dict):
             return None
 
-        pack_key = self._string_or_none(payload.get("pack_key"))
-        if not pack_key:
-            return None
-
         return ObservedPackContents(
-            pack_key=pack_key,
-            pack_size=self._int_or_none(payload.get("pack_size")),
-            choose_limit=self._int_or_none(payload.get("choose_limit")),
             choices_remaining=self._int_or_none(payload.get("choices_remaining")),
             skip_available=bool(payload.get("skip_available", False)),
             cards=tuple(self._parse_cards(payload.get("cards"))),
@@ -372,26 +374,19 @@ class LiveObservationParser:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            slot = self._string_or_none(item.get("slot"))
             key = self._string_or_none(item.get("key"))
             state = self._string_or_none(item.get("state"))
-            if not slot or not key or not state:
+            if not key or not state:
                 continue
             blinds.append(
                 ObservedBlind(
-                    slot=slot,
                     key=key,
                     state=state,
                     tag_key=self._string_or_none(item.get("tag_key", item.get("tag"))),
                     tag_claimed=bool(item.get("tag_claimed", False)),
                 )
             )
-        blinds.sort(key=lambda blind: self._slot_sort_key(blind.slot))
         return blinds
-
-    def _slot_sort_key(self, slot: str) -> tuple[int, str]:
-        normalized = str(slot).strip().lower()
-        return (_BLIND_SLOT_ORDER.get(normalized, len(_BLIND_SLOT_ORDER)), normalized)
 
     def _int_or_zero(self, value: object) -> int:
         return self._int_or_none(value) or 0

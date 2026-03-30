@@ -1,4 +1,18 @@
 local Signature = {}
+local RUN_INFO_HAND_ORDER = {
+  "Flush Five",
+  "Flush House",
+  "Five of a Kind",
+  "Straight Flush",
+  "Four of a Kind",
+  "Full House",
+  "Flush",
+  "Straight",
+  "Three of a Kind",
+  "Two Pair",
+  "Pair",
+  "High Card",
+}
 
 local function safe_table(value)
   if type(value) == "table" then
@@ -46,19 +60,6 @@ local function add_structured_items(parts, items, field_names)
   parts[#parts + 1] = table.concat(values, "|")
 end
 
-local function add_optional_structured_item(parts, item, field_names)
-  if type(item) ~= "table" then
-    parts[#parts + 1] = ""
-    return
-  end
-
-  local item_parts = {}
-  for _, field_name in ipairs(field_names) do
-    item_parts[#item_parts + 1] = string_part(item[field_name])
-  end
-  parts[#parts + 1] = table.concat(item_parts, "/")
-end
-
 function Signature.make(snapshot)
   if type(snapshot) ~= "table" then
     return "nil"
@@ -67,6 +68,9 @@ function Signature.make(snapshot)
   local state = safe_table(snapshot.state) or {}
   local score = safe_table(state.score) or {}
   local pack_contents = safe_table(state.pack_contents) or {}
+  local interest = safe_table(state.interest) or {}
+  local run_info = safe_table(state.run_info) or {}
+  local run_hands = safe_table(run_info.hands) or {}
   local parts = {
     string_part(state.interaction_phase),
     string_part(state.state_id),
@@ -77,28 +81,33 @@ function Signature.make(snapshot)
     string_part(state.hands_left),
     string_part(state.discards_left),
     string_part(state.reroll_cost),
-    string_part(state.interest),
-    string_part(state.inflation),
+    string_part(interest.amount),
+    string_part(interest.cap),
+    string_part(interest.no_interest),
     string_part(state.blind_key),
     string_part(state.deck_key),
     string_part(score.current),
     string_part(score.target),
     string_part(state.joker_slots),
-    string_part(state.joker_count),
     string_part(state.consumable_slots),
     string_part(state.hand_size),
-    string_part(pack_contents.pack_key),
-    string_part(pack_contents.pack_size),
-    string_part(pack_contents.choose_limit),
     string_part(pack_contents.choices_remaining),
     string_part(pack_contents.skip_available),
   }
 
+  for _, hand_name in ipairs(RUN_INFO_HAND_ORDER) do
+    local hand = safe_table(run_hands[hand_name]) or {}
+    parts[#parts + 1] = table.concat({
+      string_part(hand.level),
+      string_part(hand.mult),
+      string_part(hand.chips),
+      string_part(hand.played),
+      string_part(hand.played_this_round),
+    }, "/")
+  end
+
   add_structured_items(parts, state.cards_in_hand, {
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
     "rarity",
     "enhancement",
     "edition",
@@ -110,9 +119,6 @@ function Signature.make(snapshot)
   })
   add_structured_items(parts, state.cards_in_deck, {
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
     "rarity",
     "enhancement",
     "edition",
@@ -130,42 +136,22 @@ function Signature.make(snapshot)
     "pack_key",
     "voucher_key",
   })
-  add_optional_structured_item(parts, state.highlighted_card, {
-    "zone",
-    "card_key",
-    "joker_key",
-    "consumable_key",
-    "pack_key",
-    "voucher_key",
-  })
   add_structured_items(parts, state.jokers, { "key", "rarity", "edition", "sell_price", "debuffed" })
-  add_structured_items(parts, state.shop_vouchers, { "key", "cost" })
   add_named_items(parts, state.vouchers, "key")
-  add_structured_items(parts, state.consumables, { "key", "kind", "edition", "sell_price", "debuffed" })
+  add_structured_items(parts, state.consumables, { "key", "edition", "sell_price", "debuffed" })
   add_structured_items(parts, state.shop_items, {
     "key",
-    "kind",
     "cost",
     "rarity",
     "edition",
     "sell_price",
     "enhancement",
     "seal",
-    "consumable_kind",
     "debuffed",
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
-    "pack_key",
-    "pack_kind",
   })
-  add_structured_items(parts, state.shop_discounts, { "kind", "value" })
   add_structured_items(parts, pack_contents.cards, {
     "card_key",
-    "card_kind",
-    "suit",
-    "rank",
     "rarity",
     "enhancement",
     "edition",
@@ -175,9 +161,8 @@ function Signature.make(snapshot)
     "sell_price",
     "debuffed",
   })
-  add_structured_items(parts, state.skip_tags, { "slot", "key", "claimed" })
   add_named_items(parts, state.tags, "key")
-  add_structured_items(parts, state.blinds, { "slot", "key", "state", "tag_key", "tag_claimed" })
+  add_structured_items(parts, state.blinds, { "key", "state", "tag_key", "tag_claimed" })
 
   return table.concat(parts, "::")
 end
