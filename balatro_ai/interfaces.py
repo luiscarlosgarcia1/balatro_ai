@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import GameAction, RuntimeObservation, ValidationResult
+from .models import GameAction, GameObservation, RuntimeObservation, ValidationResult
 
 
 class Observer(Protocol):
-    def observe(self) -> RuntimeObservation:
+    def observe(self) -> GameObservation:
         """Return the latest visible game state."""
 
 

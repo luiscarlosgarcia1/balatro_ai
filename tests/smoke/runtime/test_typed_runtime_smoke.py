@@ -1,13 +1,25 @@
 from __future__ import annotations
 
+import importlib.util
+from typing import get_type_hints
 import unittest
+from unittest.mock import patch
 
+from balatro_ai.interfaces import Observer
 from balatro_ai.models import GameAction, GameObservation
+from balatro_ai.models import StepRecord
 from balatro_ai.policy import DemoPolicy, RuleBasedValidator
 from balatro_ai.runtime import EpisodeRunner, ScriptedObserver
 
 
 class TypedRuntimeSmokeTests(unittest.TestCase):
+    def test_typed_runtime_contract_uses_game_observation_for_observer_and_step_record(self) -> None:
+        self.assertIs(get_type_hints(Observer.observe)["return"], GameObservation)
+        self.assertIs(get_type_hints(StepRecord)["observation"], GameObservation)
+
+    def test_python_side_observation_serializer_module_is_removed(self) -> None:
+        self.assertIsNone(importlib.util.find_spec("balatro_ai.observation.canonical"))
+
     def test_runner_executes_typed_observation_flow_and_records_same_instance(self) -> None:
         observation = GameObservation(
             source="mock",
@@ -23,17 +35,28 @@ class TypedRuntimeSmokeTests(unittest.TestCase):
         validator = RecordingRuleBasedValidator()
         executor = RecordingExecutor()
 
-        records = EpisodeRunner(
+        runner = EpisodeRunner(
             observer=ScriptedObserver([observation]),
             policy=policy,
             validator=validator,
             executor=executor,
-        ).run()
+        )
+
+        with patch(
+            "json.dumps",
+            side_effect=AssertionError(
+                "Typed runtime-policy-validator flow must not reintroduce Python-side JSON serialization."
+            ),
+        ):
+            records = runner.run()
 
         self.assertIs(policy.observations[0], observation)
         self.assertIs(validator.observations[0], observation)
+        self.assertIsInstance(policy.observations[0], GameObservation)
+        self.assertIsInstance(validator.observations[0], GameObservation)
         self.assertEqual(executor.actions[0].kind, "buy_joker")
         self.assertIs(records[0].observation, observation)
+        self.assertIsInstance(records[0].observation, GameObservation)
         self.assertTrue(records[0].validation.accepted)
 
     def test_runner_skips_execution_when_typed_action_is_rejected(self) -> None:

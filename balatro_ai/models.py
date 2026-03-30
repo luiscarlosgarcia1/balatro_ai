@@ -228,6 +228,6 @@ class ValidationResult:
 class StepRecord:
     """Single loop iteration for logging and later evaluation."""
 
-    observation: RuntimeObservation
+    observation: GameObservation
     action: GameAction
     validation: ValidationResult

@@ -9,8 +9,7 @@ from .save_decoder import SaveSnapshot
 class SaveObservationParser:
     def parse_snapshot(self, snapshot: SaveSnapshot) -> GameObservation:
         # Transitional legacy bridge: save fallback still extracts a legacy
-        # internal observation shape and relies on the canonical serializer to
-        # produce the public contract.
+        # internal observation shape, but now returns the typed contract directly.
         payload = snapshot.active_payload
         blind_block = self._extract_block(payload, "BLIND") or ""
         game_block = self._extract_block(payload, "GAME") or ""

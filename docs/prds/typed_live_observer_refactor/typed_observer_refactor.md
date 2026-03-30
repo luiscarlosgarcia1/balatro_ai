@@ -26,13 +26,13 @@ If this seam stays ambiguous, future cleanup will keep stacking on top of both s
 
 ## Solution
 
-Refactor the architecture so that typed live observations become the normal in-process contract of the application, while JSON remains only at the true external boundary and in debug/export tooling that still clearly justifies itself after the cleanup.
+Refactor the architecture so that typed live observations become the normal in-process contract of the application, while JSON remains only at the Lua-to-Python ingress boundary. Python-side observation serialization, dumps, and export helpers are not part of the target architecture and should be removed unless a concrete external consumer requires them.
 
 This PRD establishes the following core direction:
 
 - the app should treat live-exported observations as the normal supported source
 - the app should use a typed `GameObservation`-style model internally
-- the JSON boundary where Lua hands live state to Python must remain, but unnecessary JSON conversion and JSON-shaped internal flow inside Python should be removed
+- the JSON boundary where Lua hands live state to Python must remain, but Python-side observation serialization and JSON-shaped internal flow should be removed unless a concrete external consumer requires them
 - the current observation service layer that turns typed observations back into dicts must be updated to match the new typed contract
 - public save-first naming should be removed and replaced with a generic observer name that matches the intended architecture
 - runtime should be simplified while keeping a separate validator boundary for safety and future modification
@@ -46,8 +46,8 @@ The desired end state for this first pass is:
 1. A generic public `BalatroObserver` concept that reflects the product-level observer rather than the historical save-source implementation.
 2. A single typed in-process observation contract used by observer, runtime, and policy code.
 3. A simplified runtime loop that consumes typed observations, uses a validator as the final safety boundary before execution, and executes validated actions.
-4. A simpler direct observation inspection path for `GameObservation`, with `obs_test` either slimmed down heavily or removed entirely if a cleaner replacement exists.
-5. A reduced codebase with less transitional naming, fewer adapters, fewer parallel shapes, and fewer tests that only defend obsolete structure.
+4. A simpler direct observation inspection path for `GameObservation`, with `obs_test` either slimmed down heavily or removed entirely if a cleaner replacement exists, without reintroducing JSON as a Python-side contract.
+5. A reduced codebase with less transitional naming, fewer adapters and serialization helpers, fewer parallel shapes, and fewer tests that only defend obsolete structure.
 
 This PRD deliberately chooses clean simplification over long compatibility. The default implementation path is to remove fallback functionality completely and fix any fallout directly. Only if implementation discovers a real blocker that cannot be reasonably removed should a tiny internal adapter be reintroduced, hidden behind the typed observer boundary and prevented from shaping the public architecture.
 
@@ -86,7 +86,7 @@ This PRD deliberately chooses clean simplification over long compatibility. The 
 31. As the Balatro AI developer, I want a soft file-size limit of roughly 500 lines, so that new code stays easier to reason about while still allowing sensible exceptions.
 32. As the Balatro AI developer, I want the implementation to choose simplicity over architectural ceremony without turning `GameObservation` into a new giant dumping ground, so that the cleanup replaces the old knot instead of renaming it.
 33. As the Balatro AI developer, I want public documentation to match the new typed live-observer reality, so that the repo teaches the correct model to future readers.
-34. As the Balatro AI developer, I want the external canonical JSON contract to remain available at the edges, so that observation dumps and manual inspection workflows still fit the broader observer roadmap.
+34. As the Balatro AI developer, I want the Lua-to-Python `live_state.json` handoff to be the only required JSON observation contract, so that Python-side observation dumps and serializer helpers do not survive by default.
 35. As the Balatro AI developer, I want the first pass to remove as many ambiguities as possible, so that the implementer does not have to invent key architectural decisions mid-refactor.
 
 ## Implementation Decisions
@@ -97,7 +97,7 @@ This PRD deliberately chooses clean simplification over long compatibility. The 
 - Dict-shaped or JSON-shaped observations should not remain the primary app contract after this refactor.
 - The `live_state.json` handoff from Lua to Python remains a required external boundary.
 - Unnecessary JSON conversion, JSON-shaped intermediate representations, and JSON-centric internal helpers on the Python side should be removed as part of this refactor.
-- Outside the Lua-to-Python handoff, JSON should exist only when deliberately used for optional debug snapshots or export artifacts that still earn their keep after the refactor. Existing debug/export JSON functionality is not protected by default and may be simplified or removed if it is no longer useful.
+- Outside the Lua-to-Python handoff, JSON should not be part of the Python-side observation architecture. Existing debug/export JSON functionality is not protected by default and should be removed unless a concrete external consumer still requires it.
 - The current observation service layer must be updated to return or preserve typed observations through normal app flow instead of immediately converting them back into dicts.
 - The app should treat the live exporter as the intended normal source of observations.
 - Public save-first naming should be removed rather than preserved.
@@ -117,7 +117,7 @@ This PRD deliberately chooses clean simplification over long compatibility. The 
 - Demo and mock scaffolding currently embedded in runtime should be deleted if it is not essential to smoke testing or manual development flow.
 - The manual observation inspection workflow should survive only in its simplest useful form.
 - `obs_test` should be slimmed down only if it remains the cleanest way to inspect `GameObservation`; otherwise it should be removed and replaced with a simpler direct inspection path.
-- Any surviving inspection tool should accept typed observations as input and may render pretty text or JSON snapshots as outputs.
+- Any surviving inspection tool should accept typed observations as input and should not require JSON serialization as part of its normal operation.
 - Pretty output is a derived view; it should not define the internal runtime contract.
 - Any touched area in this refactor should move toward files grouped by functionality and folders grouped by purpose rather than by accident of history.
 - Meaningful refactors should prefer splitting mixed-responsibility files into smaller focused files instead of continuing to accrete unrelated behavior in the same place.
@@ -129,7 +129,7 @@ This PRD deliberately chooses clean simplification over long compatibility. The 
 - Good tests in this refactor verify public behavior of the surviving contracts rather than implementation details or intermediate helper shapes.
 - Boundary smoke tests should cover at least typed observation acquisition, observation-service behavior under the typed contract, typed runtime-policy-validator interaction, basic execution flow, direct observation inspection or its replacement, and public import surface.
 - Boundary smoke tests should verify that the Lua-to-Python JSON handoff still parses correctly while the internal Python flow no longer depends on JSON-shaped observations.
-- The refactor should preserve the existing external canonical JSON observer direction at the edges; this PRD does not replace the broader machine-readable observer roadmap.
+- The refactor should preserve only the required `live_state.json` ingress boundary; it does not preserve Python-side canonical JSON export helpers by default.
 - This pass should not redesign executor automation, game-playing strategy quality, or broader policy intelligence beyond the contract simplification needed to absorb validation into policy.
 - This pass should not preserve old architecture solely because it is already present. Legacy structure must justify itself through current behavior or a hard dependency.
 - `GameObservation` must not become a new giant dumping ground for every lingering concept. As the cleanup proceeds, any overloaded or awkwardly grouped observation concerns should be split into cleaner typed boundaries instead of merely moving the knot into one large object.
@@ -173,8 +173,8 @@ This PRD deliberately chooses clean simplification over long compatibility. The 
 - The user is also comfortable deleting tests when those tests mainly defend structure they no longer want.
 - The user prefers to keep the validator boundary because it improves safety and future modification flexibility.
 - The user wants file layout cleanup to happen alongside behavioral cleanup in any touched area, not just the most obviously oversized files.
-- The user wants unnecessary JSON functionality removed, but still wants the JSON handoff where Lua passes live state to Python to remain intact. Existing debug/export JSON paths should survive only if they remain genuinely useful after the cleanup.
-- The earlier JSON-first observer work remains relevant at the external contract boundary, but this PRD changes the internal architectural center of gravity: typed in-process observations, live-first flow, simpler runtime, fewer roles.
+- The user wants unnecessary JSON functionality removed, but still wants the JSON handoff where Lua passes live state to Python to remain intact. Existing debug/export JSON paths should be removed unless a concrete external consumer still requires them.
+- Earlier JSON-first observer work remains relevant only at the Lua-to-Python ingress boundary; this PRD moves the internal architectural center of gravity to typed in-process observations, live-first flow, simpler runtime, and fewer roles.
 - If implementation discovers an unavoidable dependency that contradicts one of these defaults, the preferred resolution order is:
   1. remove the dependency
   2. fix the fallout directly at the affected caller or flow
@@ -184,7 +184,7 @@ This PRD deliberately chooses clean simplification over long compatibility. The 
   - the observation service no longer forces typed observations back into dicts during normal app flow
   - the Lua-to-Python JSON handoff still exists and still parses into the typed observation contract
   - unnecessary JSON conversion and JSON-shaped internal flow on the Python side are removed
-  - existing debug/export JSON functionality is simplified or removed unless it still clearly justifies itself after the refactor
+  - Python-side observation serialization and debug/export JSON tooling are removed unless a concrete external consumer still requires them
   - the main public observer concept no longer uses save-first naming
   - the main runtime path keeps a separate validator safety boundary
   - `obs_test` is either removed cleanly or replaced by a simpler direct `GameObservation` inspection path

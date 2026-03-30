@@ -5,11 +5,11 @@ from __future__ import annotations
 from .capture import CaptureBand, LightweightCapturePlan, PixelRect
 from .paths import BalatroPaths, DEFAULT_BALATRO_ROOT
 from .save_decoder import SavePayloadDecoder, SaveSnapshot
-from .service import BalatroSaveObserver
+from .service import BalatroObserver
 
 __all__ = [
     "BalatroPaths",
-    "BalatroSaveObserver",
+    "BalatroObserver",
     "CaptureBand",
     "DEFAULT_BALATRO_ROOT",
     "LightweightCapturePlan",

@@ -1,6 +1,6 @@
 from .api import (
     BalatroPaths,
-    BalatroSaveObserver,
+    BalatroObserver,
     CaptureBand,
     DEFAULT_BALATRO_ROOT,
     LightweightCapturePlan,
@@ -11,7 +11,7 @@ from .api import (
 
 __all__ = [
     "BalatroPaths",
-    "BalatroSaveObserver",
+    "BalatroObserver",
     "CaptureBand",
     "DEFAULT_BALATRO_ROOT",
     "LightweightCapturePlan",

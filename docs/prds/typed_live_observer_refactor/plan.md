@@ -7,7 +7,7 @@
 - There are no existing issue docs for this PRD, so the work is sliced directly from the PRD and the current repo seams.
 - Use thin resumable phases rather than broad milestones.
 - Remove the dedicated manual inspection tool instead of preserving `obs_test.py`.
-- End state: the app treats live-exported state as the only supported observer source, uses `GameObservation` as the in-process contract everywhere, keeps JSON only at the Lua-to-Python ingress plus explicit export helpers, preserves a separate validator boundary, and removes save-first naming and fallback code.
+- End state: the app treats live-exported state as the only supported observer source, uses `GameObservation` as the in-process contract everywhere, keeps JSON only at the Lua-to-Python ingress, preserves a separate validator boundary, and removes save-first naming, fallback code, and Python-side observation serializers.
 
 ## Durable Decisions
 
@@ -18,7 +18,7 @@
 - The public observer name is `BalatroObserver`; no compatibility alias for `BalatroSaveObserver`.
 - Save fallback removal is the default path, not deferred cleanup.
 - The only supported observer ingress is `live_state.json -> LiveObservationParser -> GameObservation`.
-- `serialize_observation(GameObservation)` survives only as an explicit edge export/debug helper, not as the normal runtime contract.
+- No Python-side observation serializer or JSON export helper is part of the target architecture; add one later only if a concrete external boundary truly needs it.
 - No dedicated manual inspection tool survives this refactor.
 - If fallback deletion discovers a blocker, fix the caller or flow first; only then allow the smallest possible hidden adapter.
 
@@ -63,7 +63,6 @@ The repo currently concentrates most observer behavior in one giant contract sui
   - public observer imports
   - typed runtime-policy-validator interaction
   - typed `StepRecord`
-  - explicit JSON export from a typed observation
   - missing or invalid live-state input
 - Freeze `tests/test_live_observer_contract.py` as a breakup target; do not add new coverage there.
 - Keep new test modules focused and small rather than recreating another giant file.
@@ -98,7 +97,7 @@ This is the central contract change from the PRD. Runtime and cleanup work shoul
 - Replace the public `BalatroSaveObserver` concept with `BalatroObserver`.
 - Change `Observer.observe()` to return `GameObservation`.
 - Remove `ObservationPayload` from observer, runtime, policy, validator, and `StepRecord`.
-- Keep `serialize_observation(GameObservation)` only as an explicit edge export/debug helper.
+- Remove Python-side observation serializers and JSON export helpers unless a concrete external caller in the repo still requires one right now.
 - Update `balatro_ai` and `balatro_ai.observation` exports to expose `BalatroObserver` and remove save-first names.
 
 ### Acceptance criteria
@@ -106,6 +105,7 @@ This is the central contract change from the PRD. Runtime and cleanup work shoul
 - [ ] Public imports expose `BalatroObserver`.
 - [ ] Observer interfaces and step records use `GameObservation`.
 - [ ] Normal observer/runtime flow no longer depends on serialized dict payloads.
+- [ ] Python-side observation JSON serialization is removed unless a concrete external caller still requires it.
 
 ### Read before starting
 
@@ -196,7 +196,7 @@ Once the real runtime path is already switched over, the remaining work should m
 ### Implementation notes
 
 - Delete `obs_test.py` and its README/mod README workflows; do not replace it with another dedicated inspection command.
-- Keep canonical JSON only as an explicit export/debug boundary derived from `GameObservation`, not as a runtime contract.
+- Remove any remaining Python-side observation JSON helpers, dumps, and serializer-driven workflows unless a concrete external boundary still requires them.
 - Replace the giant contract suite with smaller focused test modules.
 - Remove tests that exist mainly to protect:
   - dict-first runtime/policy flow

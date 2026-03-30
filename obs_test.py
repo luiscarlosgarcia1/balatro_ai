@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import json
 import struct
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from balatro_ai.observation import BalatroPaths, BalatroSaveObserver, LightweightCapturePlan
+from balatro_ai.models import GameObservation, ObservedReference
+from balatro_ai.observation import BalatroObserver, BalatroPaths, LightweightCapturePlan
 
 
 OUTPUT_ROOT = Path("obs_test_output")
+STATUS_LOG_NAME = "obs_test.log"
 
 
 @dataclass(frozen=True)
@@ -70,16 +71,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     paths = BalatroPaths(profile=args.profile)
-    observer = BalatroSaveObserver(paths=paths)
+    observer = BalatroObserver(paths=paths)
     run_dir = args.output_dir / datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
+    status_log_path = run_dir / STATUS_LOG_NAME
 
-    print(f"[obs_test] profile={args.profile} output={run_dir}")
-    print(f"[obs_test] save path: {paths.save_path}")
-    print(f"[obs_test] live path: {paths.live_state_path}")
+    append_status(status_log_path, f"[obs_test] profile={args.profile} output={run_dir}")
+    append_status(status_log_path, f"[obs_test] save path: {paths.save_path}")
+    append_status(status_log_path, f"[obs_test] live path: {paths.live_state_path}")
 
     if not paths.save_path.exists() and not paths.live_state_path.exists():
-        print("[obs_test] no save or live-state file exists yet; waiting for one to appear.")
+        append_status(status_log_path, "[obs_test] no save or live-state file exists yet; waiting for one to appear.")
 
     target = resolve_capture_target(
         manual_rect=tuple(args.rect) if args.rect else None,
@@ -87,14 +89,15 @@ def main() -> None:
     )
     backend = detect_backend(target)
     if backend is None:
-        print("[obs_test] no screenshot backend available; running parser-only mode.")
+        append_status(status_log_path, "[obs_test] no screenshot backend available; running parser-only mode.")
     else:
-        print(f"[obs_test] screenshot backend: {backend}")
+        append_status(status_log_path, f"[obs_test] screenshot backend: {backend}")
         if target is not None:
-            print(
+            append_status(
+                status_log_path,
                 "[obs_test] capture target: "
                 f"{target.description} "
-                f"({target.left}, {target.top}, {target.width}, {target.height})"
+                f"({target.left}, {target.top}, {target.width}, {target.height})",
             )
 
     last_stamp: tuple[float | None, float | None] | None = None
@@ -104,7 +107,7 @@ def main() -> None:
         stamp = current_input_stamp(paths)
         if stamp is None:
             if args.once:
-                print("[obs_test] no save or live-state file is available in one-shot mode.")
+                append_status(status_log_path, "[obs_test] no save or live-state file is available in one-shot mode.")
                 return
             time.sleep(args.poll_interval)
             continue
@@ -117,16 +120,16 @@ def main() -> None:
             try:
                 observation = observer.observe()
             except Exception as exc:
-                print(f"[obs_test] failed to parse save file: {exc}")
+                append_status(status_log_path, f"[obs_test] failed to parse save file: {exc}")
                 if args.once:
                     return
                 time.sleep(args.poll_interval)
                 continue
             write_observation(run_dir, sequence, observation)
-            print(format_observation(observation))
+            append_status(status_log_path, f"[obs_test] wrote observation_{sequence:04d}.txt")
 
             if backend is None:
-                print("[obs_test] screenshot capture skipped.")
+                append_status(status_log_path, "[obs_test] screenshot capture skipped.")
             else:
                 capture_result = capture_and_save(
                     backend=backend,
@@ -139,7 +142,7 @@ def main() -> None:
                     sequence=sequence,
                     show=args.show,
                 )
-                print(capture_result)
+                append_status(status_log_path, capture_result)
 
             if args.once:
                 return
@@ -161,244 +164,193 @@ def current_input_stamp(paths: BalatroPaths) -> tuple[float | None, float | None
     return (live_mtime, save_mtime)
 
 
-def format_observation(observation: dict[str, object]) -> str:
-    # Transitional legacy bridge: this remains a derived debug view downstream of the
-    # canonical payload and should not grow new legacy-specific branches.
-    score = observation.get("score") or {}
-    interest = observation.get("interest")
+def format_observation(observation: GameObservation) -> str:
+    score_current = observation.score_current
+    score_target = observation.score_target
+    interest = observation.interest
     interest_text = "-"
-    if isinstance(interest, dict):
+    if interest is not None:
         interest_parts = []
-        if interest.get("amount") is not None:
-            interest_parts.append(f"amount={interest['amount']}")
-        if interest.get("cap") is not None:
-            interest_parts.append(f"cap={interest['cap']}")
-        if "no_interest" in interest:
-            interest_parts.append(f"no_interest={'true' if interest.get('no_interest') else 'false'}")
+        if interest.amount is not None:
+            interest_parts.append(f"amount={interest.amount}")
+        if interest.cap is not None:
+            interest_parts.append(f"cap={interest.cap}")
+        interest_parts.append(f"no_interest={'true' if interest.no_interest else 'false'}")
         interest_text = ", ".join(interest_parts) if interest_parts else "{}"
-    elif interest is not None:
-        interest_text = str(interest)
     lines = [
         "",
         "[observation]",
-        f"  source: {observation.get('source')}",
-        f"  state_id: {observation.get('state_id') if observation.get('state_id') is not None else '-'}",
-        f"  interaction_phase: {observation.get('interaction_phase') or '-'}",
-        f"  blind_key: {observation.get('blind_key') or '-'}",
-        f"  deck_key: {observation.get('deck_key') or '-'}",
-        f"  stake_id: {observation.get('stake_id') or '-'}",
-        f"  money: {observation.get('money')}",
-        f"  score: {score.get('current')}/{score.get('target')}",
-        f"  hands_left: {observation.get('hands_left')}",
-        f"  discards_left: {observation.get('discards_left')}",
-        f"  ante: {observation.get('ante') if observation.get('ante') is not None else '-'}",
-        f"  round_count: {observation.get('round_count') if observation.get('round_count') is not None else '-'}",
-        f"  joker_slots: {observation.get('joker_slots') if observation.get('joker_slots') is not None else '-'}",
-        f"  reroll_cost: {observation.get('reroll_cost') if observation.get('reroll_cost') is not None else '-'}",
+        f"  source: {observation.source}",
+        f"  state_id: {observation.state_id if observation.state_id is not None else '-'}",
+        f"  interaction_phase: {observation.interaction_phase or '-'}",
+        f"  blind_key: {observation.blind_key or '-'}",
+        f"  deck_key: {observation.deck_key or '-'}",
+        f"  stake_id: {observation.stake_id or '-'}",
+        f"  money: {observation.money}",
+        f"  score: {score_current}/{score_target}",
+        f"  hands_left: {observation.hands_left}",
+        f"  discards_left: {observation.discards_left}",
+        f"  ante: {observation.ante if observation.ante is not None else '-'}",
+        f"  round_count: {observation.round_count if observation.round_count is not None else '-'}",
+        f"  joker_slots: {observation.joker_slots if observation.joker_slots is not None else '-'}",
+        f"  reroll_cost: {observation.reroll_cost if observation.reroll_cost is not None else '-'}",
         f"  interest: {interest_text}",
-        f"  hand_size: {observation.get('hand_size') if observation.get('hand_size') is not None else '-'}",
-        f"  consumable_slots: {observation.get('consumable_slots') if observation.get('consumable_slots') is not None else '-'}",
+        f"  hand_size: {observation.hand_size if observation.hand_size is not None else '-'}",
+        f"  consumable_slots: {observation.consumable_slots if observation.consumable_slots is not None else '-'}",
     ]
-    run_info = observation.get("run_info")
-    if isinstance(run_info, dict):
-        hands = run_info.get("hands")
-        if isinstance(hands, dict) and hands:
-            lines.append("  run_info:")
-            lines.append("    hands:")
-            for hand_name, hand in hands.items():
-                if not isinstance(hand, dict):
-                    continue
-                extras = []
-                for field_name in ("level", "chips", "mult", "played", "played_this_round"):
-                    if hand.get(field_name) is not None:
-                        extras.append(f"{field_name}={hand[field_name]}")
-                lines.append(f"      - {hand_name}: {', '.join(extras)}")
-    jokers = observation.get("jokers") or []
-    if jokers:
+    if observation.run_info and observation.run_info.hands:
+        lines.append("  run_info:")
+        lines.append("    hands:")
+        for hand in observation.run_info.hands:
+            extras = []
+            for field_name in ("level", "chips", "mult", "played", "played_this_round"):
+                value = getattr(hand, field_name)
+                if value is not None:
+                    extras.append(f"{field_name}={value}")
+            lines.append(f"      - {hand.hand_name}: {', '.join(extras)}")
+    if observation.jokers:
         lines.append("  jokers:")
-        for joker in jokers:
-            if not isinstance(joker, dict):
-                continue
+        for joker in observation.jokers:
             extras = []
-            if joker.get("rarity"):
-                extras.append(f"rarity={joker['rarity']}")
-            if joker.get("edition"):
-                extras.append(f"edition={joker['edition']}")
-            if joker.get("sell_price") is not None:
-                extras.append(f"sell_price={joker['sell_price']}")
-            stickers = joker.get("stickers")
-            if isinstance(stickers, list):
-                extras.extend(f"sticker={value}" for value in stickers)
+            if joker.rarity:
+                extras.append(f"rarity={joker.rarity}")
+            if joker.edition:
+                extras.append(f"edition={joker.edition}")
+            if joker.sell_price is not None:
+                extras.append(f"sell_price={joker.sell_price}")
+            extras.extend(f"sticker={value}" for value in joker.stickers)
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {joker.get('key') or '?'}{extra_text}")
-    vouchers = observation.get("vouchers") or []
-    if vouchers:
+            lines.append(f"    - {joker.key or '?'}{extra_text}")
+    if observation.vouchers:
         lines.append("  vouchers:")
-        for voucher in vouchers:
-            if not isinstance(voucher, dict):
-                continue
-            lines.append(f"    - {voucher.get('key') or '?'}")
-    consumables = observation.get("consumables") or []
-    if consumables:
+        for voucher in observation.vouchers:
+            lines.append(f"    - {voucher.key or '?'}")
+    if observation.consumables:
         lines.append("  consumables:")
-        for consumable in consumables:
-            if not isinstance(consumable, dict):
-                continue
+        for consumable in observation.consumables:
             extras = []
-            if consumable.get("cost") is not None:
-                extras.append(f"cost={consumable['cost']}")
-            if consumable.get("sell_price") is not None:
-                extras.append(f"sell_price={consumable['sell_price']}")
-            if consumable.get("edition"):
-                extras.append(f"edition={consumable['edition']}")
-            stickers = consumable.get("stickers")
-            if isinstance(stickers, list):
-                extras.extend(f"sticker={value}" for value in stickers)
+            if consumable.sell_price is not None:
+                extras.append(f"sell_price={consumable.sell_price}")
+            if consumable.edition:
+                extras.append(f"edition={consumable.edition}")
             suffix = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {consumable.get('key') or '?'}{suffix}")
-    tags = observation.get("tags") or []
-    if tags:
+            lines.append(f"    - {consumable.key or '?'}{suffix}")
+    if observation.tags:
         lines.append("  tags:")
-        for tag in tags:
-            if not isinstance(tag, dict):
-                continue
-            lines.append(f"    - {tag.get('key') or '?'}")
-    shop_items = observation.get("shop_items") or []
-    if shop_items:
+        for tag in observation.tags:
+            lines.append(f"    - {tag.key or '?'}")
+    if observation.shop_items:
         lines.append("  shop_items:")
-        for item in shop_items:
-            if not isinstance(item, dict):
-                continue
+        for item in observation.shop_items:
             extras = []
-            if item.get("cost") is not None:
-                extras.append(f"cost={item['cost']}")
+            if item.cost is not None:
+                extras.append(f"cost={item.cost}")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {item.get('name') or item.get('key') or '?'}{extra_text}")
-    pack_contents = observation.get("pack_contents")
-    if isinstance(pack_contents, dict):
+            lines.append(f"    - {item.name or item.key or '?'}{extra_text}")
+    if observation.pack_contents is not None:
         lines.append("  pack_contents:")
         extras = []
-        if pack_contents.get("choices_remaining") is not None:
-            extras.append(f"choices_remaining={pack_contents['choices_remaining']}")
-        if "skip_available" in pack_contents:
-            extras.append(f"skip_available={'true' if pack_contents.get('skip_available') else 'false'}")
+        if observation.pack_contents.choices_remaining is not None:
+            extras.append(f"choices_remaining={observation.pack_contents.choices_remaining}")
+        extras.append(f"skip_available={'true' if observation.pack_contents.skip_available else 'false'}")
         if extras:
             lines.append(f"    - {', '.join(extras)}")
 
-        pack_cards = pack_contents.get("cards") or []
-        for card in pack_cards:
-            if not isinstance(card, dict):
-                continue
+        for card in observation.pack_contents.cards:
             card_extras = []
-            if card.get("enhancement"):
-                card_extras.append(f"enh={card['enhancement']}")
-            if card.get("edition"):
-                card_extras.append(f"edition={card['edition']}")
-            if card.get("seal"):
-                card_extras.append(f"seal={card['seal']}")
-            if card.get("cost") is not None:
-                card_extras.append(f"cost={card['cost']}")
-            if card.get("sell_price") is not None:
-                card_extras.append(f"sell_price={card['sell_price']}")
-            if card.get("facing"):
-                card_extras.append(f"facing={card['facing']}")
-            stickers = card.get("stickers")
-            if isinstance(stickers, list):
-                card_extras.extend(f"sticker={value}" for value in stickers)
-            if card.get("debuffed"):
+            if card.enhancement:
+                card_extras.append(f"enh={card.enhancement}")
+            if card.edition:
+                card_extras.append(f"edition={card.edition}")
+            if card.seal:
+                card_extras.append(f"seal={card.seal}")
+            if card.cost is not None:
+                card_extras.append(f"cost={card.cost}")
+            if card.sell_price is not None:
+                card_extras.append(f"sell_price={card.sell_price}")
+            if card.facing:
+                card_extras.append(f"facing={card.facing}")
+            card_extras.extend(f"sticker={value}" for value in card.stickers)
+            if card.debuffed:
                 card_extras.append("debuffed=true")
             extra_text = f" ({', '.join(card_extras)})" if card_extras else ""
-            lines.append(f"    - {card.get('card_key') or '?'}{extra_text}")
-    blinds = observation.get("blinds") or []
-    if blinds:
+            lines.append(f"    - {card.card_key or '?'}{extra_text}")
+    if observation.blinds:
         lines.append("  blinds:")
-        for blind_choice in blinds:
-            if not isinstance(blind_choice, dict):
-                continue
+        for blind_choice in observation.blinds:
             extras = []
-            if blind_choice.get("state"):
-                extras.append(f"state={blind_choice['state']}")
-            if blind_choice.get("tag_key"):
-                extras.append(f"tag_key={blind_choice['tag_key']}")
-            if blind_choice.get("tag_claimed"):
+            if blind_choice.state:
+                extras.append(f"state={blind_choice.state}")
+            if blind_choice.tag_key:
+                extras.append(f"tag_key={blind_choice.tag_key}")
+            if blind_choice.tag_claimed:
                 extras.append("tag_claimed=true")
             extra_text = f" [{', '.join(extras)}]" if extras else ""
-            lines.append(f"    - {blind_choice.get('key')}{extra_text}")
-    cards_in_hand = observation.get("cards_in_hand") or []
-    if cards_in_hand:
+            lines.append(f"    - {blind_choice.key}{extra_text}")
+    if observation.cards_in_hand:
         lines.append("  cards_in_hand:")
-        for card in cards_in_hand:
-            if not isinstance(card, dict):
-                continue
+        for card in observation.cards_in_hand:
             extras = []
-            if card.get("enhancement"):
-                extras.append(f"enh={card['enhancement']}")
-            if card.get("edition"):
-                extras.append(f"edition={card['edition']}")
-            if card.get("seal"):
-                extras.append(f"seal={card['seal']}")
-            if card.get("cost") is not None:
-                extras.append(f"cost={card['cost']}")
-            if card.get("sell_price") is not None:
-                extras.append(f"sell_price={card['sell_price']}")
-            if card.get("facing"):
-                extras.append(f"facing={card['facing']}")
-            stickers = card.get("stickers")
-            if isinstance(stickers, list):
-                extras.extend(f"sticker={value}" for value in stickers)
-            if card.get("debuffed"):
+            if card.enhancement:
+                extras.append(f"enh={card.enhancement}")
+            if card.edition:
+                extras.append(f"edition={card.edition}")
+            if card.seal:
+                extras.append(f"seal={card.seal}")
+            if card.cost is not None:
+                extras.append(f"cost={card.cost}")
+            if card.sell_price is not None:
+                extras.append(f"sell_price={card.sell_price}")
+            if card.facing:
+                extras.append(f"facing={card.facing}")
+            extras.extend(f"sticker={value}" for value in card.stickers)
+            if card.debuffed:
                 extras.append("debuffed=true")
             extra_text = f" ({', '.join(extras)})" if extras else ""
-            lines.append(
-                f"    - {card.get('card_key') or '?'}{extra_text}"
-            )
-    cards_in_deck = observation.get("cards_in_deck") or []
-    if cards_in_deck:
+            lines.append(f"    - {card.card_key or '?'}{extra_text}")
+    if observation.cards_in_deck:
         lines.append("  cards_in_deck:")
-        for card in cards_in_deck:
-            if not isinstance(card, dict):
-                continue
+        for card in observation.cards_in_deck:
             extras = []
-            if card.get("enhancement"):
-                extras.append(f"enh={card['enhancement']}")
-            if card.get("edition"):
-                extras.append(f"edition={card['edition']}")
-            if card.get("seal"):
-                extras.append(f"seal={card['seal']}")
+            if card.enhancement:
+                extras.append(f"enh={card.enhancement}")
+            if card.edition:
+                extras.append(f"edition={card.edition}")
+            if card.seal:
+                extras.append(f"seal={card.seal}")
             extra_text = f" ({', '.join(extras)})" if extras else ""
-            lines.append(f"    - {card.get('card_key') or '?'}{extra_text}")
-    selected_cards = observation.get("selected_cards") or []
-    if selected_cards:
+            lines.append(f"    - {card.card_key or '?'}{extra_text}")
+    if observation.selected_cards:
         lines.append("  selected_cards:")
-        for reference in selected_cards:
+        for reference in observation.selected_cards:
             rendered = format_reference(reference)
             if rendered:
                 lines.append(f"    - {rendered}")
-    notes = observation.get("notes") or []
-    if notes:
+    if observation.notes:
         lines.append("  notes:")
-        for note in notes:
+        for note in observation.notes:
             lines.append(f"    - {note}")
     return "\n".join(lines)
 
 
-def format_reference(reference: object) -> str | None:
-    if not isinstance(reference, dict):
-        return None
-
-    zone = reference.get("zone") or "unknown"
+def format_reference(reference: ObservedReference) -> str | None:
+    zone = reference.zone or "unknown"
     for field_name in ("card_key", "joker_key", "consumable_key", "pack_key", "voucher_key"):
-        value = reference.get(field_name)
+        value = getattr(reference, field_name)
         if value:
             return f"{zone}: {field_name}={value}"
     return f"{zone}: ?"
 
 
-def write_observation(run_dir: Path, sequence: int, observation) -> None:
-    # Transitional legacy bridge: write the canonical payload exactly as observed rather
-    # than reintroducing old schema shaping in the harness.
-    out_path = run_dir / f"observation_{sequence:04d}.json"
-    out_path.write_text(json.dumps(observation, indent=2), encoding="utf-8")
+def write_observation(run_dir: Path, sequence: int, observation: GameObservation) -> None:
+    out_path = run_dir / f"observation_{sequence:04d}.txt"
+    out_path.write_text(format_observation(observation), encoding="utf-8")
+
+
+def append_status(path: Path, message: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{message}\n")
 
 
 def detect_backend_for_target(target: CaptureTarget | None) -> str | None:

@@ -14,7 +14,7 @@ Add the replacement smoke-test baseline for the typed live-observer refactor. Th
 
 - [ ] Focused smoke tests cover live `live_state.json` parsing into `GameObservation`.
 - [ ] Focused smoke tests cover the surviving public observer import surface and typed `StepRecord` behavior.
-- [ ] Focused smoke tests cover typed runtime-policy-validator interaction and explicit JSON export from a typed observation.
+- [ ] Focused smoke tests cover typed runtime-policy-validator interaction without reintroducing Python-side JSON serialization.
 - [ ] Missing or invalid live-state input has smoke-level coverage.
 - [ ] No new behavior is added to `tests/test_live_observer_contract.py`; it remains a breakup target instead.
 
