@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ..models import GameObservation
-from .live_parser import LiveObservationParser
+from .parser import LiveObservationParser
 from .paths import BalatroPaths
 
 

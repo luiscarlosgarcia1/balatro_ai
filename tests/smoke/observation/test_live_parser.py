@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from balatro_ai.models import GameObservation
-from balatro_ai.observation.live_parser import LiveObservationParser
+from balatro_ai.observation.parser import LiveObservationParser
 
 
 class LiveParserSmokeTests(unittest.TestCase):
