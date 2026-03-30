@@ -138,12 +138,12 @@ def _serialize_joker(joker: ObservedJoker) -> dict[str, Any]:
         payload["rarity"] = _normalize_machine_value(joker.rarity)
     if joker.edition is not None:
         payload["edition"] = _normalize_machine_value(joker.edition)
-    if joker.sell_price is not None:
-        payload["sell_price"] = joker.sell_price
-    if joker.debuffed:
-        payload["debuffed"] = True
     if joker.stickers:
         payload["stickers"] = [_normalize_machine_value(sticker) for sticker in joker.stickers]
+    if joker.debuffed:
+        payload["debuffed"] = True
+    if joker.sell_price is not None:
+        payload["sell_price"] = joker.sell_price
     return payload
 
 
@@ -155,12 +155,6 @@ def _serialize_consumable(consumable: ObservedConsumable) -> dict[str, Any]:
         payload["edition"] = _normalize_machine_value(consumable.edition)
     if consumable.sell_price is not None:
         payload["sell_price"] = consumable.sell_price
-    if consumable.debuffed:
-        payload["debuffed"] = True
-    if consumable.stickers:
-        payload["stickers"] = [_normalize_machine_value(sticker) for sticker in consumable.stickers]
-    if consumable.cost is not None:
-        payload["cost"] = consumable.cost
     return payload
 
 
@@ -290,44 +284,73 @@ def _serialize_shop_items(observation: GameObservation) -> list[dict[str, Any]]:
 
 
 def _serialize_shop_item(item: ObservedShopItem) -> dict[str, Any]:
-    payload: dict[str, Any] = {}
     normalized_key = _normalize_machine_value(item.key)
-    if normalized_key is not None:
-        payload["key"] = normalized_key
-    else:
-        payload["kind"] = _normalize_machine_value(item.kind)
-        payload["name"] = item.name
-    if item.cost is not None:
-        payload["cost"] = item.cost
+    if normalized_key is None:
+        payload: dict[str, Any] = {
+            "kind": _normalize_machine_value(item.kind),
+            "name": item.name,
+        }
+        if item.rarity is not None:
+            payload["rarity"] = _normalize_machine_value(item.rarity)
+        if item.enhancement is not None:
+            payload["enhancement"] = _normalize_machine_value(item.enhancement)
+        if item.edition is not None:
+            payload["edition"] = _normalize_machine_value(item.edition)
+        if item.seal is not None:
+            payload["seal"] = _normalize_machine_value(item.seal)
+        if item.stickers:
+            payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
+        if item.debuffed:
+            payload["debuffed"] = True
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    payload = {"key": normalized_key}
+    if normalized_key.startswith("j_"):
+        if item.rarity is not None:
+            payload["rarity"] = _normalize_machine_value(item.rarity)
+        if item.edition is not None:
+            payload["edition"] = _normalize_machine_value(item.edition)
+        if item.stickers:
+            payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
+        if item.debuffed:
+            payload["debuffed"] = True
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    if normalized_key.startswith("c_"):
+        if item.edition is not None:
+            payload["edition"] = _normalize_machine_value(item.edition)
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    if normalized_key.startswith("v_"):
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
+    if normalized_key.startswith("p_"):
+        if item.cost is not None:
+            payload["cost"] = item.cost
+        return payload
+
     if item.rarity is not None:
         payload["rarity"] = _normalize_machine_value(item.rarity)
-    if item.edition is not None:
-        payload["edition"] = _normalize_machine_value(item.edition)
-    if item.sell_price is not None:
-        payload["sell_price"] = item.sell_price
     if item.enhancement is not None:
         payload["enhancement"] = _normalize_machine_value(item.enhancement)
+    if item.edition is not None:
+        payload["edition"] = _normalize_machine_value(item.edition)
     if item.seal is not None:
         payload["seal"] = _normalize_machine_value(item.seal)
     if item.stickers:
         payload["stickers"] = [_normalize_machine_value(sticker) for sticker in item.stickers]
     if item.debuffed:
         payload["debuffed"] = True
-    if item.card_key is not None:
-        payload["card_key"] = _normalize_machine_value(item.card_key)
-    elif item.card_kind is not None:
-        payload["card_kind"] = _normalize_machine_value(item.card_kind)
-    if normalized_key is None:
-        if item.suit is not None:
-            payload["suit"] = _normalize_machine_value(item.suit)
-        if item.rank is not None:
-            payload["rank"] = _normalize_machine_value(item.rank)
-        if item.consumable_kind is not None:
-            payload["consumable_kind"] = _normalize_machine_value(item.consumable_kind)
-        if item.pack_key is not None:
-            payload["pack_key"] = _normalize_machine_value(item.pack_key)
-        if item.pack_kind is not None:
-            payload["pack_kind"] = _normalize_machine_value(item.pack_kind)
+    if item.cost is not None:
+        payload["cost"] = item.cost
     return payload
 
 

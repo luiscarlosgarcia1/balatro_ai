@@ -250,7 +250,9 @@ class LiveObserverContractTests(unittest.TestCase):
         self.assertEqual(observation["consumables"][0]["key"], "c_fool")
         self.assertEqual(observation["consumables"][0]["edition"], "negative")
         self.assertEqual(observation["consumables"][0]["sell_price"], 1)
-        self.assertEqual(observation["consumables"][0]["stickers"], ["eternal"])
+        self.assertNotIn("stickers", observation["consumables"][0])
+        self.assertNotIn("debuffed", observation["consumables"][0])
+        self.assertNotIn("cost", observation["consumables"][0])
         self.assertNotIn("name", observation["consumables"][0])
         self.assertNotIn("kind", observation["consumables"][0])
         self.assertEqual(observation["jokers"][0]["key"], "j_greedy_joker")
@@ -496,11 +498,10 @@ class LiveObserverContractTests(unittest.TestCase):
             [
                 {
                     "key": "j_credit_card",
-                    "cost": 1,
                     "rarity": "common",
                     "edition": "foil",
-                    "sell_price": 2,
                     "stickers": ["rental"],
+                    "cost": 1,
                 },
                 {
                     "key": "p_buffoon_normal_1",
@@ -508,11 +509,8 @@ class LiveObserverContractTests(unittest.TestCase):
                 },
                 {
                     "key": "c_fool",
-                    "cost": 3,
                     "edition": "negative",
-                    "sell_price": 1,
-                    "stickers": ["eternal"],
-                    "debuffed": True,
+                    "cost": 3,
                 },
             ],
         )

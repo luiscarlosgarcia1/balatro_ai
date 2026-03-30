@@ -273,15 +273,11 @@ class LiveObservationParser:
             key = self._string_or_none(item.get("key"))
             if not key:
                 continue
-            stickers = item.get("stickers")
             consumables.append(
                 ObservedConsumable(
                     key=key,
                     edition=self._string_or_none(item.get("edition")),
                     sell_price=self._int_or_none(item.get("sell_price")),
-                    debuffed=bool(item.get("debuffed", False)),
-                    stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
-                    cost=self._int_or_none(item.get("cost")),
                 )
             )
         return consumables
@@ -322,18 +318,10 @@ class LiveObservationParser:
                     cost=self._int_or_none(item.get("cost")),
                     rarity=self._string_or_none(item.get("rarity")),
                     edition=self._string_or_none(item.get("edition")),
-                    sell_price=self._int_or_none(item.get("sell_price")),
                     enhancement=self._string_or_none(item.get("enhancement")),
                     seal=self._string_or_none(item.get("seal")),
-                    consumable_kind=self._string_or_none(item.get("consumable_kind")),
                     stickers=tuple(str(value) for value in stickers) if isinstance(stickers, list) else (),
                     debuffed=bool(item.get("debuffed", False)),
-                    card_key=self._string_or_none(item.get("card_key")),
-                    card_kind=self._string_or_none(item.get("card_kind")),
-                    suit=self._string_or_none(item.get("suit")),
-                    rank=self._string_or_none(item.get("rank")),
-                    pack_key=self._string_or_none(item.get("pack_key")),
-                    pack_kind=self._string_or_none(item.get("pack_kind")),
                 )
             )
         return shop_items

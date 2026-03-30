@@ -70,9 +70,6 @@ class ObservedConsumable:
     key: str
     edition: str | None = None
     sell_price: int | None = None
-    debuffed: bool = False
-    stickers: tuple[str, ...] = ()
-    cost: int | None = None
 
 
 @dataclass(frozen=True)
