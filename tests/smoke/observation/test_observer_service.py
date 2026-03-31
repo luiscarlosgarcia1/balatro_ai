@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from balatro_ai.models import GameObservation
+from balatro_ai.models import GameObservation, ObservedScore
 from balatro_ai.observation import BalatroObserver, BalatroPaths
 
 
@@ -37,11 +37,9 @@ class ObserverServiceSmokeTests(unittest.TestCase):
             self.cleanup_fixture_base()
 
         self.assertIsInstance(observation, GameObservation)
-        self.assertEqual(observation.source, "live_state_exporter")
         self.assertEqual(observation.state_id, 41)
-        self.assertEqual(observation.interaction_phase, "shop")
-        self.assertEqual(observation.score_current, 75)
-        self.assertEqual(observation.score_target, 300)
+        self.assertEqual(observation.dollars, 10)
+        self.assertEqual(observation.score, ObservedScore(current=75, target=300))
 
     def test_observe_raises_file_not_found_when_live_state_is_missing(self) -> None:
         root = self.make_fixture_root()

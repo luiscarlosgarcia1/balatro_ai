@@ -5,36 +5,34 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from balatro_ai.models import GameObservation
+from balatro_ai.models import GameObservation, ObservedScore
 from pretty_printer import render_observation, write_observation_print
 
 
 class PrettyPrinterSmokeTests(unittest.TestCase):
     def test_render_observation_returns_readable_dataclass_tree(self) -> None:
         observation = GameObservation(
-            source="mock",
             state_id=12,
-            interaction_phase="shop",
-            money=9,
+            dollars=9,
             hands_left=0,
             discards_left=0,
+            score=ObservedScore(current=90, target=300),
         )
 
         rendered = render_observation(observation)
 
         self.assertTrue(rendered.startswith("GameObservation(\n"))
-        self.assertIn("\n  interaction_phase='shop',", rendered)
-        self.assertIn("\n  money=9,", rendered)
+        self.assertIn("\n  dollars=9,", rendered)
+        self.assertIn("\n  score=ObservedScore(", rendered)
         self.assertTrue(rendered.endswith("\n)"))
 
     def test_write_observation_print_writes_readable_tree_to_txt_file(self) -> None:
         observation = GameObservation(
-            source="mock",
             state_id=13,
-            interaction_phase="blind_select",
-            money=4,
+            dollars=4,
             hands_left=4,
             discards_left=3,
+            score=ObservedScore(current=0, target=300),
         )
         root = self.make_fixture_root()
         try:

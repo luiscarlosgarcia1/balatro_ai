@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from balatro_ai.models import GameObservation
+from balatro_ai.models import GameObservation, ObservedScore
 from balatro_ai.observation.parser import LiveObservationParser
 
 
@@ -29,14 +29,11 @@ class LiveParserSmokeTests(unittest.TestCase):
         observation = self.parse_payload(payload)
 
         self.assertIsInstance(observation, GameObservation)
-        self.assertEqual(observation.source, "live_state_exporter")
         self.assertEqual(observation.state_id, 41)
-        self.assertEqual(observation.interaction_phase, "shop")
         self.assertEqual(observation.blind_key, "bl_small")
         self.assertEqual(observation.deck_key, "b_erratic")
-        self.assertEqual(observation.score_current, 75)
-        self.assertEqual(observation.score_target, 300)
-        self.assertEqual(observation.money, 10)
+        self.assertEqual(observation.score, ObservedScore(current=75, target=300))
+        self.assertEqual(observation.dollars, 10)
         self.assertEqual(observation.hands_left, 4)
         self.assertEqual(observation.discards_left, 2)
         self.assertEqual(observation.jokers, ())
@@ -44,7 +41,6 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.selected_cards, ())
         self.assertEqual(observation.cards_in_deck, ())
         self.assertEqual(observation.shop_items, ())
-        self.assertEqual(observation.notes, ())
 
     def test_parse_missing_file_returns_none(self) -> None:
         root = self.make_fixture_root()

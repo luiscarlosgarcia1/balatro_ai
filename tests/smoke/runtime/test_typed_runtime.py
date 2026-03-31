@@ -6,10 +6,22 @@ import unittest
 from unittest.mock import patch
 
 from balatro_ai.interfaces import Observer, Policy, Validator
-from balatro_ai.models import GameAction, GameObservation
+from balatro_ai.models import GameAction, GameObservation, ObservedScore
 from balatro_ai.models import StepRecord
 from balatro_ai.policy import DemoPolicy, RuleBasedValidator
 from balatro_ai.runtime import EpisodeRunner
+
+
+def make_observation(**overrides: object) -> GameObservation:
+    payload: dict[str, object] = {
+        "state_id": 0,
+        "dollars": 0,
+        "hands_left": 0,
+        "discards_left": 0,
+        "score": ObservedScore(current=0, target=0),
+    }
+    payload.update(overrides)
+    return GameObservation(**payload)
 
 
 class TypedRuntimeSmokeTests(unittest.TestCase):
@@ -23,15 +35,13 @@ class TypedRuntimeSmokeTests(unittest.TestCase):
         self.assertIsNone(importlib.util.find_spec("balatro_ai.observation.canonical"))
 
     def test_runner_executes_typed_observation_flow_and_records_same_instance(self) -> None:
-        observation = GameObservation(
-            source="mock",
+        observation = make_observation(
             state_id=1,
-            interaction_phase="shop",
-            money=6,
+            dollars=6,
             hands_left=0,
             discards_left=0,
-            score_current=90,
-            score_target=300,
+            score=ObservedScore(current=90, target=300),
+            reroll_cost=5,
         )
         policy = RecordingDemoPolicy()
         validator = RecordingRuleBasedValidator()
@@ -62,15 +72,13 @@ class TypedRuntimeSmokeTests(unittest.TestCase):
         self.assertTrue(records[0].validation.accepted)
 
     def test_runner_skips_execution_when_typed_action_is_rejected(self) -> None:
-        observation = GameObservation(
-            source="mock",
+        observation = make_observation(
             state_id=2,
-            interaction_phase="shop",
-            money=2,
+            dollars=2,
             hands_left=0,
             discards_left=0,
-            score_current=90,
-            score_target=300,
+            score=ObservedScore(current=90, target=300),
+            reroll_cost=5,
         )
         executor = RecordingExecutor()
 

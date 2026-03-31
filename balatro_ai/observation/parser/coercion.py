@@ -25,6 +25,13 @@ def string_or_none(value: object) -> str | None:
     return str(value)
 
 
+def first_non_none(*values: object) -> object | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def parse_seen_at(state: dict[str, object], *, fallback_timestamp: float) -> datetime:
     seen_at_raw = state.get("seen_at")
     if isinstance(seen_at_raw, str):

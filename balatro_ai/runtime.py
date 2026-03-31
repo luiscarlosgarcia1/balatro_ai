@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .interfaces import Executor, Observer, Policy, Validator
 from .models import StepRecord
+from .policy import infer_phase
 
 
 @dataclass
@@ -25,9 +26,9 @@ class EpisodeRunner:
 
             print(
                 "OBSERVE  "
-                f"phase={observation.interaction_phase} money={observation.money} "
+                f"phase={infer_phase(observation)} dollars={observation.dollars} "
                 f"hands={observation.hands_left} discards={observation.discards_left} "
-                f"score={observation.score_current}/{observation.score_target}"
+                f"score={observation.score.current}/{observation.score.target}"
             )
             action = self.policy.choose_action(observation)
             validation = self.validator.validate(observation, action)

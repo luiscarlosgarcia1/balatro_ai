@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from .models import GameAction, GameObservation, ObservedJoker
+from .models import GameAction, GameObservation, ObservedBlind, ObservedJoker, ObservedScore, ObservedShopItem
 from .policy import DemoPolicy, RuleBasedValidator
 from .runtime import EpisodeRunner
 
@@ -27,39 +27,64 @@ class LoggingExecutor:
 def create_demo_runner() -> EpisodeRunner:
     observations = [
         GameObservation(
-            source="mock",
             state_id=1,
-            interaction_phase="blind_select",
             blind_key="bl_small",
-            money=4,
+            dollars=4,
             hands_left=4,
             discards_left=3,
-            score_current=0,
-            score_target=300,
-            notes=("Small blind available.",),
+            score=ObservedScore(current=0, target=300),
+            blinds=(
+                ObservedBlind(key="bl_small", state="Select"),
+                ObservedBlind(key="bl_big", state="Upcoming"),
+                ObservedBlind(key="bl_hook", state="Upcoming"),
+            ),
         ),
         GameObservation(
-            source="mock",
             state_id=2,
-            interaction_phase="play_hand",
             blind_key="bl_small",
-            money=4,
+            dollars=4,
             hands_left=4,
             discards_left=3,
-            score_current=90,
-            score_target=300,
-            jokers=(ObservedJoker(key="j_greedy_joker"),),
+            score=ObservedScore(current=90, target=300),
+            jokers=(
+                ObservedJoker(
+                    instance_id=101,
+                    key="j_greedy_joker",
+                    eternal=False,
+                    perishable=False,
+                    rental=False,
+                    perish_tally=None,
+                ),
+            ),
         ),
         GameObservation(
-            source="mock",
             state_id=3,
-            interaction_phase="shop",
-            money=6,
+            dollars=6,
             hands_left=0,
             discards_left=0,
-            score_current=420,
-            score_target=300,
-            jokers=(ObservedJoker(key="j_greedy_joker"),),
+            score=ObservedScore(current=420, target=300),
+            jokers=(
+                ObservedJoker(
+                    instance_id=101,
+                    key="j_greedy_joker",
+                    eternal=False,
+                    perishable=False,
+                    rental=False,
+                    perish_tally=None,
+                ),
+            ),
+            shop_items=(
+                ObservedShopItem(
+                    joker=ObservedJoker(
+                        instance_id=202,
+                        key="j_banner",
+                        eternal=False,
+                        perishable=False,
+                        rental=False,
+                        perish_tally=None,
+                    )
+                ),
+            ),
         ),
     ]
     return EpisodeRunner(

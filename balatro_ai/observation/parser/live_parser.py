@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ...models import GameObservation
+from ...models import GameObservation, ObservedScore
 from .coercion import int_or_none, int_or_zero, parse_seen_at, string_or_none
 from .run_state import parse_interest, parse_pack_contents, parse_run_info
 from .shop import merge_shop_vouchers_into_shop_items, parse_shop_items
@@ -47,25 +47,17 @@ class LiveObservationParser:
         cards_in_hand = parse_cards(state.get("cards_in_hand"))
         selected_cards = parse_references(state.get("selected_cards"))
         cards_in_deck = parse_cards(state.get("cards_in_deck"))
-        notes = state.get("notes")
-        if not isinstance(notes, list):
-            notes = []
 
         score_payload = state.get("score")
         if not isinstance(score_payload, dict):
             score_payload = {}
 
-        interaction_phase = string_or_none(state.get("interaction_phase")) or "unknown"
         blinds = parse_blinds(state.get("blinds"))
         vouchers = parse_vouchers(state.get("vouchers"))
-        shop_vouchers = parse_vouchers(state.get("shop_vouchers"))
+        shop_vouchers = parse_shop_items(state.get("shop_vouchers"))
         consumables = parse_consumables(state.get("consumables"))
         shop_items = parse_shop_items(state.get("shop_items"))
-        shop_items = merge_shop_vouchers_into_shop_items(
-            shop_items=shop_items,
-            shop_vouchers=shop_vouchers,
-            interaction_phase=interaction_phase,
-        )
+        shop_items = merge_shop_vouchers_into_shop_items(shop_items=shop_items, shop_vouchers=shop_vouchers)
         pack_contents = parse_pack_contents(state.get("pack_contents"))
         tags = parse_tags(state.get("tags"))
         jokers = parse_jokers(state.get("jokers"))
@@ -73,23 +65,23 @@ class LiveObservationParser:
         run_info = parse_run_info(state.get("run_info"))
 
         return GameObservation(
-            interaction_phase=interaction_phase,
-            money=int_or_zero(state.get("money")),
+            state_id=int_or_zero(state.get("state_id")),
+            dollars=int_or_zero(state.get("dollars", state.get("money"))),
             hands_left=int_or_zero(state.get("hands_left")),
             discards_left=int_or_zero(state.get("discards_left")),
-            score_current=int_or_none(score_payload.get("current")),
-            score_target=int_or_none(score_payload.get("target")),
+            score=ObservedScore(
+                current=int_or_zero(score_payload.get("current")),
+                target=int_or_zero(score_payload.get("target")),
+            ),
             jokers=tuple(jokers),
             cards_in_hand=tuple(cards_in_hand),
             selected_cards=tuple(selected_cards),
             cards_in_deck=tuple(cards_in_deck),
-            source=str(state.get("source", "live_export")),
-            state_id=int_or_none(state.get("state_id")),
             blind_key=string_or_none(state.get("blind_key")),
             deck_key=string_or_none(state.get("deck_key")),
             stake_id=state.get("stake_id"),
             ante=int_or_none(state.get("ante")),
-            round_count=int_or_none(state.get("round_count", state.get("round_number"))),
+            round=int_or_none(state.get("round", state.get("round_count", state.get("round_number")))),
             run_info=run_info,
             blinds=tuple(blinds),
             joker_slots=int_or_none(state.get("joker_slots")),
@@ -102,6 +94,5 @@ class LiveObservationParser:
             shop_items=tuple(shop_items),
             pack_contents=pack_contents,
             tags=tuple(tags),
-            notes=tuple(str(value) for value in notes if value is not None),
             seen_at=parse_seen_at(state, fallback_timestamp=path.stat().st_mtime),
         )
