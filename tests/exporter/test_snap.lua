@@ -84,3 +84,94 @@ eq(partial.state_id, 7, "partial reader should keep state_id")
 eq(partial.dollars, nil, "missing dollars should stay nil before shell defaults")
 eq(partial.score.current, nil, "missing score.current should stay nil before shell defaults")
 eq(partial.score.target, nil, "missing score.target should stay nil before shell defaults")
+
+local phase_two = snap.read_state({
+  STATE = 12,
+  tags = {
+    { key = "tag_investment" },
+  },
+  jokers = {
+    config = {
+      card_limit = 6,
+    },
+  },
+  consumables = {
+    config = {
+      card_limit = 3,
+    },
+  },
+  hand = {
+    config = {
+      card_limit = 9,
+    },
+  },
+  GAME = {
+    dollars = 20,
+    chips = 90,
+    state = "SHOP",
+    selected_back_key = "b_blue",
+    blind = { key = "bl_big", chips = 400 },
+    round = 3,
+    stake_id = "stake_green",
+    interest_amount = 3,
+    interest_cap = 25,
+    modifiers = {
+      no_interest = true,
+    },
+    hands = {
+      Pair = {
+        level = 2,
+        chips = 15,
+        mult = 2,
+        played = 3,
+        played_this_round = 1,
+      },
+      ["High Card"] = {
+        level = 1,
+        chips = 5,
+        mult = 1,
+        played = 0,
+        played_this_round = 0,
+      },
+    },
+    used_vouchers = {
+      v_clearance_sale = {
+        cost = 10,
+      },
+    },
+    current_round = {
+      hands_left = 2,
+      discards_left = 1,
+      reroll_cost = 7,
+    },
+    round_resets = {
+      ante = 2,
+      blind_choices = {
+        small = "bl_small",
+        big = "bl_big",
+        boss = "bl_hook",
+      },
+      blind_states = {
+        small = "defeated",
+        big = "current",
+        boss = "upcoming",
+      },
+      blind_tags = {
+        boss = "tag_boss",
+      },
+    },
+  },
+})
+
+eq(phase_two.blind_key, "bl_big", "reader should derive blind_key from active blind outside blind select")
+eq(#phase_two.blinds, 3, "reader should export blind rows")
+eq(phase_two.blinds[3].tag_key, "tag_boss", "reader should export blind tag keys")
+eq(phase_two.run_info.hands.Pair.level, 2, "reader should export run_info hands")
+eq(phase_two.interest.amount, 3, "reader should export interest")
+eq(phase_two.interest.no_interest, true, "reader should export interest.no_interest")
+eq(phase_two.joker_slots, 6, "reader should export joker_slots")
+eq(phase_two.consumable_slots, 3, "reader should export consumable_slots")
+eq(phase_two.hand_size, 9, "reader should export hand_size")
+eq(phase_two.vouchers[1].key, "v_clearance_sale", "reader should export vouchers")
+eq(phase_two.vouchers[1].cost, 10, "reader should export voucher cost")
+eq(phase_two.tags[1].key, "tag_investment", "reader should export tags")

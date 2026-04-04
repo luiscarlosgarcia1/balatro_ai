@@ -3,6 +3,24 @@ local snap = {}
 local array_meta = { __ls_arr = true }
 local null_value = setmetatable({}, { __ls_null = true })
 
+local function load_module(name)
+  local mod = rawget(_G, "SMODS") and SMODS.current_mod
+  local path = mod and mod.path
+  local nfs = rawget(_G, "NFS")
+  if path and nfs and type(nfs.read) == "function" then
+    local chunk, err = load(
+      nfs.read(path .. name),
+      '=[SMODS live_state_exporter "' .. name .. '"]'
+    )
+    assert(chunk, err)
+    return chunk()
+  end
+  return dofile("mods/live_state_exporter/" .. name)
+end
+
+local phase = load_module("phase.lua")
+local core = load_module("core.lua")
+
 local function as_table(value)
   return type(value) == "table" and value or nil
 end
@@ -51,6 +69,21 @@ local function optional_or_null(value)
   return value
 end
 
+local function clone_blinds(source)
+  local out = {}
+  if type(source) == "table" then
+    for i = 1, #source do
+      local blind = as_table(source[i]) or {}
+      out[i] = {
+        key = blind.key,
+        state = blind.state,
+        tag_key = optional_or_null(blind.tag_key),
+      }
+    end
+  end
+  return setmetatable(out, array_meta)
+end
+
 local function read_deck_key(game)
   local selected_back = as_table(game and game.selected_back)
   return first_defined(game and game.selected_back_key, selected_back and selected_back.key)
@@ -63,6 +96,9 @@ function snap.read_state(root)
   local round = as_table(game.current_round) or {}
   local resets = as_table(game.round_resets) or {}
   local blind = as_table(game.blind) or {}
+  local interaction_phase = phase.infer(root)
+  local collected = core.collect(root, interaction_phase)
+  local blinds = collected.blinds or {}
 
   return {
     state_id = to_number(first_defined(root.STATE, game.state, game.current_round_state)),
@@ -75,10 +111,18 @@ function snap.read_state(root)
     },
     deck_key = read_deck_key(game),
     stake_id = first_defined(game.stake_id, game.stake),
-    blind_key = nil,
+    blind_key = phase.derive_blind_key(root, interaction_phase, blinds),
     ante = to_number(resets.ante),
     round = to_number(game.round),
+    blinds = blinds,
+    joker_slots = collected.joker_slots,
+    consumable_slots = collected.consumable_slots,
+    tags = collected.tags,
+    vouchers = collected.vouchers,
+    run_info = collected.run_info,
+    interest = collected.interest,
     reroll_cost = to_number(round.reroll_cost),
+    hand_size = collected.hand_size,
   }
 end
 
@@ -100,7 +144,7 @@ function snap.build_shell(source)
     blind_key = optional_or_null(source.blind_key),
     ante = optional_or_null(source.ante),
     round = optional_or_null(source.round),
-    blinds = clone_array(source.blinds),
+    blinds = clone_blinds(source.blinds),
     joker_slots = optional_or_null(source.joker_slots),
     jokers = clone_array(source.jokers),
     consumable_slots = optional_or_null(source.consumable_slots),
