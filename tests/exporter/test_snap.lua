@@ -48,6 +48,59 @@ is_arr(shell.cards_in_hand, "cards_in_hand should be an empty array")
 is_arr(shell.selected_cards, "selected_cards should be an empty array")
 is_arr(shell.cards_in_deck, "cards_in_deck should be an empty array")
 
+local shaped = snap.build_shell({
+  cards_in_hand = {
+    {
+      card_key = "S_A",
+      instance_id = 1,
+      debuffed = false,
+    },
+  },
+  jokers = {
+    {
+      key = "j_greedy_joker",
+      instance_id = 2,
+      eternal = false,
+      perishable = true,
+      rental = false,
+      debuffed = false,
+    },
+  },
+  consumables = {
+    {
+      key = "c_fool",
+      instance_id = 3,
+    },
+  },
+  selected_cards = {
+    {
+      zone = "hand",
+      instance_id = 1,
+      key = "S_A",
+    },
+  },
+  cards_in_deck = {
+    {
+      card_key = "S_A",
+      instance_id = 1,
+      debuffed = false,
+    },
+  },
+})
+
+ok(snap.is_null(shaped.cards_in_hand[1].enhancement), "hand card enhancement should shape to null")
+ok(snap.is_null(shaped.cards_in_hand[1].edition), "hand card edition should shape to null")
+ok(snap.is_null(shaped.cards_in_hand[1].seal), "hand card seal should shape to null")
+ok(snap.is_null(shaped.cards_in_hand[1].facing), "hand card facing should shape to null")
+ok(snap.is_null(shaped.cards_in_hand[1].cost), "hand card cost should shape to null")
+ok(snap.is_null(shaped.cards_in_hand[1].sell_cost), "hand card sell_cost should shape to null")
+ok(snap.is_null(shaped.jokers[1].perish_tally), "joker perish_tally should shape to null")
+ok(snap.is_null(shaped.jokers[1].edition), "joker edition should shape to null")
+ok(snap.is_null(shaped.jokers[1].sell_cost), "joker sell_cost should shape to null")
+ok(snap.is_null(shaped.consumables[1].edition), "consumable edition should shape to null")
+ok(snap.is_null(shaped.consumables[1].cost), "consumable cost should shape to null")
+ok(snap.is_null(shaped.consumables[1].sell_cost), "consumable sell_cost should shape to null")
+
 local raw = snap.read_state({
   STATE = 41,
   GAME = {
@@ -93,16 +146,57 @@ local phase_two = snap.read_state({
   jokers = {
     config = {
       card_limit = 6,
+      type = "joker",
+    },
+    cards = {
+      {
+        ID = 801,
+        sell_cost = 5,
+        debuff = true,
+        config = {
+          center_key = "j_greedy_joker",
+        },
+        ability = {
+          eternal = true,
+          perishable = false,
+          rental = false,
+        },
+      },
     },
   },
   consumables = {
     config = {
       card_limit = 3,
+      type = "consumeables",
+    },
+    cards = {
+      {
+        ID = 601,
+        cost = 4,
+        config = {
+          center_key = "c_fool",
+        },
+      },
     },
   },
   hand = {
     config = {
       card_limit = 9,
+      type = "hand",
+    },
+    cards = {
+      {
+        ID = 501,
+        highlighted = true,
+        config = {
+          card_key = "S_A",
+          center_key = "m_bonus",
+        },
+        edition = {
+          type = "foil",
+        },
+        seal = "Gold",
+      },
     },
   },
   GAME = {
@@ -117,6 +211,28 @@ local phase_two = snap.read_state({
     interest_cap = 25,
     modifiers = {
       no_interest = true,
+    },
+    playing_cards = {
+      {
+        ID = 702,
+        base = {
+          suit = "Hearts",
+          value = "Ace",
+        },
+        config = {
+          card_key = "H_A",
+        },
+      },
+      {
+        ID = 701,
+        base = {
+          suit = "Spades",
+          value = "Ace",
+        },
+        config = {
+          card_key = "S_A",
+        },
+      },
     },
     hands = {
       Pair = {
@@ -175,3 +291,12 @@ eq(phase_two.hand_size, 9, "reader should export hand_size")
 eq(phase_two.vouchers[1].key, "v_clearance_sale", "reader should export vouchers")
 eq(phase_two.vouchers[1].cost, 10, "reader should export voucher cost")
 eq(phase_two.tags[1].key, "tag_investment", "reader should export tags")
+eq(phase_two.cards_in_hand[1].card_key, "S_A", "reader should export cards_in_hand")
+eq(phase_two.cards_in_hand[1].enhancement, "m_bonus", "reader should export hand card enhancement")
+eq(phase_two.selected_cards[1].zone, "hand", "reader should export selected card references")
+eq(phase_two.selected_cards[1].instance_id, 501, "reader should export selected card instance_id")
+eq(phase_two.jokers[1].key, "j_greedy_joker", "reader should export jokers")
+eq(phase_two.jokers[1].debuffed, true, "reader should export joker debuffed state")
+eq(phase_two.consumables[1].key, "c_fool", "reader should export consumables")
+eq(phase_two.cards_in_deck[1].card_key, "S_A", "reader should export deck cards in canonical order")
+eq(phase_two.cards_in_deck[2].card_key, "H_A", "reader should export later deck cards after ordering")

@@ -20,6 +20,7 @@ end
 
 local phase = load_module("phase.lua")
 local core = load_module("core.lua")
+local zones = load_module("zones.lua")
 
 local function as_table(value)
   return type(value) == "table" and value or nil
@@ -55,6 +56,16 @@ local function clone_array(source)
   return setmetatable(out, array_meta)
 end
 
+local function clone_mapped_array(source, map_fn)
+  local out = {}
+  if type(source) == "table" then
+    for i = 1, #source do
+      out[i] = map_fn(as_table(source[i]) or {})
+    end
+  end
+  return setmetatable(out, array_meta)
+end
+
 local function required_or(value, default)
   if value == nil then
     return default
@@ -84,6 +95,60 @@ local function clone_blinds(source)
   return setmetatable(out, array_meta)
 end
 
+local function clone_cards(source)
+  return clone_mapped_array(source, function(card)
+    return {
+      card_key = card.card_key,
+      instance_id = card.instance_id,
+      enhancement = optional_or_null(card.enhancement),
+      edition = optional_or_null(card.edition),
+      seal = optional_or_null(card.seal),
+      facing = optional_or_null(card.facing),
+      debuffed = card.debuffed == true,
+      cost = optional_or_null(card.cost),
+      sell_cost = optional_or_null(card.sell_cost),
+    }
+  end)
+end
+
+local function clone_jokers(source)
+  return clone_mapped_array(source, function(joker)
+    return {
+      key = joker.key,
+      instance_id = joker.instance_id,
+      eternal = joker.eternal == true,
+      perishable = joker.perishable == true,
+      rental = joker.rental == true,
+      perish_tally = optional_or_null(joker.perish_tally),
+      edition = optional_or_null(joker.edition),
+      debuffed = joker.debuffed == true,
+      sell_cost = optional_or_null(joker.sell_cost),
+    }
+  end)
+end
+
+local function clone_consumables(source)
+  return clone_mapped_array(source, function(consumable)
+    return {
+      key = consumable.key,
+      instance_id = consumable.instance_id,
+      edition = optional_or_null(consumable.edition),
+      cost = optional_or_null(consumable.cost),
+      sell_cost = optional_or_null(consumable.sell_cost),
+    }
+  end)
+end
+
+local function clone_references(source)
+  return clone_mapped_array(source, function(reference)
+    return {
+      zone = reference.zone,
+      instance_id = reference.instance_id,
+      key = reference.key,
+    }
+  end)
+end
+
 local function read_deck_key(game)
   local selected_back = as_table(game and game.selected_back)
   return first_defined(game and game.selected_back_key, selected_back and selected_back.key)
@@ -98,6 +163,7 @@ function snap.read_state(root)
   local blind = as_table(game.blind) or {}
   local interaction_phase = phase.infer(root)
   local collected = core.collect(root, interaction_phase)
+  local zone_collected = zones.collect(root)
   local blinds = collected.blinds or {}
 
   return {
@@ -123,6 +189,11 @@ function snap.read_state(root)
     interest = collected.interest,
     reroll_cost = to_number(round.reroll_cost),
     hand_size = collected.hand_size,
+    jokers = zone_collected.jokers,
+    consumables = zone_collected.consumables,
+    cards_in_hand = zone_collected.cards_in_hand,
+    selected_cards = zone_collected.selected_cards,
+    cards_in_deck = zone_collected.cards_in_deck,
   }
 end
 
@@ -146,9 +217,9 @@ function snap.build_shell(source)
     round = optional_or_null(source.round),
     blinds = clone_blinds(source.blinds),
     joker_slots = optional_or_null(source.joker_slots),
-    jokers = clone_array(source.jokers),
+    jokers = clone_jokers(source.jokers),
     consumable_slots = optional_or_null(source.consumable_slots),
-    consumables = clone_array(source.consumables),
+    consumables = clone_consumables(source.consumables),
     tags = clone_array(source.tags),
     vouchers = clone_array(source.vouchers),
     run_info = optional_or_null(source.run_info),
@@ -157,9 +228,9 @@ function snap.build_shell(source)
     reroll_cost = optional_or_null(source.reroll_cost),
     pack_contents = optional_or_null(source.pack_contents),
     hand_size = optional_or_null(source.hand_size),
-    cards_in_hand = clone_array(source.cards_in_hand),
-    selected_cards = clone_array(source.selected_cards),
-    cards_in_deck = clone_array(source.cards_in_deck),
+    cards_in_hand = clone_cards(source.cards_in_hand),
+    selected_cards = clone_references(source.selected_cards),
+    cards_in_deck = clone_cards(source.cards_in_deck),
   }
 end
 
