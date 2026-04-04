@@ -300,3 +300,172 @@ eq(phase_two.jokers[1].debuffed, true, "reader should export joker debuffed stat
 eq(phase_two.consumables[1].key, "c_fool", "reader should export consumables")
 eq(phase_two.cards_in_deck[1].card_key, "S_A", "reader should export deck cards in canonical order")
 eq(phase_two.cards_in_deck[2].card_key, "H_A", "reader should export later deck cards after ordering")
+
+local market_state = snap.read_state({
+  STATE = 15,
+  shop = {
+    cards = {
+      {
+        ID = 901,
+        cost = 8,
+        config = {
+          card_key = "S_A",
+          center_key = "m_bonus",
+        },
+      },
+      {
+        ID = 902,
+        config = {
+          center_key = "j_blue_joker",
+        },
+        ability = {
+          rental = true,
+        },
+      },
+    },
+  },
+  shop_vouchers = {
+    cards = {
+      {
+        cost = 10,
+        config = {
+          center_key = "v_clearance_sale",
+        },
+      },
+    },
+  },
+  GAME = {
+    state = "SHOP",
+    blind = {
+      key = "bl_small",
+      chips = 300,
+    },
+    current_round = {
+      hands_left = 2,
+      discards_left = 1,
+      reroll_cost = 5,
+    },
+  },
+})
+
+eq(#market_state.shop_items, 3, "reader should export collected shop_items")
+eq(market_state.shop_items[1].card.card_key, "S_A", "reader should keep wrapped shop cards")
+eq(market_state.shop_items[2].joker.key, "j_blue_joker", "reader should keep wrapped shop jokers")
+eq(market_state.shop_items[3].voucher.key, "v_clearance_sale", "reader should append wrapped shop vouchers")
+eq(market_state.pack_contents, nil, "shop state should leave pack_contents inactive before shell shaping")
+
+local pack_state = snap.read_state({
+  STATE = 16,
+  pack = {
+    ID = 950,
+    can_skip = true,
+    config = {
+      center_key = "p_arcana_normal_1",
+    },
+  },
+  pack_cards = {
+    cards = {
+      {
+        ID = 951,
+        config = {
+          card_key = "H_A",
+        },
+      },
+      {
+        ID = 952,
+        config = {
+          center_key = "j_blue_joker",
+        },
+      },
+      {
+        ID = 953,
+        config = {
+          center_key = "c_fool",
+        },
+      },
+    },
+  },
+  GAME = {
+    state = "PACK",
+    blind = {
+      key = "bl_big",
+      chips = 400,
+    },
+    pack_choices = 2,
+    current_round = {
+      hands_left = 2,
+      discards_left = 1,
+    },
+  },
+})
+
+ok(type(pack_state.pack_contents) == "table", "reader should export active pack_contents")
+eq(pack_state.pack_contents.pack.key, "p_arcana_normal_1", "reader should export opened pack")
+eq(pack_state.pack_contents.choices_remaining, 2, "reader should export pack choice count")
+eq(pack_state.pack_contents.skip_available, true, "reader should export explicit pack skip availability")
+eq(#pack_state.pack_contents.items, 3, "reader should export concrete pack items")
+eq(pack_state.pack_contents.items[1].card_key, "H_A", "reader should keep pack item order")
+eq(pack_state.pack_contents.items[2].key, "j_blue_joker", "reader should export pack jokers")
+eq(pack_state.pack_contents.items[3].key, "c_fool", "reader should export pack consumables")
+
+local shaped_market = snap.build_shell({
+  shop_items = {
+    {
+      card = {
+        card_key = "S_A",
+        instance_id = 1,
+        debuffed = false,
+      },
+    },
+    {
+      voucher = {
+        key = "v_clearance_sale",
+        cost = 10,
+      },
+    },
+  },
+  pack_contents = {
+    pack = {
+      key = "p_arcana_normal_1",
+      instance_id = 5,
+    },
+    choices_remaining = 2,
+    skip_available = false,
+    items = {
+      {
+        key = "j_blue_joker",
+        instance_id = 6,
+        eternal = false,
+        perishable = false,
+        rental = false,
+        debuffed = false,
+      },
+      {
+        card_key = "H_A",
+        instance_id = 7,
+        debuffed = false,
+      },
+      {
+        key = "c_fool",
+        instance_id = 8,
+      },
+    },
+  },
+})
+
+ok(type(shaped_market.shop_items) == "table", "shell should keep shop_items array")
+ok(snap.is_null(shaped_market.shop_items[1].joker), "shell should null-fill inactive shop joker member")
+ok(snap.is_null(shaped_market.shop_items[1].consumable), "shell should null-fill inactive shop consumable member")
+ok(snap.is_null(shaped_market.shop_items[1].voucher), "shell should null-fill inactive shop voucher member")
+ok(snap.is_null(shaped_market.shop_items[1].pack), "shell should null-fill inactive shop pack member")
+ok(snap.is_null(shaped_market.shop_items[2].card), "shell should null-fill inactive shop card member")
+ok(snap.is_null(shaped_market.shop_items[2].joker), "shell should null-fill inactive shop joker member on voucher wrappers")
+eq(shaped_market.shop_items[2].voucher.key, "v_clearance_sale", "shell should preserve active shop voucher payload")
+ok(type(shaped_market.pack_contents) == "table", "shell should keep active pack_contents object")
+ok(snap.is_null(shaped_market.pack_contents.pack.cost), "shell should null-fill missing pack cost")
+eq(shaped_market.pack_contents.choices_remaining, 2, "shell should preserve pack choice count")
+eq(shaped_market.pack_contents.skip_available, false, "shell should preserve pack skip flag")
+eq(#shaped_market.pack_contents.items, 3, "shell should keep pack item array")
+ok(snap.is_null(shaped_market.pack_contents.items[1].perish_tally), "shell should null-fill missing joker perish_tally in pack items")
+ok(snap.is_null(shaped_market.pack_contents.items[2].enhancement), "shell should null-fill missing card enhancement in pack items")
+ok(snap.is_null(shaped_market.pack_contents.items[3].edition), "shell should null-fill missing consumable edition in pack items")

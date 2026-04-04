@@ -21,6 +21,7 @@ end
 local phase = load_module("phase.lua")
 local core = load_module("core.lua")
 local zones = load_module("zones.lua")
+local market = load_module("market.lua")
 
 local function as_table(value)
   return type(value) == "table" and value or nil
@@ -95,48 +96,74 @@ local function clone_blinds(source)
   return setmetatable(out, array_meta)
 end
 
+local function clone_card(card)
+  card = as_table(card) or {}
+  return {
+    card_key = card.card_key,
+    instance_id = card.instance_id,
+    enhancement = optional_or_null(card.enhancement),
+    edition = optional_or_null(card.edition),
+    seal = optional_or_null(card.seal),
+    facing = optional_or_null(card.facing),
+    debuffed = card.debuffed == true,
+    cost = optional_or_null(card.cost),
+    sell_cost = optional_or_null(card.sell_cost),
+  }
+end
+
 local function clone_cards(source)
-  return clone_mapped_array(source, function(card)
-    return {
-      card_key = card.card_key,
-      instance_id = card.instance_id,
-      enhancement = optional_or_null(card.enhancement),
-      edition = optional_or_null(card.edition),
-      seal = optional_or_null(card.seal),
-      facing = optional_or_null(card.facing),
-      debuffed = card.debuffed == true,
-      cost = optional_or_null(card.cost),
-      sell_cost = optional_or_null(card.sell_cost),
-    }
-  end)
+  return clone_mapped_array(source, clone_card)
+end
+
+local function clone_joker(joker)
+  joker = as_table(joker) or {}
+  return {
+    key = joker.key,
+    instance_id = joker.instance_id,
+    eternal = joker.eternal == true,
+    perishable = joker.perishable == true,
+    rental = joker.rental == true,
+    perish_tally = optional_or_null(joker.perish_tally),
+    edition = optional_or_null(joker.edition),
+    debuffed = joker.debuffed == true,
+    sell_cost = optional_or_null(joker.sell_cost),
+  }
 end
 
 local function clone_jokers(source)
-  return clone_mapped_array(source, function(joker)
-    return {
-      key = joker.key,
-      instance_id = joker.instance_id,
-      eternal = joker.eternal == true,
-      perishable = joker.perishable == true,
-      rental = joker.rental == true,
-      perish_tally = optional_or_null(joker.perish_tally),
-      edition = optional_or_null(joker.edition),
-      debuffed = joker.debuffed == true,
-      sell_cost = optional_or_null(joker.sell_cost),
-    }
-  end)
+  return clone_mapped_array(source, clone_joker)
+end
+
+local function clone_consumable(consumable)
+  consumable = as_table(consumable) or {}
+  return {
+    key = consumable.key,
+    instance_id = consumable.instance_id,
+    edition = optional_or_null(consumable.edition),
+    cost = optional_or_null(consumable.cost),
+    sell_cost = optional_or_null(consumable.sell_cost),
+  }
 end
 
 local function clone_consumables(source)
-  return clone_mapped_array(source, function(consumable)
-    return {
-      key = consumable.key,
-      instance_id = consumable.instance_id,
-      edition = optional_or_null(consumable.edition),
-      cost = optional_or_null(consumable.cost),
-      sell_cost = optional_or_null(consumable.sell_cost),
-    }
-  end)
+  return clone_mapped_array(source, clone_consumable)
+end
+
+local function clone_voucher(voucher)
+  voucher = as_table(voucher) or {}
+  return {
+    key = voucher.key,
+    cost = required_or(to_number(voucher.cost), 0),
+  }
+end
+
+local function clone_pack(pack)
+  pack = as_table(pack) or {}
+  return {
+    key = pack.key,
+    instance_id = pack.instance_id,
+    cost = optional_or_null(pack.cost),
+  }
 end
 
 local function clone_references(source)
@@ -147,6 +174,43 @@ local function clone_references(source)
       key = reference.key,
     }
   end)
+end
+
+local function clone_shop_items(source)
+  return clone_mapped_array(source, function(item)
+    item = as_table(item) or {}
+    return {
+      card = item.card ~= nil and clone_card(item.card) or null_value,
+      joker = item.joker ~= nil and clone_joker(item.joker) or null_value,
+      consumable = item.consumable ~= nil and clone_consumable(item.consumable) or null_value,
+      voucher = item.voucher ~= nil and clone_voucher(item.voucher) or null_value,
+      pack = item.pack ~= nil and clone_pack(item.pack) or null_value,
+    }
+  end)
+end
+
+local function clone_pack_item(item)
+  item = as_table(item) or {}
+  if item.card_key ~= nil then
+    return clone_card(item)
+  end
+  if item.eternal ~= nil or item.perishable ~= nil or item.rental ~= nil or item.perish_tally ~= nil or item.debuffed ~= nil or item.sell_cost ~= nil then
+    return clone_joker(item)
+  end
+  return clone_consumable(item)
+end
+
+local function clone_pack_contents(source)
+  source = as_table(source)
+  if not source then
+    return null_value
+  end
+  return {
+    pack = source.pack ~= nil and clone_pack(source.pack) or null_value,
+    choices_remaining = optional_or_null(source.choices_remaining),
+    skip_available = source.skip_available == true,
+    items = clone_mapped_array(source.items, clone_pack_item),
+  }
 end
 
 local function read_deck_key(game)
@@ -164,6 +228,7 @@ function snap.read_state(root)
   local interaction_phase = phase.infer(root)
   local collected = core.collect(root, interaction_phase)
   local zone_collected = zones.collect(root)
+  local market_collected = market.collect(root, interaction_phase)
   local blinds = collected.blinds or {}
 
   return {
@@ -187,7 +252,9 @@ function snap.read_state(root)
     vouchers = collected.vouchers,
     run_info = collected.run_info,
     interest = collected.interest,
+    shop_items = market_collected.shop_items,
     reroll_cost = to_number(round.reroll_cost),
+    pack_contents = market_collected.pack_contents,
     hand_size = collected.hand_size,
     jokers = zone_collected.jokers,
     consumables = zone_collected.consumables,
@@ -224,9 +291,9 @@ function snap.build_shell(source)
     vouchers = clone_array(source.vouchers),
     run_info = optional_or_null(source.run_info),
     interest = optional_or_null(source.interest),
-    shop_items = clone_array(source.shop_items),
+    shop_items = clone_shop_items(source.shop_items),
     reroll_cost = optional_or_null(source.reroll_cost),
-    pack_contents = optional_or_null(source.pack_contents),
+    pack_contents = clone_pack_contents(source.pack_contents),
     hand_size = optional_or_null(source.hand_size),
     cards_in_hand = clone_cards(source.cards_in_hand),
     selected_cards = clone_references(source.selected_cards),
