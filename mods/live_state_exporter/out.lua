@@ -151,19 +151,47 @@ function out.new_exporter(options)
       return false
     end
 
-    local raw_state = self.read_state and self.read_state() or {}
-    local payload = self.build_shell and self.build_shell(raw_state) or raw_state
-    local signature = self.make_signature(payload)
+    local ok_read, raw_state = pcall(function()
+      return self.read_state and self.read_state() or {}
+    end)
+    if not ok_read then
+      return false
+    end
+
+    local ok_build, payload = pcall(function()
+      return self.build_shell and self.build_shell(raw_state) or raw_state
+    end)
+    if not ok_build then
+      return false
+    end
+
+    local ok_signature, signature = pcall(function()
+      return self.make_signature(payload)
+    end)
+    if not ok_signature then
+      return false
+    end
     if signature == self.last_signature then
       return false
     end
 
-    if self.write_snapshot(self.encode_json(payload)) then
-      self.last_write_at = now
-      self.last_signature = signature
-      return true
+    local ok_encode, body = pcall(function()
+      return self.encode_json(payload)
+    end)
+    if not ok_encode then
+      return false
     end
-    return false
+
+    local ok_write, wrote = pcall(function()
+      return self.write_snapshot(body)
+    end)
+    if not ok_write or not wrote then
+      return false
+    end
+
+    self.last_write_at = now
+    self.last_signature = signature
+    return true
   end
 
   return exporter

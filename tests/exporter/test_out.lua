@@ -81,3 +81,66 @@ dollars = 5
 t = 0.16
 eq(ex:tick(), true, "changed payload should write after interval")
 eq(#writes, 2, "changed payload should add a write")
+
+local read_fail_writes = {}
+local read_fail_exporter = out.new_exporter({
+  now = function()
+    return 0
+  end,
+  read_state = function()
+    error("boom from read_state")
+  end,
+  build_shell = snap.build_shell,
+  write_snapshot = function(body)
+    read_fail_writes[#read_fail_writes + 1] = body
+    return true
+  end,
+})
+
+local ok_tick, tick_result = pcall(function()
+  return read_fail_exporter:tick()
+end)
+
+ok(ok_tick, "tick should not bubble read_state failures")
+eq(tick_result, false, "tick should report no write on read_state failure")
+eq(#read_fail_writes, 0, "read_state failure should not write a snapshot")
+
+local unstable_t = 0
+local unstable_writes = {}
+local unstable_builds = 0
+local unstable_exporter = out.new_exporter({
+  dt = 0.05,
+  now = function()
+    return unstable_t
+  end,
+  read_state = function()
+    return {
+      state_id = 3,
+      dollars = 9,
+      score = { current = 10, target = 100 },
+    }
+  end,
+  build_shell = function(raw)
+    unstable_builds = unstable_builds + 1
+    if unstable_builds == 1 then
+      error("boom from build_shell")
+    end
+    return snap.build_shell(raw)
+  end,
+  write_snapshot = function(body)
+    unstable_writes[#unstable_writes + 1] = body
+    return true
+  end,
+})
+
+local unstable_ok, unstable_first = pcall(function()
+  return unstable_exporter:tick()
+end)
+
+ok(unstable_ok, "tick should not bubble build_shell failures")
+eq(unstable_first, false, "failed build_shell should skip writes")
+eq(#unstable_writes, 0, "build_shell failure should not write a snapshot")
+
+unstable_t = 0.06
+eq(unstable_exporter:tick(), true, "exporter should retry after build_shell failure")
+eq(#unstable_writes, 1, "successful retry should write exactly once")

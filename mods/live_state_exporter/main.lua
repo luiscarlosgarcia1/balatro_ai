@@ -47,6 +47,13 @@ local exporter = out.new_exporter({
   write_snapshot = out.write_snapshot,
 })
 
+local function safe_tick()
+  local ok = pcall(function()
+    exporter:tick()
+  end)
+  return ok
+end
+
 local function wrap_update(obj, key)
   if type(obj) ~= "table" or type(obj[key]) ~= "function" then
     return false
@@ -61,7 +68,7 @@ local function wrap_update(obj, key)
   obj[tag] = true
   obj[key] = function(...)
     local results = { old(...) }
-    exporter:tick()
+    safe_tick()
     return unpack_fn(results)
   end
   return true
@@ -71,7 +78,7 @@ local function install_hooks()
   if not wrap_update(rawget(_G, "love"), "update") then
     wrap_update(rawget(_G, "Game"), "update")
   end
-  exporter:tick()
+  safe_tick()
 end
 
 install_hooks()

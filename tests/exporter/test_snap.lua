@@ -469,3 +469,25 @@ eq(#shaped_market.pack_contents.items, 3, "shell should keep pack item array")
 ok(snap.is_null(shaped_market.pack_contents.items[1].perish_tally), "shell should null-fill missing joker perish_tally in pack items")
 ok(snap.is_null(shaped_market.pack_contents.items[2].enhancement), "shell should null-fill missing card enhancement in pack items")
 ok(snap.is_null(shaped_market.pack_contents.items[3].edition), "shell should null-fill missing consumable edition in pack items")
+
+local malformed = snap.build_shell({
+  run_info = {},
+  interest = "bad-interest",
+  blinds = "bad-blinds",
+  tags = "bad-tags",
+  vouchers = "bad-vouchers",
+  shop_items = "bad-shop-items",
+  cards_in_hand = "bad-cards-in-hand",
+  selected_cards = "bad-selected-cards",
+  cards_in_deck = "bad-cards-in-deck",
+})
+
+ok(snap.is_null(malformed.run_info), "shell should collapse malformed run_info to null")
+ok(snap.is_null(malformed.interest), "shell should collapse malformed interest to null")
+is_arr(malformed.blinds, "shell should keep malformed blinds as an empty array")
+is_arr(malformed.tags, "shell should keep malformed tags as an empty array")
+is_arr(malformed.vouchers, "shell should keep malformed vouchers as an empty array")
+is_arr(malformed.shop_items, "shell should keep malformed shop_items as an empty array")
+is_arr(malformed.cards_in_hand, "shell should keep malformed cards_in_hand as an empty array")
+is_arr(malformed.selected_cards, "shell should keep malformed selected_cards as an empty array")
+is_arr(malformed.cards_in_deck, "shell should keep malformed cards_in_deck as an empty array")

@@ -213,6 +213,51 @@ local function clone_pack_contents(source)
   }
 end
 
+local function clone_run_info(source)
+  source = as_table(source)
+  local hands = as_table(source and source.hands)
+  if not hands then
+    return null_value
+  end
+
+  local out = {}
+  local count = 0
+  for hand_name, hand in pairs(hands) do
+    if type(hand_name) == "string" and type(hand) == "table" then
+      out[hand_name] = hand
+      count = count + 1
+    end
+  end
+
+  if count == 0 then
+    return null_value
+  end
+
+  return {
+    hands = out,
+  }
+end
+
+local function clone_interest(source)
+  source = as_table(source)
+  if not source then
+    return null_value
+  end
+
+  local amount = to_number(source.amount)
+  local cap = to_number(source.cap)
+  local no_interest = source.no_interest
+  if amount == nil and cap == nil and no_interest == nil then
+    return null_value
+  end
+
+  return {
+    amount = required_or(amount, 0),
+    cap = required_or(cap, 0),
+    no_interest = no_interest == true,
+  }
+end
+
 local function read_deck_key(game)
   local selected_back = as_table(game and game.selected_back)
   return first_defined(game and game.selected_back_key, selected_back and selected_back.key)
@@ -289,8 +334,8 @@ function snap.build_shell(source)
     consumables = clone_consumables(source.consumables),
     tags = clone_array(source.tags),
     vouchers = clone_array(source.vouchers),
-    run_info = optional_or_null(source.run_info),
-    interest = optional_or_null(source.interest),
+    run_info = clone_run_info(source.run_info),
+    interest = clone_interest(source.interest),
     shop_items = clone_shop_items(source.shop_items),
     reroll_cost = optional_or_null(source.reroll_cost),
     pack_contents = clone_pack_contents(source.pack_contents),
