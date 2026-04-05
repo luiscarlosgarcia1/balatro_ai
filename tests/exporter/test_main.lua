@@ -72,8 +72,14 @@ _G.SMODS = {
 }
 _G.NFS = {
   read = function(path)
-    if path == "virtual/snap.lua" then
-      return "return { read_state = function() return {} end, build_shell = function() return {} end }"
+    if path == "virtual/shared/loader.lua" then
+      return "return { load = function(name) if name == 'state/raw.lua' then return { read_state = function() return {} end } end if name == 'state/schema.lua' then return { build_shell = function() return {} end } end if name == 'out.lua' then return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end } end error('unexpected module name: ' .. tostring(name)) end }"
+    end
+    if path == "virtual/state/raw.lua" then
+      return "return { read_state = function() return {} end }"
+    end
+    if path == "virtual/state/schema.lua" then
+      return "return { build_shell = function() return {} end }"
     end
     if path == "virtual/out.lua" then
       return "return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end }"

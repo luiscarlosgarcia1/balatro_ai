@@ -1,4 +1,4 @@
-local core = {}
+local run_state = {}
 
 local RUN_INFO_HAND_ORDER = {
   "Flush Five",
@@ -17,33 +17,29 @@ local RUN_INFO_HAND_ORDER = {
 
 local BLIND_ROW_ORDER = { "small", "big", "boss" }
 
-local function as_table(value)
-  return type(value) == "table" and value or nil
+local load_module = rawget(_G, "__live_state_exporter_load_module")
+if not load_module then
+  local mod = rawget(_G, "SMODS") and SMODS.current_mod
+  local path = mod and mod.path
+  local nfs = rawget(_G, "NFS")
+  if path and nfs and type(nfs.read) == "function" then
+    local chunk, err = load(
+      nfs.read(path .. "shared/loader.lua"),
+      '=[SMODS live_state_exporter "shared/loader.lua"]'
+    )
+    assert(chunk, err)
+    load_module = chunk().load
+  else
+    load_module = dofile("mods/live_state_exporter/shared/loader.lua").load
+  end
+  _G.__live_state_exporter_load_module = load_module
 end
 
-local function first_defined(...)
-  for i = 1, select("#", ...) do
-    local value = select(i, ...)
-    if value ~= nil then
-      return value
-    end
-  end
-  return nil
-end
-
-local function to_number(value)
-  if type(value) == "number" then
-    return value
-  end
-  if type(value) == "string" and value:match("^%-?%d+$") then
-    return tonumber(value)
-  end
-  return nil
-end
-
-local function lower_string(value)
-  return type(value) == "string" and string.lower(value) or nil
-end
+local values = load_module("shared/values.lua")
+local as_table = values.as_table
+local first_defined = values.first_defined
+local to_number = values.to_number
+local lower_string = values.lower_string
 
 local function table_lookup(source, wanted_key)
   if type(source) ~= "table" then
@@ -205,7 +201,7 @@ local function collect_tags(root, game)
   return tags
 end
 
-function core.collect(root, interaction_phase)
+function run_state.collect(root, interaction_phase)
   root = as_table(root) or {}
   local game = as_table(root.GAME) or {}
   local starting = as_table(game.starting_params) or {}
@@ -224,4 +220,4 @@ function core.collect(root, interaction_phase)
   }
 end
 
-return core
+return run_state

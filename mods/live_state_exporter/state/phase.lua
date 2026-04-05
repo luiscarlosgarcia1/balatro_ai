@@ -1,32 +1,28 @@
 local phase = {}
 
-local function as_table(value)
-  return type(value) == "table" and value or nil
+local load_module = rawget(_G, "__live_state_exporter_load_module")
+if not load_module then
+  local mod = rawget(_G, "SMODS") and SMODS.current_mod
+  local path = mod and mod.path
+  local nfs = rawget(_G, "NFS")
+  if path and nfs and type(nfs.read) == "function" then
+    local chunk, err = load(
+      nfs.read(path .. "shared/loader.lua"),
+      '=[SMODS live_state_exporter "shared/loader.lua"]'
+    )
+    assert(chunk, err)
+    load_module = chunk().load
+  else
+    load_module = dofile("mods/live_state_exporter/shared/loader.lua").load
+  end
+  _G.__live_state_exporter_load_module = load_module
 end
 
-local function first_defined(...)
-  for i = 1, select("#", ...) do
-    local value = select(i, ...)
-    if value ~= nil then
-      return value
-    end
-  end
-  return nil
-end
-
-local function to_number(value)
-  if type(value) == "number" then
-    return value
-  end
-  if type(value) == "string" and value:match("^%-?%d+$") then
-    return tonumber(value)
-  end
-  return nil
-end
-
-local function lower_string(value)
-  return type(value) == "string" and string.lower(value) or nil
-end
+local values = load_module("shared/values.lua")
+local as_table = values.as_table
+local first_defined = values.first_defined
+local to_number = values.to_number
+local lower_string = values.lower_string
 
 local function read_state_token(root, game)
   return lower_string(first_defined(root and root.STATE, game and game.state, game and game.current_round_state))

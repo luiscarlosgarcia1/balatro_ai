@@ -8,22 +8,26 @@
 
 local unpack_fn = table.unpack or unpack
 
-local function load_module(name)
+local load_module = rawget(_G, "__live_state_exporter_load_module")
+if not load_module then
   local mod = rawget(_G, "SMODS") and SMODS.current_mod
   local path = mod and mod.path
   local nfs = rawget(_G, "NFS")
   if path and nfs and type(nfs.read) == "function" then
     local chunk, err = load(
-      nfs.read(path .. name),
-      '=[SMODS live_state_exporter "' .. name .. '"]'
+      nfs.read(path .. "shared/loader.lua"),
+      '=[SMODS live_state_exporter "shared/loader.lua"]'
     )
     assert(chunk, err)
-    return chunk()
+    load_module = chunk().load
+  else
+    load_module = dofile("mods/live_state_exporter/shared/loader.lua").load
   end
-  return dofile("mods/live_state_exporter/" .. name)
+  _G.__live_state_exporter_load_module = load_module
 end
 
-local snap = load_module("snap.lua")
+local raw = load_module("state/raw.lua")
+local schema = load_module("state/schema.lua")
 local out = load_module("out.lua")
 
 local function current_time()
@@ -39,9 +43,9 @@ local exporter = out.new_exporter({
   dt = 0.05,
   now = current_time,
   read_state = function()
-    return snap.read_state(rawget(_G, "G"))
+    return raw.read_state(rawget(_G, "G"))
   end,
-  build_shell = snap.build_shell,
+  build_shell = schema.build_shell,
   make_signature = out.make_signature,
   encode_json = out.encode_json,
   write_snapshot = out.write_snapshot,

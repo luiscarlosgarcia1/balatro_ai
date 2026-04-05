@@ -1,4 +1,4 @@
-local core = dofile("mods/live_state_exporter/core.lua")
+local run_state = dofile("mods/live_state_exporter/collectors/run_state.lua")
 
 local function eq(a, b, msg)
   if a ~= b then
@@ -100,7 +100,7 @@ local root = {
   },
 }
 
-local collected = core.collect(root, "shop")
+local collected = run_state.collect(root, "shop")
 
 eq(#collected.blinds, 3, "collector should shape three blind rows")
 eq(collected.blinds[1].key, "bl_small", "collector should keep small blind first")

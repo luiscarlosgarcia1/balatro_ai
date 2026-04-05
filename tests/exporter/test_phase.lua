@@ -1,4 +1,4 @@
-local phase = dofile("mods/live_state_exporter/phase.lua")
+local phase = dofile("mods/live_state_exporter/state/phase.lua")
 
 local function eq(a, b, msg)
   if a ~= b then
