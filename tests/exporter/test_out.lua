@@ -1,4 +1,4 @@
-local schema = dofile("mods/live_state_exporter/schema.lua")
+local schema = dofile("mods/live_state_exporter/state/schema.lua")
 local out = dofile("mods/live_state_exporter/out.lua")
 
 local function eq(a, b, msg)

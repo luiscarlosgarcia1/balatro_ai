@@ -1,4 +1,4 @@
-local market = dofile("mods/live_state_exporter/market.lua")
+local market = dofile("mods/live_state_exporter/collectors/market.lua")
 
 local function eq(a, b, msg)
   if a ~= b then

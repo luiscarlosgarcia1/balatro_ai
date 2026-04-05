@@ -1,4 +1,4 @@
-local raw = dofile("mods/live_state_exporter/raw.lua")
+local raw = dofile("mods/live_state_exporter/state/raw.lua")
 
 local function eq(a, b, msg)
   if a ~= b then
@@ -350,7 +350,7 @@ _G.NFS = {
   end,
 }
 
-local nfs_raw = dofile("mods/live_state_exporter/raw.lua")
+local nfs_raw = dofile("mods/live_state_exporter/state/raw.lua")
 local nfs_state = nfs_raw.read_state({
   STATE = "SHOP",
   GAME = {
@@ -387,7 +387,7 @@ for i = 1, #read_calls do
   if read_calls[i] == "virtual/shared/entities/market.lua" then
     saw_market = true
   end
-  if read_calls[i] == "virtual/run_state.lua" then
+  if read_calls[i] == "virtual/collectors/run_state.lua" then
     saw_run_state = true
   end
 end

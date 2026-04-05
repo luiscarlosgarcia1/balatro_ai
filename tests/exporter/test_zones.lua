@@ -1,4 +1,4 @@
-local zones = dofile("mods/live_state_exporter/zones.lua")
+local zones = dofile("mods/live_state_exporter/collectors/zones.lua")
 
 local function eq(a, b, msg)
   if a ~= b then

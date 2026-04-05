@@ -2,4 +2,3 @@ __pycache__/
 *.pyc
 obs_test_output/
 prints/
-docs/

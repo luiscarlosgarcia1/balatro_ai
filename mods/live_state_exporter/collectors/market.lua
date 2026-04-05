@@ -1,18 +1,21 @@
 local market = {}
 
-local function load_module(name)
+local load_module = rawget(_G, "__live_state_exporter_load_module")
+if not load_module then
   local mod = rawget(_G, "SMODS") and SMODS.current_mod
   local path = mod and mod.path
   local nfs = rawget(_G, "NFS")
   if path and nfs and type(nfs.read) == "function" then
     local chunk, err = load(
-      nfs.read(path .. name),
-      '=[SMODS live_state_exporter "' .. name .. '"]'
+      nfs.read(path .. "shared/loader.lua"),
+      '=[SMODS live_state_exporter "shared/loader.lua"]'
     )
     assert(chunk, err)
-    return chunk()
+    load_module = chunk().load
+  else
+    load_module = dofile("mods/live_state_exporter/shared/loader.lua").load
   end
-  return dofile("mods/live_state_exporter/" .. name)
+  _G.__live_state_exporter_load_module = load_module
 end
 
 local values = load_module("shared/values.lua")

@@ -1,4 +1,4 @@
-local run_state = dofile("mods/live_state_exporter/run_state.lua")
+local run_state = dofile("mods/live_state_exporter/collectors/run_state.lua")
 
 local function eq(a, b, msg)
   if a ~= b then
