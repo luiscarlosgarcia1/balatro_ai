@@ -538,14 +538,28 @@ local nfs_state = nfs_snap.read_state({
 eq(nfs_state.blind_key, "bl_big", "NFS-loaded snap should keep nested phase and collector behavior")
 
 local saw_shared_values = false
+local saw_shared_entity_common = false
+local saw_shared_entity_owned = false
+local saw_shared_entity_market = false
 for i = 1, #read_calls do
   if read_calls[i] == "virtual/shared/values.lua" then
     saw_shared_values = true
-    break
+  end
+  if read_calls[i] == "virtual/shared/entities/common.lua" then
+    saw_shared_entity_common = true
+  end
+  if read_calls[i] == "virtual/shared/entities/owned.lua" then
+    saw_shared_entity_owned = true
+  end
+  if read_calls[i] == "virtual/shared/entities/market.lua" then
+    saw_shared_entity_market = true
   end
 end
 
 ok(saw_shared_values, "NFS-loaded snap should load nested shared values through the current module loader path")
+ok(saw_shared_entity_common, "NFS-loaded snap should load the shared entity common reader module")
+ok(saw_shared_entity_owned, "NFS-loaded snap should load the shared owned-entity reader module")
+ok(saw_shared_entity_market, "NFS-loaded snap should load the shared market-entity reader module")
 
 _G.SMODS = old.SMODS
 _G.NFS = old.NFS

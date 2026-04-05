@@ -16,53 +16,11 @@ local function load_module(name)
 end
 
 local values = load_module("shared/values.lua")
+local common = load_module("shared/entities/common.lua")(values)
+local owned = load_module("shared/entities/owned.lua")(common)
 local as_table = values.as_table
 local first_defined = values.first_defined
-local to_number = values.to_number
 local lower_string = values.lower_string
-
-local function normalize_card_key(card)
-  local config = as_table(card and card.config) or {}
-  local key = first_defined(config.card_key, config.key)
-  if type(key) == "string" and key ~= "" then
-    return key
-  end
-  return nil
-end
-
-local function normalize_center_key(card)
-  local config = as_table(card and card.config) or {}
-  local key = first_defined(config.center_key, config.key)
-  if type(key) == "string" and key ~= "" then
-    return key
-  end
-  return nil
-end
-
-local function read_card_enhancement(card)
-  local config = as_table(card and card.config) or {}
-  local key = config.center_key
-  if type(key) == "string" and key ~= "" and key ~= "c_base" then
-    return key
-  end
-  return nil
-end
-
-local function read_edition(card)
-  local edition = as_table(card and card.edition) or {}
-  if type(edition.type) == "string" and edition.type ~= "" then
-    return edition.type
-  end
-  return nil
-end
-
-local function read_instance_id(card)
-  return to_number(first_defined(card and card.instance_id, card and card.id, card and card.ID))
-end
-
-local function is_selected(card)
-  return card and (card.highlighted == true or card.selected == true) or false
-end
 
 local function read_zone_name(area, fallback)
   local config = as_table(area and area.config) or {}
@@ -120,27 +78,13 @@ local function collect_playing_cards(area)
 
   for i = 1, #source do
     local raw = as_table(source[i])
-    local instance_id = read_instance_id(raw)
-    local card_key = normalize_card_key(raw)
-    if instance_id ~= nil and card_key ~= nil then
-      cards[#cards + 1] = {
-        card_key = card_key,
-        instance_id = instance_id,
-        enhancement = read_card_enhancement(raw),
-        edition = read_edition(raw),
-        seal = raw.seal,
-        facing = raw.facing,
-        debuffed = raw.debuff == true,
-        cost = to_number(raw.cost),
-        sell_cost = to_number(first_defined(raw.sell_cost, raw.sell_price)),
-      }
+    local item = owned.read_playing_card(raw)
+    if item ~= nil then
+      cards[#cards + 1] = item
 
-      if is_selected(raw) then
-        selected[#selected + 1] = {
-          zone = zone,
-          instance_id = instance_id,
-          key = card_key,
-        }
+      local reference = common.read_selected_reference(raw, zone, item.card_key)
+      if reference ~= nil then
+        selected[#selected + 1] = reference
       end
     end
   end
@@ -158,22 +102,11 @@ local function collect_deck_cards(root)
 
   for i = 1, #source do
     local raw = as_table(source[i])
-    local instance_id = read_instance_id(raw)
-    local card_key = normalize_card_key(raw)
-    if instance_id ~= nil and card_key ~= nil then
-      deck_cards[#deck_cards + 1] = {
-        card_key = card_key,
-        instance_id = instance_id,
-        enhancement = read_card_enhancement(raw),
-        edition = read_edition(raw),
-        seal = raw.seal,
-        facing = raw.facing,
-        debuffed = raw.debuff == true,
-        cost = to_number(raw.cost),
-        sell_cost = to_number(first_defined(raw.sell_cost, raw.sell_price)),
-        __sort_suit = read_suit_order(raw),
-        __sort_rank = read_rank_order(raw),
-      }
+    local item = owned.read_playing_card(raw)
+    if item ~= nil then
+      item.__sort_suit = read_suit_order(raw)
+      item.__sort_rank = read_rank_order(raw)
+      deck_cards[#deck_cards + 1] = item
     end
   end
 
@@ -203,28 +136,13 @@ local function collect_jokers(area)
 
   for i = 1, #source do
     local raw = as_table(source[i])
-    local instance_id = read_instance_id(raw)
-    local key = normalize_center_key(raw)
-    if instance_id ~= nil and key ~= nil then
-      local ability = as_table(raw.ability) or {}
-      jokers[#jokers + 1] = {
-        key = key,
-        instance_id = instance_id,
-        eternal = ability.eternal == true,
-        perishable = ability.perishable == true,
-        rental = ability.rental == true,
-        perish_tally = to_number(ability.perish_tally),
-        edition = read_edition(raw),
-        debuffed = raw.debuff == true,
-        sell_cost = to_number(first_defined(raw.sell_cost, raw.sell_price)),
-      }
+    local item = owned.read_joker(raw)
+    if item ~= nil then
+      jokers[#jokers + 1] = item
 
-      if is_selected(raw) then
-        selected[#selected + 1] = {
-          zone = zone,
-          instance_id = instance_id,
-          key = key,
-        }
+      local reference = common.read_selected_reference(raw, zone, item.key)
+      if reference ~= nil then
+        selected[#selected + 1] = reference
       end
     end
   end
@@ -240,23 +158,13 @@ local function collect_consumables(area)
 
   for i = 1, #source do
     local raw = as_table(source[i])
-    local instance_id = read_instance_id(raw)
-    local key = normalize_center_key(raw)
-    if instance_id ~= nil and key ~= nil then
-      consumables[#consumables + 1] = {
-        key = key,
-        instance_id = instance_id,
-        edition = read_edition(raw),
-        cost = to_number(raw.cost),
-        sell_cost = to_number(first_defined(raw.sell_cost, raw.sell_price)),
-      }
+    local item = owned.read_consumable(raw)
+    if item ~= nil then
+      consumables[#consumables + 1] = item
 
-      if is_selected(raw) then
-        selected[#selected + 1] = {
-          zone = zone,
-          instance_id = instance_id,
-          key = key,
-        }
+      local reference = common.read_selected_reference(raw, zone, item.key)
+      if reference ~= nil then
+        selected[#selected + 1] = reference
       end
     end
   end
