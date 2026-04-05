@@ -72,8 +72,11 @@ _G.SMODS = {
 }
 _G.NFS = {
   read = function(path)
-    if path == "virtual/snap.lua" then
-      return "return { read_state = function() return {} end, build_shell = function() return {} end }"
+    if path == "virtual/raw.lua" then
+      return "return { read_state = function() return {} end }"
+    end
+    if path == "virtual/schema.lua" then
+      return "return { build_shell = function() return {} end }"
     end
     if path == "virtual/out.lua" then
       return "return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end }"

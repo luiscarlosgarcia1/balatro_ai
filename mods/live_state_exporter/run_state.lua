@@ -1,4 +1,4 @@
-local core = {}
+local run_state = {}
 
 local RUN_INFO_HAND_ORDER = {
   "Flush Five",
@@ -198,7 +198,7 @@ local function collect_tags(root, game)
   return tags
 end
 
-function core.collect(root, interaction_phase)
+function run_state.collect(root, interaction_phase)
   root = as_table(root) or {}
   local game = as_table(root.GAME) or {}
   local starting = as_table(game.starting_params) or {}
@@ -217,4 +217,4 @@ function core.collect(root, interaction_phase)
   }
 end
 
-return core
+return run_state

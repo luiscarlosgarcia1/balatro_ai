@@ -23,7 +23,8 @@ local function load_module(name)
   return dofile("mods/live_state_exporter/" .. name)
 end
 
-local snap = load_module("snap.lua")
+local raw = load_module("raw.lua")
+local schema = load_module("schema.lua")
 local out = load_module("out.lua")
 
 local function current_time()
@@ -39,9 +40,9 @@ local exporter = out.new_exporter({
   dt = 0.05,
   now = current_time,
   read_state = function()
-    return snap.read_state(rawget(_G, "G"))
+    return raw.read_state(rawget(_G, "G"))
   end,
-  build_shell = snap.build_shell,
+  build_shell = schema.build_shell,
   make_signature = out.make_signature,
   encode_json = out.encode_json,
   write_snapshot = out.write_snapshot,

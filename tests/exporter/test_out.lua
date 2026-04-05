@@ -1,4 +1,4 @@
-local snap = dofile("mods/live_state_exporter/snap.lua")
+local schema = dofile("mods/live_state_exporter/schema.lua")
 local out = dofile("mods/live_state_exporter/out.lua")
 
 local function eq(a, b, msg)
@@ -23,17 +23,17 @@ local function has(s, part, msg)
   ok(string.find(s, part, 1, true) ~= nil, msg or ("missing fragment: " .. part))
 end
 
-local a = snap.build_shell({
+local a = schema.build_shell({
   state_id = 1,
   dollars = 4,
   score = { current = 25, target = 300 },
 })
-local b = snap.build_shell({
+local b = schema.build_shell({
   state_id = 1,
   dollars = 4,
   score = { current = 25, target = 300 },
 })
-local c = snap.build_shell({
+local c = schema.build_shell({
   state_id = 1,
   dollars = 5,
   score = { current = 25, target = 300 },
@@ -62,7 +62,7 @@ local ex = out.new_exporter({
       score = { current = 25, target = 300 },
     }
   end,
-  build_shell = snap.build_shell,
+  build_shell = schema.build_shell,
   write_snapshot = function(body)
     writes[#writes + 1] = body
     return true
@@ -90,7 +90,7 @@ local read_fail_exporter = out.new_exporter({
   read_state = function()
     error("boom from read_state")
   end,
-  build_shell = snap.build_shell,
+  build_shell = schema.build_shell,
   write_snapshot = function(body)
     read_fail_writes[#read_fail_writes + 1] = body
     return true
@@ -125,7 +125,7 @@ local unstable_exporter = out.new_exporter({
     if unstable_builds == 1 then
       error("boom from build_shell")
     end
-    return snap.build_shell(raw)
+    return schema.build_shell(raw)
   end,
   write_snapshot = function(body)
     unstable_writes[#unstable_writes + 1] = body
