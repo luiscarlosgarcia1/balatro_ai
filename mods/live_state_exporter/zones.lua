@@ -1,28 +1,25 @@
 local zones = {}
 
-local function as_table(value)
-  return type(value) == "table" and value or nil
+local function load_module(name)
+  local mod = rawget(_G, "SMODS") and SMODS.current_mod
+  local path = mod and mod.path
+  local nfs = rawget(_G, "NFS")
+  if path and nfs and type(nfs.read) == "function" then
+    local chunk, err = load(
+      nfs.read(path .. name),
+      '=[SMODS live_state_exporter "' .. name .. '"]'
+    )
+    assert(chunk, err)
+    return chunk()
+  end
+  return dofile("mods/live_state_exporter/" .. name)
 end
 
-local function first_defined(...)
-  for i = 1, select("#", ...) do
-    local value = select(i, ...)
-    if value ~= nil then
-      return value
-    end
-  end
-  return nil
-end
-
-local function to_number(value)
-  if type(value) == "number" then
-    return value
-  end
-  if type(value) == "string" and value:match("^%-?%d+$") then
-    return tonumber(value)
-  end
-  return nil
-end
+local values = load_module("shared/values.lua")
+local as_table = values.as_table
+local first_defined = values.first_defined
+local to_number = values.to_number
+local lower_string = values.lower_string
 
 local function normalize_card_key(card)
   local config = as_table(card and card.config) or {}
@@ -98,10 +95,6 @@ local RANK_ORDER = {
   queen = 12,
   king = 13,
 }
-
-local function lower_string(value)
-  return type(value) == "string" and string.lower(value) or nil
-end
 
 local function read_suit_order(card)
   local base = as_table(card and card.base) or {}

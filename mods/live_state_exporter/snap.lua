@@ -22,30 +22,10 @@ local phase = load_module("phase.lua")
 local core = load_module("core.lua")
 local zones = load_module("zones.lua")
 local market = load_module("market.lua")
-
-local function as_table(value)
-  return type(value) == "table" and value or nil
-end
-
-local function to_number(value)
-  if type(value) == "number" then
-    return value
-  end
-  if type(value) == "string" and value:match("^%-?%d+$") then
-    return tonumber(value)
-  end
-  return nil
-end
-
-local function first_defined(...)
-  for i = 1, select("#", ...) do
-    local value = select(i, ...)
-    if value ~= nil then
-      return value
-    end
-  end
-  return nil
-end
+local values = load_module("shared/values.lua")
+local as_table = values.as_table
+local to_number = values.to_number
+local first_defined = values.first_defined
 
 local function clone_array(source)
   local out = {}

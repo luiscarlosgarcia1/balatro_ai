@@ -491,3 +491,61 @@ is_arr(malformed.shop_items, "shell should keep malformed shop_items as an empty
 is_arr(malformed.cards_in_hand, "shell should keep malformed cards_in_hand as an empty array")
 is_arr(malformed.selected_cards, "shell should keep malformed selected_cards as an empty array")
 is_arr(malformed.cards_in_deck, "shell should keep malformed cards_in_deck as an empty array")
+
+local old = {
+  SMODS = rawget(_G, "SMODS"),
+  NFS = rawget(_G, "NFS"),
+}
+
+local function read_text(path)
+  local handle = assert(io.open(path, "r"))
+  local body = assert(handle:read("*a"))
+  handle:close()
+  return body
+end
+
+local read_calls = {}
+
+_G.SMODS = {
+  current_mod = {
+    path = "virtual/",
+  },
+}
+_G.NFS = {
+  read = function(path)
+    read_calls[#read_calls + 1] = path
+    local relative = path:gsub("^virtual/", "")
+    return read_text("mods/live_state_exporter/" .. relative)
+  end,
+}
+
+local nfs_snap = dofile("mods/live_state_exporter/snap.lua")
+local nfs_state = nfs_snap.read_state({
+  STATE = "SHOP",
+  GAME = {
+    blind = {
+      key = "bl_big",
+      chips = 300,
+    },
+    current_round = {
+      hands_left = 2,
+      discards_left = 1,
+      reroll_cost = 5,
+    },
+  },
+})
+
+eq(nfs_state.blind_key, "bl_big", "NFS-loaded snap should keep nested phase and collector behavior")
+
+local saw_shared_values = false
+for i = 1, #read_calls do
+  if read_calls[i] == "virtual/shared/values.lua" then
+    saw_shared_values = true
+    break
+  end
+end
+
+ok(saw_shared_values, "NFS-loaded snap should load nested shared values through the current module loader path")
+
+_G.SMODS = old.SMODS
+_G.NFS = old.NFS
