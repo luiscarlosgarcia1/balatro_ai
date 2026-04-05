@@ -1,44 +1,7 @@
 from __future__ import annotations
 
-import re
-
 from ...models import ObservedShopItem
-from .coercion import string_or_none
 from .zones import parse_card, parse_consumable, parse_joker, parse_pack, parse_voucher
-
-PLAYING_CARD_KEY_PATTERN = re.compile(r"^[cdhs]_[a2-9tjqk]$", re.IGNORECASE)
-
-
-def _normalize_kind(value: object) -> str | None:
-    kind = string_or_none(value)
-    if not kind:
-        return None
-    return kind.strip().lower()
-
-
-def _looks_like_playing_card(key: str | None) -> bool:
-    if not key:
-        return False
-    return PLAYING_CARD_KEY_PATTERN.match(key) is not None
-
-
-def _infer_shop_item_kind(item: dict[str, object]) -> str | None:
-    kind = _normalize_kind(item.get("kind"))
-    key = string_or_none(item.get("key", item.get("card_key")))
-
-    if kind == "voucher" or (key and key.startswith("v_")):
-        return "voucher"
-    if kind == "pack" or (key and key.startswith("p_")):
-        return "pack"
-    if kind == "joker" or (key and key.startswith("j_")):
-        return "joker"
-    if kind in {"tarot", "planet", "spectral", "consumable"}:
-        return "consumable"
-    if _looks_like_playing_card(string_or_none(item.get("card_key"))) or _looks_like_playing_card(key):
-        return "card"
-    if key and key.startswith("c_"):
-        return "consumable"
-    return None
 
 
 def parse_shop_items(payload: object) -> list[ObservedShopItem]:
@@ -47,34 +10,52 @@ def parse_shop_items(payload: object) -> list[ObservedShopItem]:
         return shop_items
 
     for index, item in enumerate(payload):
-        if not isinstance(item, dict):
-            continue
-        item_kind = _infer_shop_item_kind(item)
-        if item_kind == "voucher":
-            voucher = parse_voucher(item)
-            if voucher is not None:
-                shop_items.append(ObservedShopItem(voucher=voucher))
-            continue
-        if item_kind == "pack":
-            pack = parse_pack(item, index)
-            if pack is not None:
-                shop_items.append(ObservedShopItem(pack=pack))
-            continue
-        if item_kind == "joker":
-            joker = parse_joker(item, index)
-            if joker is not None:
-                shop_items.append(ObservedShopItem(joker=joker))
-            continue
-        if item_kind == "consumable":
-            consumable = parse_consumable(item, index)
-            if consumable is not None:
-                shop_items.append(ObservedShopItem(consumable=consumable))
-            continue
-        if item_kind == "card":
-            card = parse_card(item, index)
-            if card is not None:
-                shop_items.append(ObservedShopItem(card=card))
+        parsed_item = parse_shop_item(item, index)
+        if parsed_item is not None:
+            shop_items.append(parsed_item)
     return shop_items
+
+
+def parse_shop_item(payload: object, fallback_index: int = 0) -> ObservedShopItem | None:
+    if not isinstance(payload, dict):
+        return None
+
+    card_payload = payload.get("card")
+    if card_payload is not None:
+        card = parse_card(card_payload, fallback_index)
+        if card is not None:
+            return ObservedShopItem(card=card)
+        return None
+
+    joker_payload = payload.get("joker")
+    if joker_payload is not None:
+        joker = parse_joker(joker_payload, fallback_index)
+        if joker is not None:
+            return ObservedShopItem(joker=joker)
+        return None
+
+    consumable_payload = payload.get("consumable")
+    if consumable_payload is not None:
+        consumable = parse_consumable(consumable_payload, fallback_index)
+        if consumable is not None:
+            return ObservedShopItem(consumable=consumable)
+        return None
+
+    voucher_payload = payload.get("voucher")
+    if voucher_payload is not None:
+        voucher = parse_voucher(voucher_payload)
+        if voucher is not None:
+            return ObservedShopItem(voucher=voucher)
+        return None
+
+    pack_payload = payload.get("pack")
+    if pack_payload is not None:
+        pack = parse_pack(pack_payload, fallback_index)
+        if pack is not None:
+            return ObservedShopItem(pack=pack)
+        return None
+
+    return None
 
 
 def merge_shop_vouchers_into_shop_items(*, shop_items: list[ObservedShopItem], shop_vouchers: list[ObservedShopItem]) -> list[ObservedShopItem]:

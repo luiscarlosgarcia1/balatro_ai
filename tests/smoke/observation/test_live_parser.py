@@ -11,19 +11,45 @@ from balatro_ai.observation.parser import LiveObservationParser
 
 
 class LiveParserSmokeTests(unittest.TestCase):
-    def test_parse_minimal_live_state_into_typed_observation(self) -> None:
+    def test_parse_wrapped_shop_items_into_typed_observation(self) -> None:
         payload = {
-            "state": {
-                "source": "live_state_exporter",
-                "state_id": 41,
-                "interaction_phase": "shop",
-                "blind_key": "bl_small",
-                "deck_key": "b_erratic",
-                "score": {"current": 75, "target": 300},
-                "money": 10,
-                "hands_left": 4,
-                "discards_left": 2,
-            }
+            "source": "live_state_exporter",
+            "state_id": 41,
+            "interaction_phase": "shop",
+            "blind_key": "bl_small",
+            "deck_key": "b_erratic",
+            "score": {"current": 75, "target": 300},
+            "money": 10,
+            "hands_left": 4,
+            "discards_left": 2,
+            "shop_items": [
+                {
+                    "joker": {
+                        "key": "j_blue_joker",
+                        "instance_id": 101,
+                        "eternal": True,
+                        "sell_cost": 2,
+                    }
+                },
+                {
+                    "voucher": {
+                        "key": "v_clearance_sale",
+                        "cost": 10,
+                    }
+                },
+                {
+                    "pack": {
+                        "key": "p_arcana_normal_1",
+                        "instance_id": 202,
+                        "cost": 4,
+                    }
+                },
+                {
+                    "joker": {
+                        "cost": 99,
+                    }
+                },
+            ],
         }
 
         observation = self.parse_payload(payload)
@@ -40,7 +66,15 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.cards_in_hand, ())
         self.assertEqual(observation.selected_cards, ())
         self.assertEqual(observation.cards_in_deck, ())
-        self.assertEqual(observation.shop_items, ())
+        self.assertEqual(len(observation.shop_items), 3)
+        self.assertEqual(observation.shop_items[0].joker.key, "j_blue_joker")
+        self.assertEqual(observation.shop_items[0].joker.instance_id, 101)
+        self.assertTrue(observation.shop_items[0].joker.eternal)
+        self.assertEqual(observation.shop_items[1].voucher.key, "v_clearance_sale")
+        self.assertEqual(observation.shop_items[1].voucher.cost, 10)
+        self.assertEqual(observation.shop_items[2].pack.key, "p_arcana_normal_1")
+        self.assertEqual(observation.shop_items[2].pack.instance_id, 202)
+        self.assertEqual(observation.shop_items[2].pack.cost, 4)
 
     def test_parse_missing_file_returns_none(self) -> None:
         root = self.make_fixture_root()
