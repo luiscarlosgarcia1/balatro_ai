@@ -4,8 +4,6 @@ This project is meant to help practice coding-agent collaboration while building
 
 ## Important Clarification
 
-The Balatro runtime does not need to be a multi-agent system.
-
 Inside the game, the current architecture is still a normal control loop:
 
 1. observe the state
@@ -40,11 +38,3 @@ Validation can happen in two places:
 
 Both are useful, but they solve different problems.
 
-## Agent 1 Focus
-
-The first good delegated slice for this repo is observation:
-
-- inspect `C:/Users/luiga/AppData/Roaming/Balatro/ai/live_state.json`
-- extend the live parser and typed observation model where needed
-- surface structured state for gameplay decisions through `GameObservation`
-- keep the observer seam simple so runtime and policy stay on the typed contract
