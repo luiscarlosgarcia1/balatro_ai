@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import shutil
 import unittest
-from pathlib import Path
-from uuid import uuid4
 
 from balatro_ai.models import GameObservation, ObservedScore
 from pretty_printer import render_observation, write_observation_print
+from tests.smoke.support import temporary_test_root
 
 
 class PrettyPrinterSmokeTests(unittest.TestCase):
@@ -34,29 +32,11 @@ class PrettyPrinterSmokeTests(unittest.TestCase):
             discards_left=3,
             score=ObservedScore(current=0, target=300),
         )
-        root = self.make_fixture_root()
-        try:
+        with temporary_test_root("pretty_printer") as root:
             output_path = write_observation_print(observation, output_dir=root / "prints")
             self.assertEqual(output_path.suffix, ".txt")
             self.assertEqual(output_path.parent.name, "prints")
             self.assertEqual(output_path.read_text(encoding="utf-8"), render_observation(observation))
-        finally:
-            shutil.rmtree(root, ignore_errors=True)
-            self.cleanup_fixture_base()
-
-    def make_fixture_root(self) -> Path:
-        base = Path("tests_tmp")
-        base.mkdir(exist_ok=True)
-        root = base / f"pretty_printer_{uuid4().hex}"
-        root.mkdir()
-        return root
-
-    def cleanup_fixture_base(self) -> None:
-        base = Path("tests_tmp")
-        try:
-            base.rmdir()
-        except OSError:
-            pass
 
 
 if __name__ == "__main__":

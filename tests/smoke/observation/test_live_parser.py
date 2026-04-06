@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import shutil
 import unittest
-from pathlib import Path
-from uuid import uuid4
 
 from balatro_ai.models import GameObservation, ObservedJoker, ObservedPack, ObservedScore, ObservedVoucher
 from balatro_ai.observation.parser import LiveObservationParser
+from tests.smoke.support import temporary_test_root
 
 
 class LiveParserSmokeTests(unittest.TestCase):
@@ -80,25 +78,17 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.shop_items[2].cost, 4)
 
     def test_parse_missing_file_returns_none(self) -> None:
-        root = self.make_fixture_root()
-        try:
+        with temporary_test_root("live_parser") as root:
             missing_path = root / "missing_live_state.json"
             observation = LiveObservationParser().parse_file(missing_path)
-        finally:
-            shutil.rmtree(root, ignore_errors=True)
-            self.cleanup_fixture_base()
 
         self.assertIsNone(observation)
 
     def test_parse_invalid_json_returns_none(self) -> None:
-        root = self.make_fixture_root()
-        try:
+        with temporary_test_root("live_parser") as root:
             live_state_path = root / "live_state.json"
             live_state_path.write_text("{invalid", encoding="utf-8")
             observation = LiveObservationParser().parse_file(live_state_path)
-        finally:
-            shutil.rmtree(root, ignore_errors=True)
-            self.cleanup_fixture_base()
 
         self.assertIsNone(observation)
 
@@ -121,28 +111,10 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.deck_key, "b_yellow")
 
     def parse_payload(self, payload: dict[str, object]) -> GameObservation | None:
-        root = self.make_fixture_root()
-        try:
+        with temporary_test_root("live_parser") as root:
             live_state_path = root / "live_state.json"
             live_state_path.write_text(json.dumps(payload), encoding="utf-8")
             return LiveObservationParser().parse_file(live_state_path)
-        finally:
-            shutil.rmtree(root, ignore_errors=True)
-            self.cleanup_fixture_base()
-
-    def make_fixture_root(self) -> Path:
-        base = Path("tests_tmp")
-        base.mkdir(exist_ok=True)
-        root = base / f"live_parser_{uuid4().hex}"
-        root.mkdir()
-        return root
-
-    def cleanup_fixture_base(self) -> None:
-        base = Path("tests_tmp")
-        try:
-            base.rmdir()
-        except OSError:
-            pass
 
 
 if __name__ == "__main__":
