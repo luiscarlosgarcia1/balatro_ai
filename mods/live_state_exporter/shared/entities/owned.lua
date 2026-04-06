@@ -39,6 +39,7 @@ return function(common)
       perish_tally = stickers.perish_tally,
       edition = common.read_edition(card),
       debuffed = card.debuff == true,
+      cost = common.read_cost(card),
       sell_cost = common.read_sell_cost(card),
     }
   end

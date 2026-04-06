@@ -54,7 +54,6 @@ return function(values, primitives, entities)
       return optional_or_null(nil)
     end
     return {
-      pack = optional_or_null(source.pack ~= nil and entities.clone_pack(source.pack) or nil),
       choices_remaining = optional_or_null(source.choices_remaining),
       skip_available = source.skip_available == true,
       items = clone_mapped_array(source.items, clone_pack_item),

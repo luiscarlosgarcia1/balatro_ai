@@ -25,6 +25,12 @@ def string_or_none(value: object) -> str | None:
     return str(value)
 
 
+def keyed_string_or_none(value: object) -> str | None:
+    if isinstance(value, dict):
+        return string_or_none(value.get("key"))
+    return string_or_none(value)
+
+
 def first_non_none(*values: object) -> object | None:
     for value in values:
         if value is not None:

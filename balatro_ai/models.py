@@ -94,6 +94,7 @@ class ObservedJoker:
     perish_tally: int | None             # card.lua: card.ability.perish_tally
     edition: str | None = None           # card.lua: card.edition.type
     debuffed: bool = False               # card.lua: card.debuff
+    cost: int | None = None              # card.lua: card.cost
     sell_cost: int | None = None         # card.lua: card.sell_cost
 
 
@@ -138,7 +139,6 @@ ObservedPackItem = ObservedCard | ObservedConsumable | ObservedJoker
 class ObservedPackContents:
     """Active opened-pack interaction state, including visible reward choices."""
 
-    pack: ObservedPack | None = None                 # card.lua: opened booster self.config.center
     choices_remaining: int | None = None             # card.lua: G.GAME.pack_choices
     skip_available: bool = False                     # button_callbacks.lua: can_skip_booster(...)
     items: tuple[ObservedPackItem, ...] = ()         # card.lua: G.pack_cards.cards
@@ -193,7 +193,6 @@ class GameObservation:
 
     deck_key: str | None = None           # main.lua: summarize_deck(game).key <- game.selected_back_key / game.selected_back.key
     stake_id: str | int | None = None  # main.lua: summarize_stake(...).key / .index
-    blind_key: str | None = None          # main.lua: BlindKey.derive(interaction_phase, blinds)
     ante: int | None = None               # game.lua: G.GAME.round_resets.ante
     round: int | None = None              # game.lua: G.GAME.round
     blinds: tuple[ObservedBlind, ...] = ()  # main.lua: collect_blinds(game)

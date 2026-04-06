@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from ...models import GameObservation, ObservedScore
-from .coercion import int_or_none, int_or_zero, parse_seen_at, string_or_none
+from .coercion import int_or_none, int_or_zero, keyed_string_or_none, parse_seen_at, string_or_none
 from .run_state import parse_interest, parse_pack_contents, parse_run_info
 from .shop import merge_shop_vouchers_into_shop_items, parse_shop_items
 from .zones import (
@@ -77,8 +77,7 @@ class LiveObservationParser:
             cards_in_hand=tuple(cards_in_hand),
             selected_cards=tuple(selected_cards),
             cards_in_deck=tuple(cards_in_deck),
-            blind_key=string_or_none(state.get("blind_key")),
-            deck_key=string_or_none(state.get("deck_key")),
+            deck_key=keyed_string_or_none(state.get("deck_key")),
             stake_id=state.get("stake_id"),
             ante=int_or_none(state.get("ante")),
             round=int_or_none(state.get("round", state.get("round_count", state.get("round_number")))),

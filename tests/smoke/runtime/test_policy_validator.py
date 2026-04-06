@@ -23,7 +23,6 @@ class DemoPolicySmokeTests(unittest.TestCase):
         action = DemoPolicy().choose_action(
             make_observation(
                 state_id=6,
-                blind_key="bl_small",
                 dollars=4,
                 hands_left=4,
                 discards_left=3,

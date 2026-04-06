@@ -78,6 +78,7 @@ def parse_joker(payload: object, fallback_index: int = 0) -> ObservedJoker | Non
         perish_tally=int_or_none(payload.get("perish_tally")),
         edition=string_or_none(payload.get("edition")),
         debuffed=bool(payload.get("debuffed", False)),
+        cost=int_or_none(payload.get("cost")),
         sell_cost=int_or_none(first_non_none(payload.get("sell_cost"), payload.get("sell_price"))),
     )
 

@@ -42,7 +42,7 @@ local c = schema.build_shell({
 local ea = out.encode_json(a)
 local eb = out.encode_json(b)
 ok(ea == eb, "encoder should be deterministic for identical payloads")
-has(ea, '"blind_key":null', "encoder should emit null for optional fields")
+has(ea, '"deck_key":null', "encoder should emit null for optional fields")
 has(ea, '"blinds":[]', "encoder should emit [] for empty arrays")
 has(ea, '"score":{"current":25,"target":300}', "encoder should emit nested objects")
 eq(out.make_signature(a), out.make_signature(b), "identical payloads should have the same signature")

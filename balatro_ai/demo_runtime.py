@@ -28,7 +28,6 @@ def create_demo_runner() -> EpisodeRunner:
     observations = [
         GameObservation(
             state_id=1,
-            blind_key="bl_small",
             dollars=4,
             hands_left=4,
             discards_left=3,
@@ -41,7 +40,6 @@ def create_demo_runner() -> EpisodeRunner:
         ),
         GameObservation(
             state_id=2,
-            blind_key="bl_small",
             dollars=4,
             hands_left=4,
             discards_left=3,

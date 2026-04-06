@@ -25,9 +25,10 @@ class DemoPolicy:
         dollars = observation.dollars
 
         if phase == "blind_select":
+            target = observation.blinds[0].key if observation.blinds else None
             return GameAction(
                 kind="select_blind",
-                target=observation.blind_key,
+                target=target,
                 reason="Advance into the round by selecting the available blind.",
             )
 

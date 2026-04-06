@@ -43,7 +43,6 @@ function schema.build_shell(source)
     },
     deck_key = optional_or_null(source.deck_key),
     stake_id = optional_or_null(source.stake_id),
-    blind_key = optional_or_null(source.blind_key),
     ante = optional_or_null(source.ante),
     round = optional_or_null(source.round),
     blinds = sections.clone_blinds(source.blinds),

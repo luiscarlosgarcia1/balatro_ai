@@ -16,7 +16,6 @@ class ObserverServiceSmokeTests(unittest.TestCase):
             "source": "live_state_exporter",
             "state_id": 41,
             "interaction_phase": "shop",
-            "blind_key": "bl_small",
             "deck_key": "b_erratic",
             "score": {"current": 75, "target": 300},
             "money": 10,

@@ -29,7 +29,6 @@ eq(shell.score.target, 0, "score.target should default to 0")
 ok(schema.is_null(shell.interaction_phase), "interaction_phase should default to null")
 ok(schema.is_null(shell.deck_key), "deck_key should default to null")
 ok(schema.is_null(shell.stake_id), "stake_id should default to null")
-ok(schema.is_null(shell.blind_key), "blind_key should default to null")
 ok(schema.is_null(shell.ante), "ante should default to null")
 ok(schema.is_null(shell.round), "round should default to null")
 ok(schema.is_null(shell.joker_slots), "joker_slots should default to null")
@@ -99,6 +98,7 @@ ok(schema.is_null(shaped.cards_in_hand[1].cost), "hand card cost should shape to
 ok(schema.is_null(shaped.cards_in_hand[1].sell_cost), "hand card sell_cost should shape to null")
 ok(schema.is_null(shaped.jokers[1].perish_tally), "joker perish_tally should shape to null")
 ok(schema.is_null(shaped.jokers[1].edition), "joker edition should shape to null")
+ok(schema.is_null(shaped.jokers[1].cost), "joker cost should shape to null")
 ok(schema.is_null(shaped.jokers[1].sell_cost), "joker sell_cost should shape to null")
 ok(schema.is_null(shaped.consumables[1].edition), "consumable edition should shape to null")
 ok(schema.is_null(shaped.consumables[1].cost), "consumable cost should shape to null")
@@ -122,10 +122,6 @@ local shaped_market = schema.build_shell({
     },
   },
   pack_contents = {
-    pack = {
-      key = "p_arcana_normal_1",
-      instance_id = 5,
-    },
     choices_remaining = 2,
     skip_available = false,
     items = {
@@ -160,7 +156,6 @@ ok(schema.is_null(shaped_market.shop_items[2].card), "shell should null-fill ina
 ok(schema.is_null(shaped_market.shop_items[2].joker), "shell should null-fill inactive shop joker member on voucher wrappers")
 eq(shaped_market.shop_items[2].voucher.key, "v_clearance_sale", "shell should preserve active shop voucher payload")
 ok(type(shaped_market.pack_contents) == "table", "shell should keep active pack_contents object")
-ok(schema.is_null(shaped_market.pack_contents.pack.cost), "shell should null-fill missing pack cost")
 eq(shaped_market.pack_contents.choices_remaining, 2, "shell should preserve pack choice count")
 eq(shaped_market.pack_contents.skip_available, false, "shell should preserve pack skip flag")
 eq(#shaped_market.pack_contents.items, 3, "shell should keep pack item array")

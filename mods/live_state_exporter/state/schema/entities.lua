@@ -38,6 +38,7 @@ return function(values, primitives)
       perish_tally = optional_or_null(joker.perish_tally),
       edition = optional_or_null(joker.edition),
       debuffed = joker.debuffed == true,
+      cost = optional_or_null(joker.cost),
       sell_cost = optional_or_null(joker.sell_cost),
     }
   end

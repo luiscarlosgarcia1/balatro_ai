@@ -84,6 +84,7 @@ local second = zones.collect({
       {
         ID = 201,
         debuff = true,
+        cost = 11,
         sell_cost = 6,
         config = {
           center_key = "j_greedy_joker",
@@ -137,6 +138,7 @@ eq(second.jokers[1].rental, true, "collector should export joker rental sticker 
 eq(second.jokers[1].perish_tally, 2, "collector should export joker perish_tally")
 eq(second.jokers[1].edition, "negative", "collector should export joker edition")
 eq(second.jokers[1].debuffed, true, "collector should export joker debuffed state")
+eq(second.jokers[1].cost, 11, "collector should export joker cost")
 eq(second.jokers[1].sell_cost, 6, "collector should export joker sell_cost")
 
 eq(#second.consumables, 1, "collector should drop consumables without real ids or keys")

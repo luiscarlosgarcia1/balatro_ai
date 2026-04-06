@@ -55,23 +55,6 @@ local function has_play_state(game)
   return hands_left ~= nil and hands_left > 0
 end
 
-local function is_selectable_state(state)
-  local normalized = lower_string(state)
-  if normalized == nil or normalized == "" then
-    return true
-  end
-  return normalized ~= "defeated"
-    and normalized ~= "skipped"
-    and normalized ~= "selected"
-    and normalized ~= "current"
-    and normalized ~= "cleared"
-end
-
-local function read_active_blind_key(game)
-  local blind = as_table(game and game.blind)
-  return first_defined(blind and blind.key, blind and blind.config_blind and blind.config_blind.key)
-end
-
 function phase.infer(root)
   root = as_table(root) or {}
   local game = as_table(root.GAME) or {}
@@ -105,26 +88,6 @@ function phase.infer(root)
     return "play_hand"
   end
   return "play_hand"
-end
-
-function phase.derive_blind_key(root, interaction_phase, blinds)
-  root = as_table(root) or {}
-  local game = as_table(root.GAME) or {}
-
-  if interaction_phase == "blind_select" and type(blinds) == "table" then
-    for i = 1, #blinds do
-      local blind = as_table(blinds[i])
-      if blind and blind.key and is_selectable_state(blind.state) then
-        return blind.key
-      end
-    end
-    if #blinds > 0 then
-      local first_blind = as_table(blinds[1])
-      return first_blind and first_blind.key or nil
-    end
-  end
-
-  return read_active_blind_key(game)
 end
 
 return phase

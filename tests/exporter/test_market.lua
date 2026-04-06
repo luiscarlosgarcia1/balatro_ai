@@ -31,6 +31,7 @@ local shop = market.collect({
       },
       {
         ID = 102,
+        cost = 9,
         sell_cost = 5,
         config = {
           center_key = "j_greedy_joker",
@@ -93,6 +94,7 @@ eq(shop.shop_items[1].card.instance_id, 101, "collector should keep playing card
 eq(shop.shop_items[1].card.enhancement, "m_bonus", "collector should keep playing card enhancement")
 ok(shop.shop_items[1].joker == nil, "card wrapper should leave other shop members nil")
 eq(shop.shop_items[2].joker.key, "j_greedy_joker", "collector should classify visible jokers")
+eq(shop.shop_items[2].joker.cost, 9, "collector should keep joker cost")
 eq(shop.shop_items[2].joker.perish_tally, 1, "collector should keep joker state")
 eq(shop.shop_items[3].consumable.key, "c_fool", "collector should classify visible consumables")
 eq(shop.shop_items[4].pack.key, "p_arcana_normal_1", "collector should classify visible packs")
@@ -133,6 +135,7 @@ local pack = market.collect({
       },
       {
         ID = 302,
+        cost = 8,
         sell_cost = 4,
         config = {
           center_key = "j_blue_joker",
@@ -161,15 +164,13 @@ local pack = market.collect({
 }, "pack_reward")
 
 ok(type(pack.pack_contents) == "table", "pack phase should export pack_contents")
-eq(pack.pack_contents.pack.key, "p_arcana_normal_1", "collector should export opened pack key")
-eq(pack.pack_contents.pack.instance_id, 201, "collector should export opened pack id")
-eq(pack.pack_contents.pack.cost, 6, "collector should export opened pack cost")
 eq(pack.pack_contents.choices_remaining, 2, "collector should export pack choices remaining")
 eq(pack.pack_contents.skip_available, true, "collector should honor explicit pack skip flag")
 eq(#pack.pack_contents.items, 3, "collector should keep only valid pack reward items")
 eq(pack.pack_contents.items[1].card_key, "H_A", "collector should export pack playing cards first in UI order")
 eq(pack.pack_contents.items[1].enhancement, "m_mult", "collector should preserve card fields for pack items")
 eq(pack.pack_contents.items[2].key, "j_blue_joker", "collector should classify pack jokers")
+eq(pack.pack_contents.items[2].cost, 8, "collector should preserve joker cost in pack items")
 eq(pack.pack_contents.items[2].perishable, true, "collector should preserve joker state in pack items")
 eq(pack.pack_contents.items[3].key, "c_fool", "collector should classify pack consumables")
 
@@ -191,6 +192,37 @@ local pack_skip_fallback = market.collect({
 
 eq(pack_skip_fallback.pack_contents.skip_available, true, "collector should fallback to explicit game-level skip flag")
 
+local pack_skip_runtime_fallback = market.collect({
+  STATE = "standard_pack_state",
+  STATES = {
+    STANDARD_PACK = "standard_pack_state",
+  },
+  pack_cards = {
+    cards = {},
+  },
+  GAME = {
+    pack_choices = 1,
+  },
+}, "pack_reward")
+
+eq(pack_skip_runtime_fallback.pack_contents.skip_available, true, "collector should mirror runtime pack skip gating when explicit booleans are absent")
+
+local pack_skip_blocked = market.collect({
+  STATE = "standard_pack_state",
+  STATES = {
+    STANDARD_PACK = "standard_pack_state",
+  },
+  pack_cards = {
+    cards = {},
+  },
+  GAME = {
+    pack_choices = 1,
+    STOP_USE = 1,
+  },
+}, "pack_reward")
+
+eq(pack_skip_blocked.pack_contents, nil, "collector should suppress pack_contents when STOP_USE blocks skip and no pack items are visible")
+
 local pack_no_skip = market.collect({
   pack = {
     ID = 203,
@@ -206,4 +238,4 @@ local pack_no_skip = market.collect({
   },
 }, "pack_reward")
 
-eq(pack_no_skip.pack_contents.skip_available, false, "collector should default skip_available to false without explicit booleans")
+eq(pack_no_skip.pack_contents, nil, "collector should suppress pack_contents when there are no visible pack items and no skip action")

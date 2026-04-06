@@ -26,6 +26,34 @@ local as_table = values.as_table
 local to_number = values.to_number
 local first_boolean = values.first_boolean
 
+local function state_equals(root, name)
+  local states = as_table(root and root.STATES) or {}
+  local expected = states[name]
+  return expected ~= nil and root and root.STATE == expected
+end
+
+local function read_pack_skip_available(root, game, pack)
+  local direct = first_boolean(
+    pack and pack.skip_available,
+    pack and pack.can_skip,
+    game and game.pack_skip_available
+  )
+  if direct ~= nil then
+    return direct
+  end
+
+  local stop_use = to_number(game and game.STOP_USE) or 0
+  if not as_table(root and root.pack_cards) or stop_use > 0 then
+    return false
+  end
+
+  return state_equals(root, "SMODS_BOOSTER_OPENED")
+    or state_equals(root, "PLANET_PACK")
+    or state_equals(root, "STANDARD_PACK")
+    or state_equals(root, "BUFFOON_PACK")
+    or as_table(root and root.hand) ~= nil
+end
+
 local function append_row_items(target, source)
   source = as_table(source) or {}
   for i = 1, #source do
@@ -58,9 +86,9 @@ function market.collect(root, interaction_phase)
 
   if interaction_phase == "pack_reward" then
     local pack = as_table(root.pack)
-    local pack_item = entity_market.read_pack(pack)
     local pack_cards = as_table(root.pack_cards)
     local items = {}
+    local skip_available = read_pack_skip_available(root, game, pack)
     local source = as_table(pack_cards and pack_cards.cards) or {}
 
     for i = 1, #source do
@@ -70,15 +98,13 @@ function market.collect(root, interaction_phase)
       end
     end
 
+    if #items == 0 and not skip_available then
+      return out
+    end
+
     out.pack_contents = {
-      pack = pack_item,
       choices_remaining = to_number(game.pack_choices),
-      skip_available = first_boolean(
-        pack and pack.skip_available,
-        pack and pack.can_skip,
-        game.pack_skip_available,
-        game.can_skip_booster
-      ) == true,
+      skip_available = skip_available,
       items = items,
     }
   end

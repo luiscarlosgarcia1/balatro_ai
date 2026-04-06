@@ -16,7 +16,6 @@ class LiveParserSmokeTests(unittest.TestCase):
             "source": "live_state_exporter",
             "state_id": 41,
             "interaction_phase": "shop",
-            "blind_key": "bl_small",
             "deck_key": "b_erratic",
             "score": {"current": 75, "target": 300},
             "money": 10,
@@ -28,6 +27,7 @@ class LiveParserSmokeTests(unittest.TestCase):
                         "key": "j_blue_joker",
                         "instance_id": 101,
                         "eternal": True,
+                        "cost": 6,
                         "sell_cost": 2,
                     }
                 },
@@ -56,7 +56,6 @@ class LiveParserSmokeTests(unittest.TestCase):
 
         self.assertIsInstance(observation, GameObservation)
         self.assertEqual(observation.state_id, 41)
-        self.assertEqual(observation.blind_key, "bl_small")
         self.assertEqual(observation.deck_key, "b_erratic")
         self.assertEqual(observation.score, ObservedScore(current=75, target=300))
         self.assertEqual(observation.dollars, 10)
@@ -70,6 +69,7 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.shop_items[0].joker.key, "j_blue_joker")
         self.assertEqual(observation.shop_items[0].joker.instance_id, 101)
         self.assertTrue(observation.shop_items[0].joker.eternal)
+        self.assertEqual(observation.shop_items[0].joker.cost, 6)
         self.assertEqual(observation.shop_items[1].voucher.key, "v_clearance_sale")
         self.assertEqual(observation.shop_items[1].voucher.cost, 10)
         self.assertEqual(observation.shop_items[2].pack.key, "p_arcana_normal_1")
@@ -98,6 +98,24 @@ class LiveParserSmokeTests(unittest.TestCase):
             self.cleanup_fixture_base()
 
         self.assertIsNone(observation)
+
+    def test_parse_deck_key_object_uses_nested_key(self) -> None:
+        observation = self.parse_payload(
+            {
+                "state_id": 9,
+                "deck_key": {
+                    "key": "b_yellow",
+                    "name": "Yellow Deck",
+                },
+                "score": {"current": 0, "target": 100},
+                "dollars": 0,
+                "hands_left": 0,
+                "discards_left": 0,
+            }
+        )
+
+        self.assertIsNotNone(observation)
+        self.assertEqual(observation.deck_key, "b_yellow")
 
     def parse_payload(self, payload: dict[str, object]) -> GameObservation | None:
         root = self.make_fixture_root()

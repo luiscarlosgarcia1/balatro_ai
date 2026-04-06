@@ -9,7 +9,7 @@ from ...models import (
     RUN_INFO_HAND_ORDER,
 )
 from .coercion import int_or_none, int_or_zero
-from .zones import parse_card, parse_consumable, parse_joker, parse_pack
+from .zones import parse_card, parse_consumable, parse_joker
 
 
 def parse_interest(payload: object) -> ObservedInterest | None:
@@ -66,7 +66,6 @@ def parse_pack_contents(payload: object) -> ObservedPackContents | None:
                 items.append(parsed_item)
 
     return ObservedPackContents(
-        pack=parse_pack(payload.get("pack"), 0),
         choices_remaining=int_or_none(payload.get("choices_remaining")),
         skip_available=bool(payload.get("skip_available", False)),
         items=tuple(items),

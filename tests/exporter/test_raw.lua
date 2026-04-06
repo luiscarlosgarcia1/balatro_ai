@@ -50,6 +50,14 @@ eq(partial.dollars, nil, "missing dollars should stay nil before shell defaults"
 eq(partial.score.current, nil, "missing score.current should stay nil before shell defaults")
 eq(partial.score.target, nil, "missing score.target should stay nil before shell defaults")
 
+local table_deck_key = raw.read_state({
+  GAME = {
+    selected_back_key = { key = "b_yellow", name = "Yellow Deck" },
+  },
+})
+
+eq(table_deck_key.deck_key, "b_yellow", "reader should extract deck_key from selected_back_key tables")
+
 local phase_two = raw.read_state({
   STATE = 12,
   tags = {
@@ -192,7 +200,6 @@ local phase_two = raw.read_state({
 })
 
 eq(phase_two.interaction_phase, "shop", "reader should preserve inferred interaction_phase")
-eq(phase_two.blind_key, "bl_big", "reader should derive blind_key from active blind outside blind select")
 eq(#phase_two.blinds, 3, "reader should export blind rows")
 eq(phase_two.blinds[3].tag_key, "tag_boss", "reader should export blind tag keys")
 eq(phase_two.run_info.hands.Pair.level, 2, "reader should export run_info hands")
@@ -315,7 +322,6 @@ local pack_state = raw.read_state({
 
 eq(pack_state.interaction_phase, "pack_reward", "reader should infer pack_reward phase")
 ok(type(pack_state.pack_contents) == "table", "reader should export active pack_contents")
-eq(pack_state.pack_contents.pack.key, "p_arcana_normal_1", "reader should export opened pack")
 eq(pack_state.pack_contents.choices_remaining, 2, "reader should export pack choice count")
 eq(pack_state.pack_contents.skip_available, true, "reader should export explicit pack skip availability")
 eq(#pack_state.pack_contents.items, 3, "reader should export concrete pack items")
@@ -367,7 +373,6 @@ local nfs_state = nfs_raw.read_state({
 })
 
 eq(nfs_state.interaction_phase, "shop", "NFS-loaded raw reader should preserve inferred interaction_phase")
-eq(nfs_state.blind_key, "bl_big", "NFS-loaded raw reader should keep nested phase and collector behavior")
 
 local saw_values = false
 local saw_common = false

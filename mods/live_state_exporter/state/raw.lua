@@ -27,9 +27,22 @@ local as_table = values.as_table
 local to_number = values.to_number
 local first_defined = values.first_defined
 
+local function read_key(value)
+  local value_table = as_table(value)
+  if value_table then
+    return value_table.key
+  end
+  if type(value) == "string" then
+    return value
+  end
+  return nil
+end
+
 local function read_deck_key(game)
-  local selected_back = as_table(game and game.selected_back)
-  return first_defined(game and game.selected_back_key, selected_back and selected_back.key)
+  return first_defined(
+    read_key(game and game.selected_back_key),
+    read_key(game and game.selected_back)
+  )
 end
 
 function raw.read_state(root)
@@ -57,7 +70,6 @@ function raw.read_state(root)
     },
     deck_key = read_deck_key(game),
     stake_id = first_defined(game.stake_id, game.stake),
-    blind_key = phase.derive_blind_key(root, interaction_phase, blinds),
     ante = to_number(resets.ante),
     round = to_number(game.round),
     blinds = blinds,
