@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from .models import GameAction, GameObservation, ObservedBlind, ObservedJoker, ObservedScore, ObservedShopItem
+from .models import GameAction, GameObservation, ObservedBlind, ObservedJoker, ObservedScore
 from .policy import DemoPolicy, RuleBasedValidator
 from .runtime import EpisodeRunner
 
@@ -72,15 +72,13 @@ def create_demo_runner() -> EpisodeRunner:
                 ),
             ),
             shop_items=(
-                ObservedShopItem(
-                    joker=ObservedJoker(
-                        instance_id=202,
-                        key="j_banner",
-                        eternal=False,
-                        perishable=False,
-                        rental=False,
-                        perish_tally=None,
-                    )
+                ObservedJoker(
+                    instance_id=202,
+                    key="j_banner",
+                    eternal=False,
+                    perishable=False,
+                    rental=False,
+                    perish_tally=None,
                 ),
             ),
         ),

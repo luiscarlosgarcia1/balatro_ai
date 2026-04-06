@@ -18,8 +18,6 @@ return function(values, primitives)
       seal = optional_or_null(card.seal),
       facing = optional_or_null(card.facing),
       debuffed = card.debuffed == true,
-      cost = optional_or_null(card.cost),
-      sell_cost = optional_or_null(card.sell_cost),
     }
   end
 

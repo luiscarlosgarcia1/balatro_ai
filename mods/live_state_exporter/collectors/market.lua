@@ -74,13 +74,13 @@ function market.collect(root, interaction_phase)
   }
 
   if interaction_phase == "shop" then
-    local shop = as_table(root.shop)
     local shop_jokers = as_table(root.shop_jokers)
+    local shop_booster = as_table(root.shop_booster)
     local shop_vouchers = as_table(root.shop_vouchers)
-    local main_cards = (shop and shop.cards) or (shop_jokers and shop_jokers.cards)
 
-    append_row_items(out.shop_items, main_cards)
+    append_row_items(out.shop_items, shop_jokers and shop_jokers.cards)
     append_row_items(out.shop_items, shop_vouchers and shop_vouchers.cards)
+    append_row_items(out.shop_items, shop_booster and shop_booster.cards)
     return out
   end
 

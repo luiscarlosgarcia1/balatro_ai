@@ -36,17 +36,16 @@ local function has_blind_rows(game)
 end
 
 local function has_pack_state(root, game)
-  return game and game.pack_choices ~= nil
-    or type(root and root.pack_cards) == "table"
+  return type(root and root.pack_cards) == "table"
     or type(root and root.pack) == "table"
 end
 
 local function has_shop_state(root, game)
   local round = as_table(game and game.current_round) or {}
   return round.reroll_cost ~= nil
-    or type(root and root.shop) == "table"
     or type(root and root.shop_jokers) == "table"
     or type(root and root.shop_vouchers) == "table"
+    or type(root and root.shop_booster) == "table"
 end
 
 local function has_play_state(game)

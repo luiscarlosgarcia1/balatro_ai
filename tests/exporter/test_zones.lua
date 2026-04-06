@@ -62,8 +62,6 @@ eq(first.cards_in_hand[1].edition, "foil", "collector should export edition")
 eq(first.cards_in_hand[1].seal, "Red", "collector should export seal")
 eq(first.cards_in_hand[1].facing, "front", "collector should export facing")
 eq(first.cards_in_hand[1].debuffed, true, "collector should export debuffed state")
-eq(first.cards_in_hand[1].cost, 4, "collector should export cost")
-eq(first.cards_in_hand[1].sell_cost, 2, "collector should export sell_cost")
 eq(first.cards_in_hand[2].card_key, "H_10", "collector should preserve visible hand order")
 
 eq(#first.selected_cards, 1, "collector should export only selected cards with real id and key")
@@ -138,14 +136,14 @@ eq(second.jokers[1].rental, true, "collector should export joker rental sticker 
 eq(second.jokers[1].perish_tally, 2, "collector should export joker perish_tally")
 eq(second.jokers[1].edition, "negative", "collector should export joker edition")
 eq(second.jokers[1].debuffed, true, "collector should export joker debuffed state")
-eq(second.jokers[1].cost, 11, "collector should export joker cost")
+eq(second.jokers[1].cost, nil, "collector should omit joker cost outside shop")
 eq(second.jokers[1].sell_cost, 6, "collector should export joker sell_cost")
 
 eq(#second.consumables, 1, "collector should drop consumables without real ids or keys")
 eq(second.consumables[1].key, "c_fool", "collector should export consumable key")
 eq(second.consumables[1].instance_id, 301, "collector should export consumable instance_id")
 eq(second.consumables[1].edition, "holo", "collector should export consumable edition")
-eq(second.consumables[1].cost, 3, "collector should export consumable cost")
+eq(second.consumables[1].cost, nil, "collector should omit consumable cost outside shop")
 eq(second.consumables[1].sell_cost, 1, "collector should export consumable sell_cost")
 
 local third = zones.collect({

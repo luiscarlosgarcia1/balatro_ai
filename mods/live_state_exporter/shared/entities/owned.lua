@@ -17,8 +17,6 @@ return function(common)
       seal = card.seal,
       facing = card.facing,
       debuffed = card.debuff == true,
-      cost = common.read_cost(card),
-      sell_cost = common.read_sell_cost(card),
     }
   end
 
@@ -39,7 +37,6 @@ return function(common)
       perish_tally = stickers.perish_tally,
       edition = common.read_edition(card),
       debuffed = card.debuff == true,
-      cost = common.read_cost(card),
       sell_cost = common.read_sell_cost(card),
     }
   end
@@ -55,7 +52,6 @@ return function(common)
       key = key,
       instance_id = instance_id,
       edition = common.read_edition(card),
-      cost = common.read_cost(card),
       sell_cost = common.read_sell_cost(card),
     }
   end

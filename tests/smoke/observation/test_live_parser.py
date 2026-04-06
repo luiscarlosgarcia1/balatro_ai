@@ -6,12 +6,12 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from balatro_ai.models import GameObservation, ObservedScore
+from balatro_ai.models import GameObservation, ObservedJoker, ObservedPack, ObservedScore, ObservedVoucher
 from balatro_ai.observation.parser import LiveObservationParser
 
 
 class LiveParserSmokeTests(unittest.TestCase):
-    def test_parse_wrapped_shop_items_into_typed_observation(self) -> None:
+    def test_parse_shop_items_into_concrete_typed_observation(self) -> None:
         payload = {
             "source": "live_state_exporter",
             "state_id": 41,
@@ -28,7 +28,6 @@ class LiveParserSmokeTests(unittest.TestCase):
                         "instance_id": 101,
                         "eternal": True,
                         "cost": 6,
-                        "sell_cost": 2,
                     }
                 },
                 {
@@ -66,15 +65,19 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.selected_cards, ())
         self.assertEqual(observation.cards_in_deck, ())
         self.assertEqual(len(observation.shop_items), 3)
-        self.assertEqual(observation.shop_items[0].joker.key, "j_blue_joker")
-        self.assertEqual(observation.shop_items[0].joker.instance_id, 101)
-        self.assertTrue(observation.shop_items[0].joker.eternal)
-        self.assertEqual(observation.shop_items[0].joker.cost, 6)
-        self.assertEqual(observation.shop_items[1].voucher.key, "v_clearance_sale")
-        self.assertEqual(observation.shop_items[1].voucher.cost, 10)
-        self.assertEqual(observation.shop_items[2].pack.key, "p_arcana_normal_1")
-        self.assertEqual(observation.shop_items[2].pack.instance_id, 202)
-        self.assertEqual(observation.shop_items[2].pack.cost, 4)
+        self.assertIsInstance(observation.shop_items[0], ObservedJoker)
+        self.assertEqual(observation.shop_items[0].key, "j_blue_joker")
+        self.assertEqual(observation.shop_items[0].instance_id, 101)
+        self.assertTrue(observation.shop_items[0].eternal)
+        self.assertEqual(observation.shop_items[0].cost, 6)
+        self.assertIsNone(observation.shop_items[0].sell_cost)
+        self.assertIsInstance(observation.shop_items[1], ObservedVoucher)
+        self.assertEqual(observation.shop_items[1].key, "v_clearance_sale")
+        self.assertEqual(observation.shop_items[1].cost, 10)
+        self.assertIsInstance(observation.shop_items[2], ObservedPack)
+        self.assertEqual(observation.shop_items[2].key, "p_arcana_normal_1")
+        self.assertEqual(observation.shop_items[2].instance_id, 202)
+        self.assertEqual(observation.shop_items[2].cost, 4)
 
     def test_parse_missing_file_returns_none(self) -> None:
         root = self.make_fixture_root()

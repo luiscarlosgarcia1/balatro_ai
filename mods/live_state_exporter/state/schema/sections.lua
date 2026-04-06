@@ -27,13 +27,32 @@ return function(values, primitives, entities)
   function sections.clone_shop_items(source)
     return clone_mapped_array(source, function(item)
       item = as_table(item) or {}
-      return {
-        card = optional_or_null(item.card ~= nil and entities.clone_card(item.card) or nil),
-        joker = optional_or_null(item.joker ~= nil and entities.clone_joker(item.joker) or nil),
-        consumable = optional_or_null(item.consumable ~= nil and entities.clone_consumable(item.consumable) or nil),
-        voucher = optional_or_null(item.voucher ~= nil and entities.clone_voucher(item.voucher) or nil),
-        pack = optional_or_null(item.pack ~= nil and entities.clone_pack(item.pack) or nil),
-      }
+      if item.card ~= nil then
+        return {
+          card = entities.clone_card(item.card),
+        }
+      end
+      if item.joker ~= nil then
+        return {
+          joker = entities.clone_joker(item.joker),
+        }
+      end
+      if item.consumable ~= nil then
+        return {
+          consumable = entities.clone_consumable(item.consumable),
+        }
+      end
+      if item.voucher ~= nil then
+        return {
+          voucher = entities.clone_voucher(item.voucher),
+        }
+      end
+      if item.pack ~= nil then
+        return {
+          pack = entities.clone_pack(item.pack),
+        }
+      end
+      return {}
     end)
   end
 

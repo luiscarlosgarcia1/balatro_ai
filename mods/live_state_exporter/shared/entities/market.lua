@@ -12,6 +12,60 @@ return function(common, owned)
     }
   end
 
+  local function read_shop_playing_card(card)
+    local instance_id = common.read_instance_id(card)
+    local card_key = common.read_card_key(card)
+    if instance_id == nil or card_key == nil then
+      return nil
+    end
+
+    return {
+      card_key = card_key,
+      instance_id = instance_id,
+      enhancement = common.read_card_enhancement(card),
+      edition = common.read_edition(card),
+      seal = card.seal,
+      facing = card.facing,
+      debuffed = card.debuff == true,
+    }
+  end
+
+  local function read_shop_joker(card, key)
+    local instance_id = common.read_instance_id(card)
+    key = key or common.read_center_key(card)
+    if instance_id == nil or key == nil then
+      return nil
+    end
+
+    local stickers = common.read_joker_stickers(card)
+    return {
+      key = key,
+      instance_id = instance_id,
+      eternal = stickers.eternal,
+      perishable = stickers.perishable,
+      rental = stickers.rental,
+      perish_tally = stickers.perish_tally,
+      edition = common.read_edition(card),
+      debuffed = card.debuff == true,
+      cost = common.read_cost(card),
+    }
+  end
+
+  local function read_shop_consumable(card, key)
+    local instance_id = common.read_instance_id(card)
+    key = key or common.read_center_key(card)
+    if instance_id == nil or key == nil then
+      return nil
+    end
+
+    return {
+      key = key,
+      instance_id = instance_id,
+      edition = common.read_edition(card),
+      cost = common.read_cost(card),
+    }
+  end
+
   function market.read_pack(card, key)
     local instance_id = common.read_instance_id(card)
     key = key or common.read_center_key(card)
@@ -41,7 +95,7 @@ return function(common, owned)
   function market.classify_shop_item(card)
     local card_key = common.read_card_key(card)
     if card_key ~= nil then
-      local item = owned.read_playing_card(card)
+      local item = read_shop_playing_card(card)
       if item ~= nil then
         return wrap_shop_item("card", item)
       end
@@ -55,11 +109,11 @@ return function(common, owned)
 
     local prefix = center_key:sub(1, 2)
     if prefix == "j_" then
-      local item = owned.read_joker(card, center_key)
+      local item = read_shop_joker(card, center_key)
       return item ~= nil and wrap_shop_item("joker", item) or nil
     end
     if prefix == "c_" then
-      local item = owned.read_consumable(card, center_key)
+      local item = read_shop_consumable(card, center_key)
       return item ~= nil and wrap_shop_item("consumable", item) or nil
     end
     if prefix == "p_" then

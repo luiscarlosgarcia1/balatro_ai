@@ -13,7 +13,7 @@ local function ok(v, msg)
 end
 
 local shop = market.collect({
-  shop = {
+  shop_jokers = {
     cards = {
       {
         ID = 101,
@@ -56,7 +56,11 @@ local shop = market.collect({
         edition = {
           type = "holo",
         },
-      },
+      }
+    },
+  },
+  shop_booster = {
+    cards = {
       {
         ID = 104,
         cost = 6,
@@ -95,15 +99,18 @@ eq(shop.shop_items[1].card.enhancement, "m_bonus", "collector should keep playin
 ok(shop.shop_items[1].joker == nil, "card wrapper should leave other shop members nil")
 eq(shop.shop_items[2].joker.key, "j_greedy_joker", "collector should classify visible jokers")
 eq(shop.shop_items[2].joker.cost, 9, "collector should keep joker cost")
+eq(shop.shop_items[2].joker.sell_cost, nil, "collector should omit shop joker sell_cost")
 eq(shop.shop_items[2].joker.perish_tally, 1, "collector should keep joker state")
 eq(shop.shop_items[3].consumable.key, "c_fool", "collector should classify visible consumables")
-eq(shop.shop_items[4].pack.key, "p_arcana_normal_1", "collector should classify visible packs")
-eq(shop.shop_items[4].pack.instance_id, 104, "collector should keep pack ids")
-eq(shop.shop_items[5].voucher.key, "v_clearance_sale", "collector should append voucher row after shop row")
-eq(shop.shop_items[5].voucher.cost, 10, "collector should keep voucher cost")
-eq(shop.shop_items[6].voucher.key, "v_missing_cost", "collector should keep voucher keys without cost")
-eq(shop.shop_items[6].voucher.cost, 0, "collector should default voucher cost to 0")
-ok(shop.shop_items[6].pack == nil, "voucher wrapper should leave other shop members nil")
+eq(shop.shop_items[3].consumable.cost, 4, "collector should keep shop consumable cost")
+eq(shop.shop_items[3].consumable.sell_cost, nil, "collector should omit shop consumable sell_cost")
+eq(shop.shop_items[4].voucher.key, "v_clearance_sale", "collector should append voucher row after shop row")
+eq(shop.shop_items[4].voucher.cost, 10, "collector should keep voucher cost")
+eq(shop.shop_items[5].voucher.key, "v_missing_cost", "collector should keep voucher keys without cost")
+eq(shop.shop_items[5].voucher.cost, 0, "collector should default voucher cost to 0")
+ok(shop.shop_items[5].pack == nil, "voucher wrapper should leave other shop members nil")
+eq(shop.shop_items[6].pack.key, "p_arcana_normal_1", "collector should classify visible boosters from the shop_booster area")
+eq(shop.shop_items[6].pack.instance_id, 104, "collector should keep booster ids")
 
 local inactive = market.collect({}, "play_hand")
 eq(#inactive.shop_items, 0, "non-shop phases should export empty shop_items")
@@ -170,9 +177,11 @@ eq(#pack.pack_contents.items, 3, "collector should keep only valid pack reward i
 eq(pack.pack_contents.items[1].card_key, "H_A", "collector should export pack playing cards first in UI order")
 eq(pack.pack_contents.items[1].enhancement, "m_mult", "collector should preserve card fields for pack items")
 eq(pack.pack_contents.items[2].key, "j_blue_joker", "collector should classify pack jokers")
-eq(pack.pack_contents.items[2].cost, 8, "collector should preserve joker cost in pack items")
+eq(pack.pack_contents.items[2].cost, nil, "collector should omit pack joker cost outside shop")
+eq(pack.pack_contents.items[2].sell_cost, 4, "collector should keep pack joker sell_cost outside shop")
 eq(pack.pack_contents.items[2].perishable, true, "collector should preserve joker state in pack items")
 eq(pack.pack_contents.items[3].key, "c_fool", "collector should classify pack consumables")
+eq(pack.pack_contents.items[3].cost, nil, "collector should omit pack consumable cost outside shop")
 
 local pack_skip_fallback = market.collect({
   pack = {

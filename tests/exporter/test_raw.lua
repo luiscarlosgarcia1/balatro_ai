@@ -223,7 +223,7 @@ eq(phase_two.cards_in_deck[2].card_key, "H_A", "reader should export later deck 
 
 local market_state = raw.read_state({
   STATE = 15,
-  shop = {
+  shop_jokers = {
     cards = {
       {
         ID = 901,
@@ -240,6 +240,17 @@ local market_state = raw.read_state({
         },
         ability = {
           rental = true,
+        },
+      },
+    },
+  },
+  shop_booster = {
+    cards = {
+      {
+        ID = 903,
+        cost = 4,
+        config = {
+          center_key = "p_arcana_normal_1",
         },
       },
     },
@@ -269,11 +280,48 @@ local market_state = raw.read_state({
 })
 
 eq(market_state.interaction_phase, "shop", "reader should infer shop phase")
-eq(#market_state.shop_items, 3, "reader should export collected shop_items")
+eq(#market_state.shop_items, 4, "reader should export collected shop_items")
 eq(market_state.shop_items[1].card.card_key, "S_A", "reader should keep wrapped shop cards")
 eq(market_state.shop_items[2].joker.key, "j_blue_joker", "reader should keep wrapped shop jokers")
 eq(market_state.shop_items[3].voucher.key, "v_clearance_sale", "reader should append wrapped shop vouchers")
+eq(market_state.shop_items[4].pack.key, "p_arcana_normal_1", "reader should append wrapped shop boosters")
 eq(market_state.pack_contents, nil, "shop state should leave pack_contents inactive before shell shaping")
+
+local stale_pack_choice_shop_state = raw.read_state({
+  STATE = 5,
+  shop_jokers = {
+    cards = {
+      {
+        ID = 904,
+        config = {
+          center_key = "j_greedy_joker",
+        },
+      },
+    },
+  },
+  shop_vouchers = {
+    cards = {
+      {
+        cost = 10,
+        config = {
+          center_key = "v_clearance_sale",
+        },
+      },
+    },
+  },
+  GAME = {
+    pack_choices = 1,
+    current_round = {
+      hands_left = 2,
+      discards_left = 1,
+      reroll_cost = 5,
+    },
+  },
+})
+
+eq(stale_pack_choice_shop_state.interaction_phase, "shop", "reader should ignore stale pack choices when shop rows are visible")
+eq(#stale_pack_choice_shop_state.shop_items, 2, "reader should still export visible shop rows with stale pack choices")
+eq(stale_pack_choice_shop_state.pack_contents, nil, "reader should keep pack_contents inactive for stale pack choice shop states")
 
 local pack_state = raw.read_state({
   STATE = 16,

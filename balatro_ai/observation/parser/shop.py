@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...models import ObservedShopItem
+from ...models import ObservedCard, ObservedConsumable, ObservedJoker, ObservedPack, ObservedShopItem, ObservedVoucher
 from .zones import parse_card, parse_consumable, parse_joker, parse_pack, parse_voucher
 
 
@@ -22,39 +22,38 @@ def parse_shop_item(payload: object, fallback_index: int = 0) -> ObservedShopIte
 
     card_payload = payload.get("card")
     if card_payload is not None:
-        card = parse_card(card_payload, fallback_index)
-        if card is not None:
-            return ObservedShopItem(card=card)
-        return None
+        return parse_card(card_payload, fallback_index)
 
     joker_payload = payload.get("joker")
     if joker_payload is not None:
-        joker = parse_joker(joker_payload, fallback_index)
-        if joker is not None:
-            return ObservedShopItem(joker=joker)
-        return None
+        return parse_joker(joker_payload, fallback_index)
 
     consumable_payload = payload.get("consumable")
     if consumable_payload is not None:
-        consumable = parse_consumable(consumable_payload, fallback_index)
-        if consumable is not None:
-            return ObservedShopItem(consumable=consumable)
-        return None
+        return parse_consumable(consumable_payload, fallback_index)
 
     voucher_payload = payload.get("voucher")
     if voucher_payload is not None:
-        voucher = parse_voucher(voucher_payload)
-        if voucher is not None:
-            return ObservedShopItem(voucher=voucher)
-        return None
+        return parse_voucher(voucher_payload)
 
     pack_payload = payload.get("pack")
     if pack_payload is not None:
-        pack = parse_pack(pack_payload, fallback_index)
-        if pack is not None:
-            return ObservedShopItem(pack=pack)
-        return None
+        return parse_pack(pack_payload, fallback_index)
 
+    return None
+
+
+def shop_item_key(item: ObservedShopItem) -> str | None:
+    if isinstance(item, ObservedCard):
+        return item.card_key
+    if isinstance(item, ObservedJoker):
+        return item.key
+    if isinstance(item, ObservedConsumable):
+        return item.key
+    if isinstance(item, ObservedVoucher):
+        return item.key
+    if isinstance(item, ObservedPack):
+        return item.key
     return None
 
 
@@ -63,17 +62,10 @@ def merge_shop_vouchers_into_shop_items(*, shop_items: list[ObservedShopItem], s
         return shop_items
 
     merged = list(shop_items)
-    seen = {
-        item.card.card_key if item.card is not None else None
-        for item in merged
-    }
-    seen.update(item.joker.key if item.joker is not None else None for item in merged)
-    seen.update(item.consumable.key if item.consumable is not None else None for item in merged)
-    seen.update(item.voucher.key if item.voucher is not None else None for item in merged)
-    seen.update(item.pack.key if item.pack is not None else None for item in merged)
+    seen = {shop_item_key(item) for item in merged}
 
     for voucher in shop_vouchers:
-        dedupe_key = voucher.voucher.key if voucher.voucher is not None else None
+        dedupe_key = shop_item_key(voucher)
         if dedupe_key in seen:
             continue
         merged.append(voucher)

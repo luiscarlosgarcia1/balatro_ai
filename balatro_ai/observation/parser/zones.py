@@ -36,8 +36,6 @@ def parse_card(payload: object, fallback_index: int = 0) -> ObservedCard | None:
         seal=string_or_none(payload.get("seal")),
         facing=string_or_none(payload.get("facing")),
         debuffed=bool(payload.get("debuffed", False)),
-        cost=int_or_none(payload.get("cost")),
-        sell_cost=int_or_none(first_non_none(payload.get("sell_cost"), payload.get("sell_price"))),
     )
 
 

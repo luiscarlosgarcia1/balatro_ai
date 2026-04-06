@@ -6,12 +6,12 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from balatro_ai.models import GameObservation, ObservedScore
+from balatro_ai.models import GameObservation, ObservedJoker, ObservedPack, ObservedScore, ObservedVoucher
 from balatro_ai.observation import BalatroObserver, BalatroPaths
 
 
 class ObserverServiceSmokeTests(unittest.TestCase):
-    def test_observe_live_state_returns_wrapped_shop_items(self) -> None:
+    def test_observe_live_state_returns_concrete_shop_items(self) -> None:
         payload = {
             "source": "live_state_exporter",
             "state_id": 41,
@@ -65,10 +65,13 @@ class ObserverServiceSmokeTests(unittest.TestCase):
         self.assertEqual(observation.dollars, 10)
         self.assertEqual(observation.score, ObservedScore(current=75, target=300))
         self.assertEqual(len(observation.shop_items), 3)
-        self.assertEqual(observation.shop_items[0].joker.key, "j_blue_joker")
-        self.assertTrue(observation.shop_items[0].joker.perishable)
-        self.assertEqual(observation.shop_items[1].voucher.key, "v_clearance_sale")
-        self.assertEqual(observation.shop_items[2].pack.key, "p_arcana_normal_1")
+        self.assertIsInstance(observation.shop_items[0], ObservedJoker)
+        self.assertEqual(observation.shop_items[0].key, "j_blue_joker")
+        self.assertTrue(observation.shop_items[0].perishable)
+        self.assertIsInstance(observation.shop_items[1], ObservedVoucher)
+        self.assertEqual(observation.shop_items[1].key, "v_clearance_sale")
+        self.assertIsInstance(observation.shop_items[2], ObservedPack)
+        self.assertEqual(observation.shop_items[2].key, "p_arcana_normal_1")
 
     def test_observe_raises_file_not_found_when_live_state_is_missing(self) -> None:
         root = self.make_fixture_root()

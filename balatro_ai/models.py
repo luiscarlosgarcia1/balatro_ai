@@ -21,6 +21,19 @@ RUN_INFO_HAND_ORDER = (
 
 
 @dataclass(frozen=True)
+class ObservedCard:
+    """Observed playing card instance used across hand, deck, shop, and pack views."""
+    # Design note: suit and rank should be derived from card_key in the knowledge layer.
+    card_key: str                        # card.lua: card.config.card_key
+    instance_id: int                     # card.lua: card.ID
+    enhancement: str | None = None       # card.lua: card.config.center_key
+    edition: str | None = None           # card.lua: card.edition.type
+    seal: str | None = None              # card.lua: card.seal
+    facing: str | None = None            # card.lua: card.facing
+    debuffed: bool = False               # card.lua: card.debuff
+
+
+@dataclass(frozen=True)
 class ObservedCardPermanent:
     """Compact permanent per-card modifiers that persist across hands."""
     bonus_chips: int = 0                 # card.lua: card.ability.perma_bonus
@@ -32,50 +45,6 @@ class ObservedCardPermanent:
     held_x_mult: float = 0.0             # card.lua: card.ability.perma_h_x_mult
     play_dollars: int = 0                # card.lua: card.ability.perma_p_dollars
     held_dollars: int = 0                # card.lua: card.ability.perma_h_dollars
-
-
-@dataclass(frozen=True)
-class ObservedCard:
-    """Observed playing card instance used across hand, deck, shop, and pack views."""
-    # Design note: suit and rank should be derived from card_key in the knowledge layer.
-    card_key: str                        # card.lua: card.config.card_key
-    instance_id: int                     # card.lua: card.ID
-    enhancement: str | None = None       # card.lua: card.config.center_key
-    edition: str | None = None           # card.lua: card.edition.type
-    seal: str | None = None              # card.lua: card.seal
-    facing: str | None = None            # card.lua: card.facing
-    debuffed: bool = False               # card.lua: card.debuff
-    cost: int | None = None              # card.lua: card.cost
-    sell_cost: int | None = None         # card.lua: card.sell_cost
-
-
-@dataclass(frozen=True)
-class ObservedReference:
-    """Lightweight pointer to an interacted-with object without duplicating full payloads."""
-
-    zone: str                            # main.lua: collect_selected_cards(...).zone
-    instance_id: int                     # card.lua: selected card.ID
-    key: str                             # card.lua: selected config.card_key / config.center_key
-
-
-@dataclass(frozen=True)
-class ObservedVoucher:
-    """Minimal voucher identity and price for owned or shop-visible vouchers."""
-
-    key: str                             # card.lua: voucher card.config.center_key / G.GAME.used_vouchers[key]
-    cost: int                            # card.lua: voucher card.cost
-
-
-@dataclass(frozen=True)
-class ObservedConsumable:
-    """Observed consumable instance for inventory, shop, or pack contexts."""
-    # Design note: consumable family/kind should be derived from key in the knowledge layer.
-
-    key: str                             # card.lua: consumable card.config.center_key
-    instance_id: int                     # card.lua: card.ID
-    edition: str | None = None           # card.lua: card.edition.type
-    cost: int | None = None              # card.lua: card.cost
-    sell_cost: int | None = None         # card.lua: card.sell_cost
 
 
 @dataclass(frozen=True)
@@ -99,6 +68,26 @@ class ObservedJoker:
 
 
 @dataclass(frozen=True)
+class ObservedConsumable:
+    """Observed consumable instance for inventory, shop, or pack contexts."""
+    # Design note: consumable family/kind should be derived from key in the knowledge layer.
+
+    key: str                             # card.lua: consumable card.config.center_key
+    instance_id: int                     # card.lua: card.ID
+    edition: str | None = None           # card.lua: card.edition.type
+    cost: int | None = None              # card.lua: card.cost
+    sell_cost: int | None = None         # card.lua: card.sell_cost
+
+
+@dataclass(frozen=True)
+class ObservedVoucher:
+    """Minimal voucher identity and price for owned or shop-visible vouchers."""
+
+    key: str                             # card.lua: voucher card.config.center_key / G.GAME.used_vouchers[key]
+    cost: int                            # card.lua: voucher card.cost
+
+
+@dataclass(frozen=True)
 class ObservedTag:
     """Minimal tag identity for run-owned tags or blind skip rewards."""
 
@@ -114,15 +103,26 @@ class ObservedPack:
     cost: int | None = None              # card.lua: card.cost
 
 
+ObservedPackItem = ObservedCard | ObservedConsumable | ObservedJoker
 @dataclass(frozen=True)
-class ObservedShopItem:
-    """One-of wrapper around the concrete object currently visible in the shop."""
+class ObservedPackContents:
+    """Active opened-pack interaction state, including visible reward choices."""
 
-    card: ObservedCard | None = None                 # observer wrapper: visible shop playing card
-    joker: ObservedJoker | None = None               # observer wrapper: visible shop joker
-    consumable: ObservedConsumable | None = None     # observer wrapper: visible shop consumable
-    voucher: ObservedVoucher | None = None           # observer wrapper: visible shop voucher
-    pack: ObservedPack | None = None                 # observer wrapper: visible shop booster pack
+    choices_remaining: int | None = None             # card.lua: G.GAME.pack_choices
+    skip_available: bool = False                     # button_callbacks.lua: can_skip_booster(...)
+    items: tuple[ObservedPackItem, ...] = ()         # card.lua: G.pack_cards.cards
+
+
+ObservedShopItem = ObservedCard | ObservedConsumable | ObservedJoker | ObservedVoucher | ObservedPack
+
+
+@dataclass(frozen=True)
+class ObservedReference:
+    """Lightweight pointer to an interacted-with object without duplicating full payloads."""
+
+    zone: str                            # main.lua: collect_selected_cards(...).zone
+    instance_id: int                     # card.lua: selected card.ID
+    key: str                             # card.lua: selected config.card_key / config.center_key
 
 
 @dataclass(frozen=True)
@@ -132,16 +132,6 @@ class ObservedInterest:
     amount: int                          # game.lua: G.GAME.interest_amount
     cap: int                             # game.lua: G.GAME.interest_cap
     no_interest: bool                    # game.lua: G.GAME.modifiers.no_interest
-
-
-ObservedPackItem = ObservedCard | ObservedConsumable | ObservedJoker
-@dataclass(frozen=True)
-class ObservedPackContents:
-    """Active opened-pack interaction state, including visible reward choices."""
-
-    choices_remaining: int | None = None             # card.lua: G.GAME.pack_choices
-    skip_available: bool = False                     # button_callbacks.lua: can_skip_booster(...)
-    items: tuple[ObservedPackItem, ...] = ()         # card.lua: G.pack_cards.cards
 
 
 @dataclass(frozen=True)
