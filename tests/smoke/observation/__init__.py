@@ -1,0 +1,1 @@
+"""Observation-boundary smoke tests."""

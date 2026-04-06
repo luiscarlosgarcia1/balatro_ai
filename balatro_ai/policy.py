@@ -3,12 +3,37 @@ from __future__ import annotations
 from .models import GameAction, GameObservation, ValidationResult
 
 
+def infer_phase(observation: GameObservation) -> str:
+    """Infer a coarse gameplay phase from the current observation shape."""
+
+    if observation.pack_contents is not None:
+        return "pack_reward"
+    if observation.shop_items or observation.reroll_cost is not None:
+        return "shop"
+    if observation.blinds:
+        return "blind_select"
+    if observation.hands_left > 0:
+        return "play_hand"
+    return "unknown"
+
+
 class DemoPolicy:
     """A tiny heuristic policy to exercise the runtime."""
 
     def choose_action(self, observation: GameObservation) -> GameAction:
-        if observation.phase == "shop":
-            if observation.money >= 5:
+        phase = infer_phase(observation)
+        dollars = observation.dollars
+
+        if phase == "blind_select":
+            target = observation.blinds[0].key if observation.blinds else None
+            return GameAction(
+                kind="select_blind",
+                target=target,
+                reason="Advance into the round by selecting the available blind.",
+            )
+
+        if phase == "shop":
+            if dollars >= 5:
                 return GameAction(
                     kind="buy_joker",
                     target="economy_joker",
@@ -19,7 +44,7 @@ class DemoPolicy:
                 reason="Not enough money for a meaningful purchase.",
             )
 
-        if observation.phase == "play_hand":
+        if phase == "play_hand":
             return GameAction(
                 kind="play_best_hand",
                 reason="Advance the round with the strongest available hand.",
@@ -38,7 +63,6 @@ class RuleBasedValidator:
         "shop": {"buy_joker", "reroll_shop", "leave_shop"},
         "play_hand": {"play_best_hand", "discard_worst_cards"},
         "blind_select": {"select_blind", "skip_blind"},
-        "reward": {"continue"},
     }
 
     def validate(
@@ -46,16 +70,18 @@ class RuleBasedValidator:
         observation: GameObservation,
         action: GameAction,
     ) -> ValidationResult:
-        allowed = self._allowed_actions.get(observation.phase, {"continue"})
+        phase = infer_phase(observation)
+        dollars = observation.dollars
+        allowed = self._allowed_actions.get(phase, {"continue"})
         if action.kind not in allowed:
             return ValidationResult(
                 accepted=False,
                 notes=(
-                    f"Action '{action.kind}' is not valid during phase '{observation.phase}'.",
+                    f"Action '{action.kind}' is not valid during phase '{phase}'.",
                 ),
             )
 
-        if action.kind == "buy_joker" and observation.money < 5:
+        if action.kind == "buy_joker" and dollars < 5:
             return ValidationResult(
                 accepted=False,
                 notes=("Cannot buy a joker without enough money.",),
