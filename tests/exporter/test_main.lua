@@ -45,17 +45,18 @@ _G.love = {
 
 dofile("mods/live_state_exporter/main.lua")
 
-eq(#writes, 1, "boot should attempt an initial write")
+eq(#writes, 2, "boot should attempt initial snapshot and probe writes")
 eq(writes[1].path, "ai/live_state.json", "main should write to canonical path")
+eq(writes[2].path, "ai/live_state_probe.json", "main should write probe output alongside the canonical snapshot")
 
 t = 0.02
 _G.love.update()
-eq(#writes, 1, "wrapped update should respect throttle")
+eq(#writes, 2, "wrapped update should respect throttle and probe dedupe")
 
 t = 0.10
 _G.G.GAME.dollars = 6
 _G.love.update()
-eq(#writes, 2, "wrapped update should delegate changed payload writes")
+eq(#writes, 4, "wrapped update should delegate changed payload and probe writes")
 
 _G.love = old.love
 _G.Game = old.Game
@@ -73,7 +74,7 @@ _G.SMODS = {
 _G.NFS = {
   read = function(path)
     if path == "virtual/shared/loader.lua" then
-      return "return { load = function(name) if name == 'state/raw.lua' then return { read_state = function() return {} end } end if name == 'state/schema.lua' then return { build_shell = function() return {} end } end if name == 'out.lua' then return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end } end error('unexpected module name: ' .. tostring(name)) end }"
+      return "return { load = function(name) if name == 'state/raw.lua' then return { read_state = function() return {} end } end if name == 'state/schema.lua' then return { build_shell = function() return {} end } end if name == 'out.lua' then return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end, make_signature = function() return 'sig' end, encode_json = function() return '{}' end } end if name == 'probe.lua' then return { tick = function() error('boom from probe tick') end } end error('unexpected module name: ' .. tostring(name)) end }"
     end
     if path == "virtual/state/raw.lua" then
       return "return { read_state = function() return {} end }"
@@ -82,7 +83,10 @@ _G.NFS = {
       return "return { build_shell = function() return {} end }"
     end
     if path == "virtual/out.lua" then
-      return "return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end }"
+      return "return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end, make_signature = function() return 'sig' end, encode_json = function() return '{}' end }"
+    end
+    if path == "virtual/probe.lua" then
+      return "return { tick = function() error('boom from probe tick') end }"
     end
     error("unexpected module path: " .. tostring(path))
   end,

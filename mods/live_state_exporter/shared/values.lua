@@ -21,6 +21,12 @@ function values.to_number(value)
   if type(value) == "string" and value:match("^%-?%d+$") then
     return tonumber(value)
   end
+  if type(value) == "table" then
+    local rendered = tostring(value)
+    if type(rendered) == "string" and rendered:match("^%-?%d+$") then
+      return tonumber(rendered)
+    end
+  end
   return nil
 end
 

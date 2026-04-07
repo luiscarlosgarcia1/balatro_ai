@@ -43,6 +43,44 @@ eq(simple.ante, 2, "reader should read ante")
 eq(simple.round, 4, "reader should read round")
 eq(simple.reroll_cost, 5, "reader should read reroll_cost")
 
+local function wrapped_number(value)
+  return setmetatable({
+    array = {},
+    sign = 1,
+  }, {
+    __tostring = function()
+      return tostring(value)
+    end,
+  })
+end
+
+local wrapped = raw.read_state({
+  STATE = 99,
+  GAME = {
+    dollars = wrapped_number(9),
+    chips = wrapped_number(125),
+    blind = {
+      chips = wrapped_number(450),
+    },
+    hands = {
+      Flush = {
+        level = wrapped_number(2),
+        chips = wrapped_number(35),
+        mult = wrapped_number(4),
+        played = 1,
+        played_this_round = 0,
+      },
+    },
+  },
+})
+
+eq(wrapped.dollars, 9, "reader should coerce wrapped Balatro number tables for dollars")
+eq(wrapped.score.current, 125, "reader should coerce wrapped Balatro number tables for current score")
+eq(wrapped.score.target, 450, "reader should coerce wrapped Balatro number tables for blind target score")
+eq(wrapped.run_info.hands.Flush.level, 2, "reader should coerce wrapped Balatro number tables for run hand levels")
+eq(wrapped.run_info.hands.Flush.chips, 35, "reader should coerce wrapped Balatro number tables for run hand chips")
+eq(wrapped.run_info.hands.Flush.mult, 4, "reader should coerce wrapped Balatro number tables for run hand mult")
+
 local partial = raw.read_state({ STATE = 7 })
 ok(type(partial) == "table", "reader should return a table for partial state")
 eq(partial.state_id, 7, "partial reader should keep state_id")

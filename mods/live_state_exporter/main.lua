@@ -29,6 +29,7 @@ end
 local raw = load_module("state/raw.lua")
 local schema = load_module("state/schema.lua")
 local out = load_module("out.lua")
+local probe = load_module("probe.lua")
 
 local function current_time()
   local love = rawget(_G, "love")
@@ -52,10 +53,13 @@ local exporter = out.new_exporter({
 })
 
 local function safe_tick()
-  local ok = pcall(function()
+  local ok_export = pcall(function()
     exporter:tick()
   end)
-  return ok
+  local ok_probe = pcall(function()
+    probe.tick(rawget(_G, "G"))
+  end)
+  return ok_export and ok_probe
 end
 
 local function wrap_update(obj, key)
