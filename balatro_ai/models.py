@@ -215,9 +215,20 @@ class GameObservation:
 class GameAction:
     """Policy-produced high-level intent before UI automation translates it."""
 
-    kind: str                             # runtime/policy only; not native game state
-    target: str | None = None             # runtime/policy only; not native game state
-    reason: str = ""                      # runtime/policy only; not native game state
+    kind: str                                  # runtime/policy only; not native game state
+    target: str | None = None                  # runtime/policy only; not native game state
+    reason: str = ""                           # runtime/policy only; not native game state
+    target_ids: tuple[int, ...] = ()           # file-channel: instance IDs of target cards
+    order: tuple[int, ...] = ()                # file-channel: desired order by instance ID
+
+    def to_action_dict(self) -> dict[str, object]:
+        """Serialize to the action object shape used inside action.json's 'actions' array."""
+        return {
+            "kind": self.kind,
+            "target_ids": list(self.target_ids),
+            "target_key": self.target,
+            "order": list(self.order),
+        }
 
 
 @dataclass(frozen=True)
