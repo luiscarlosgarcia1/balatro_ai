@@ -27,6 +27,7 @@ if not load_module then
 end
 
 local executor_mod = load_module("executor.lua")
+local json_mod     = load_module("shared/json.lua")
 
 -- ============================================================
 -- File-I/O helpers (thin wrappers around love.filesystem)
@@ -80,7 +81,7 @@ local function remove_file(path)
 end
 
 -- ============================================================
--- JSON decoder: uses the game's built-in json.decode
+-- JSON decoder: uses the bundled shared/json.lua decoder
 -- ============================================================
 
 local function decode_json(raw)
@@ -88,11 +89,7 @@ local function decode_json(raw)
   if type(raw) == "table" then
     return raw
   end
-  local decoder = rawget(_G, "json")
-  if type(decoder) == "table" and type(decoder.decode) == "function" then
-    return decoder.decode(raw)
-  end
-  error("ai_executor: no JSON decoder available")
+  return json_mod.decode(raw)
 end
 
 -- ============================================================
@@ -109,7 +106,7 @@ local function add_event(event_table)
   -- Wrap the plain table in a Balatro Event object when available.
   local event_obj = event_table
   local Event = rawget(_G, "Event")
-  if type(Event) == "function" then
+  if Event ~= nil then
     event_obj = Event(event_table)
   end
   mgr:add_event(event_obj)

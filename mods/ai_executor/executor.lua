@@ -28,10 +28,11 @@ local ERROR_FILE  = "ai/action_error.json"
 --
 -- options:
 --   file_exists(path)        → bool
---   read_file(path)          → table (already decoded) or nil
+--   read_file(path)          → raw file contents (usually a JSON string) or nil
 --   write_file(path, body)   → bool
 --   remove_file(path)
---   decode_json(raw)         → table  (called on the result of read_file)
+--   decode_json(raw)         → table  (production uses the game's json.decode;
+--                                      tests may inject pre-decoded tables)
 --   add_event(event_table)
 --   get_G()                  → current G
 --   dispatch(action, G)      → nil or error string  [optional, defaults to handlers.dispatch]
@@ -115,7 +116,7 @@ function executor_mod.new_executor(options)
     end
 
     local raw = self.read_file(ACTION_FILE)
-    if raw == nil then
+    if raw == nil or raw == "" then
       return false
     end
 

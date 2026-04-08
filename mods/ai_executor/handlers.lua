@@ -121,11 +121,17 @@ local DISPATCH = {}
 
 DISPATCH["play_hand"] = function(action, G)
   select_cards_in_area(G.hand, action.target_ids)
+  if #G.hand.highlighted == 0 then
+    error("play_hand: no cards matched target_ids in hand")
+  end
   G.FUNCS.play_cards_from_highlighted()
 end
 
 DISPATCH["discard"] = function(action, G)
   select_cards_in_area(G.hand, action.target_ids)
+  if #G.hand.highlighted == 0 then
+    error("discard: no cards matched target_ids in hand")
+  end
   G.FUNCS.discard_cards_from_highlighted()
 end
 

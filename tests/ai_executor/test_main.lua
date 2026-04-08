@@ -19,7 +19,6 @@ local old = {
   G     = rawget(_G, "G"),
   SMODS = rawget(_G, "SMODS"),
   NFS   = rawget(_G, "NFS"),
-  json  = rawget(_G, "json"),
   __ai_executor_load_module = rawget(_G, "__ai_executor_load_module"),
 }
 
@@ -37,17 +36,6 @@ local action_file = nil   -- nil = absent, string = present
 local written = {}
 local deleted = {}
 local events  = {}
-
-_G.json = {
-  decode = function(text)
-    -- Simple enough for test: we set action_file to a real table in read mock.
-    -- But the executor calls decode_json on what read_file returns, which is
-    -- already a table in the real integration path.  For this smoke test we
-    -- just need the executor to be instantiated correctly; the detailed
-    -- behaviour is covered by test_executor.lua.
-    return text
-  end,
-}
 
 _G.G = {
   STATE  = 1,
@@ -74,12 +62,7 @@ _G.love = {
     end,
     read = function(path)
       if path == "ai/action.json" then
-        -- Return a pre-decoded table so decode_json (identity) works cleanly.
-        return {
-          actions = {
-            { kind = "play_hand", target_ids = { 1 }, target_key = nil, order = {} },
-          },
-        }
+        return '{"actions":[{"kind":"play_hand","target_ids":[1],"target_key":null,"order":[]}]}'
       end
       return nil
     end,
@@ -156,6 +139,9 @@ _G.NFS = {
           if name == "handlers.lua" then
             return { dispatch = function() end, is_actionable_state = function() return true end, ACTIONABLE_STATE_NAMES = {} }
           end
+          if name == "shared/json.lua" then
+            return dofile("mods/ai_executor/shared/json.lua")
+          end
           error("unexpected: " .. tostring(name))
         end }
       ]]
@@ -186,7 +172,6 @@ _G.Game  = old.Game
 _G.G     = old.G
 _G.SMODS = old.SMODS
 _G.NFS   = old.NFS
-_G.json  = old.json
 _G.__ai_executor_load_module = old.__ai_executor_load_module
 
 print("test_main: all tests passed")

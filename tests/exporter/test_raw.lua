@@ -12,8 +12,20 @@ local function ok(v, msg)
   end
 end
 
+local STATES = {
+  SELECTING_HAND = 1,
+  SHOP           = 2,
+  BLIND_SELECT   = 3,
+  TAROT_PACK     = 4,
+  PLANET_PACK    = 5,
+  SPECTRAL_PACK  = 6,
+  BUFFOON_PACK   = 7,
+  STANDARD_PACK  = 8,
+}
+
 local simple = raw.read_state({
-  STATE = 41,
+  STATE = 2,
+  STATES = STATES,
   GAME = {
     dollars = 12,
     chips = 75,
@@ -30,7 +42,7 @@ local simple = raw.read_state({
   },
 })
 
-eq(simple.state_id, 41, "reader should prefer root state id")
+eq(simple.state_id, 2, "reader should prefer root state id")
 eq(simple.interaction_phase, "shop", "reader should surface interaction_phase")
 eq(simple.dollars, 12, "reader should read dollars")
 eq(simple.hands_left, 3, "reader should read hands_left")
@@ -56,6 +68,7 @@ end
 
 local wrapped = raw.read_state({
   STATE = 99,
+  STATES = STATES,
   GAME = {
     dollars = wrapped_number(9),
     chips = wrapped_number(125),
@@ -81,7 +94,7 @@ eq(wrapped.run_info.hands.Flush.level, 2, "reader should coerce wrapped Balatro 
 eq(wrapped.run_info.hands.Flush.chips, 35, "reader should coerce wrapped Balatro number tables for run hand chips")
 eq(wrapped.run_info.hands.Flush.mult, 4, "reader should coerce wrapped Balatro number tables for run hand mult")
 
-local partial = raw.read_state({ STATE = 7 })
+local partial = raw.read_state({ STATE = 7, STATES = STATES })
 ok(type(partial) == "table", "reader should return a table for partial state")
 eq(partial.state_id, 7, "partial reader should keep state_id")
 eq(partial.dollars, nil, "missing dollars should stay nil before shell defaults")
@@ -89,6 +102,7 @@ eq(partial.score.current, nil, "missing score.current should stay nil before she
 eq(partial.score.target, nil, "missing score.target should stay nil before shell defaults")
 
 local table_deck_key = raw.read_state({
+  STATES = STATES,
   GAME = {
     selected_back_key = { key = "b_yellow", name = "Yellow Deck" },
   },
@@ -97,7 +111,8 @@ local table_deck_key = raw.read_state({
 eq(table_deck_key.deck_key, "b_yellow", "reader should extract deck_key from selected_back_key tables")
 
 local phase_two = raw.read_state({
-  STATE = 12,
+  STATE = 2,
+  STATES = STATES,
   tags = {
     { key = "tag_investment" },
   },
@@ -260,7 +275,8 @@ eq(phase_two.cards_in_deck[1].card_key, "S_A", "reader should export deck cards 
 eq(phase_two.cards_in_deck[2].card_key, "H_A", "reader should export later deck cards after ordering")
 
 local market_state = raw.read_state({
-  STATE = 15,
+  STATE = 2,
+  STATES = STATES,
   shop_jokers = {
     cards = {
       {
@@ -326,7 +342,8 @@ eq(market_state.shop_items[4].pack.key, "p_arcana_normal_1", "reader should appe
 eq(market_state.pack_contents, nil, "shop state should leave pack_contents inactive before shell shaping")
 
 local stale_pack_choice_shop_state = raw.read_state({
-  STATE = 5,
+  STATE = 2,
+  STATES = STATES,
   shop_jokers = {
     cards = {
       {
@@ -362,7 +379,8 @@ eq(#stale_pack_choice_shop_state.shop_items, 2, "reader should still export visi
 eq(stale_pack_choice_shop_state.pack_contents, nil, "reader should keep pack_contents inactive for stale pack choice shop states")
 
 local pack_state = raw.read_state({
-  STATE = 16,
+  STATE = 4,
+  STATES = STATES,
   pack = {
     ID = 950,
     can_skip = true,
@@ -444,7 +462,8 @@ _G.NFS = {
 
 local nfs_raw = dofile("mods/live_state_exporter/state/raw.lua")
 local nfs_state = nfs_raw.read_state({
-  STATE = "SHOP",
+  STATE = 2,
+  STATES = STATES,
   GAME = {
     blind = {
       key = "bl_big",
