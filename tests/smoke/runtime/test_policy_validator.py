@@ -50,7 +50,7 @@ class RuleBasedValidatorSmokeTests(unittest.TestCase):
     def test_validator_rejects_invalid_action_for_phase(self) -> None:
         result = RuleBasedValidator().validate(
             make_observation(
-                state_id=8,
+                state_id=5,  # G.STATES.SHOP
                 dollars=8,
                 hands_left=0,
                 discards_left=0,

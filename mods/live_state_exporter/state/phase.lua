@@ -31,6 +31,7 @@ function phase.infer(root)
   if state == states.SELECTING_HAND then return "play_hand" end
   if state == states.SHOP then return "shop" end
   if state == states.BLIND_SELECT then return "blind_select" end
+  if state == states.ROUND_EVAL then return "cash_out" end
   if state == states.TAROT_PACK
     or state == states.PLANET_PACK
     or state == states.SPECTRAL_PACK

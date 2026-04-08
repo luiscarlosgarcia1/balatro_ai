@@ -15,3 +15,4 @@ class ActionKind:
     USE_CONSUMABLE = "use_consumable"
     REORDER_JOKERS = "reorder_jokers"
     REORDER_HAND = "reorder_hand"
+    CASH_OUT = "cash_out"

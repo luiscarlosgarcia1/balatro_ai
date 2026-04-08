@@ -6,6 +6,8 @@ from .models import GameAction, GameObservation, ValidationResult
 def infer_phase(observation: GameObservation) -> str:
     """Infer a coarse gameplay phase from the current observation shape."""
 
+    if observation.state_id == 8:  # G.STATES.ROUND_EVAL
+        return "cash_out"
     if observation.pack_contents is not None:
         return "pack_reward"
     if observation.shop_items or observation.reroll_cost is not None:

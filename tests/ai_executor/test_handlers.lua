@@ -501,11 +501,30 @@ do
 end
 
 -- ============================================================
+-- Cycle 13b — cash_out
+-- ============================================================
+
+do
+  local cash_out_calls = 0
+  local mock_G = {
+    FUNCS = {
+      cash_out = function(e)
+        ok(type(e) == "table" and type(e.config) == "table", "cash_out called with {config={}}")
+        cash_out_calls = cash_out_calls + 1
+      end,
+    },
+  }
+  local err = handlers.dispatch({ kind = "cash_out", target_ids = {}, target_key = nil, order = {} }, mock_G)
+  is_nil(err, "cash_out dispatch should succeed")
+  eq(cash_out_calls, 1, "cash_out should call G.FUNCS.cash_out once")
+end
+
+-- ============================================================
 -- Cycle 14 — ACTIONABLE_STATE_NAMES + is_actionable_state
 -- ============================================================
 
 do
-  eq(#handlers.ACTIONABLE_STATE_NAMES, 8, "should declare exactly 8 actionable states")
+  eq(#handlers.ACTIONABLE_STATE_NAMES, 9, "should declare exactly 9 actionable states")
 
   local name_set = {}
   for _, name in ipairs(handlers.ACTIONABLE_STATE_NAMES) do
@@ -515,6 +534,7 @@ do
   ok(name_set["SELECTING_HAND"], "SELECTING_HAND should be actionable")
   ok(name_set["SHOP"], "SHOP should be actionable")
   ok(name_set["BLIND_SELECT"], "BLIND_SELECT should be actionable")
+  ok(name_set["ROUND_EVAL"], "ROUND_EVAL should be actionable")
   ok(name_set["TAROT_PACK"], "TAROT_PACK should be actionable")
   ok(name_set["PLANET_PACK"], "PLANET_PACK should be actionable")
   ok(name_set["SPECTRAL_PACK"], "SPECTRAL_PACK should be actionable")
@@ -534,6 +554,7 @@ do
       SPECTRAL_PACK = 6,
       BUFFOON_PACK = 7,
       STANDARD_PACK = 8,
+      ROUND_EVAL = 11,
       HAND_PLAYED = 9,
       SCORING = 10,
     },
@@ -549,6 +570,9 @@ do
 
   mock_G.STATE = 8
   ok(handlers.is_actionable_state(mock_G), "STANDARD_PACK (8) should be actionable")
+
+  mock_G.STATE = 11
+  ok(handlers.is_actionable_state(mock_G), "ROUND_EVAL (11) should be actionable")
 
   ok(not handlers.is_actionable_state({ STATE = 5 }), "no G.STATES should mean not actionable")
   ok(not handlers.is_actionable_state(nil), "nil G should not be actionable")

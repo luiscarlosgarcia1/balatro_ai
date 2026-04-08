@@ -8,6 +8,7 @@ local ACTIONABLE_STATE_NAMES = {
   "SELECTING_HAND",
   "SHOP",
   "BLIND_SELECT",
+  "ROUND_EVAL",
   "TAROT_PACK",
   "PLANET_PACK",
   "SPECTRAL_PACK",
@@ -192,6 +193,10 @@ end
 
 DISPATCH["skip_pack"] = function(action, G)
   G.FUNCS.skip_booster()
+end
+
+DISPATCH["cash_out"] = function(action, G)
+  G.FUNCS.cash_out({ config = {} })
 end
 
 DISPATCH["use_consumable"] = function(action, G)

@@ -21,11 +21,13 @@ local STATES = {
   SPECTRAL_PACK  = 6,
   BUFFOON_PACK   = 7,
   STANDARD_PACK  = 8,
+  ROUND_EVAL     = 9,
 }
 
 eq(phase.infer({ STATE = STATES.SELECTING_HAND, STATES = STATES }), "play_hand",    "SELECTING_HAND -> play_hand")
 eq(phase.infer({ STATE = STATES.SHOP,           STATES = STATES }), "shop",         "SHOP -> shop")
 eq(phase.infer({ STATE = STATES.BLIND_SELECT,   STATES = STATES }), "blind_select", "BLIND_SELECT -> blind_select")
+eq(phase.infer({ STATE = STATES.ROUND_EVAL,     STATES = STATES }), "cash_out",     "ROUND_EVAL -> cash_out")
 eq(phase.infer({ STATE = STATES.TAROT_PACK,     STATES = STATES }), "pack_reward",  "TAROT_PACK -> pack_reward")
 eq(phase.infer({ STATE = STATES.PLANET_PACK,    STATES = STATES }), "pack_reward",  "PLANET_PACK -> pack_reward")
 eq(phase.infer({ STATE = STATES.SPECTRAL_PACK,  STATES = STATES }), "pack_reward",  "SPECTRAL_PACK -> pack_reward")

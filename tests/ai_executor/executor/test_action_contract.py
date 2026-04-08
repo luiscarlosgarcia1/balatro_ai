@@ -23,6 +23,7 @@ class ActionKindConstantsTests(unittest.TestCase):
             "USE_CONSUMABLE": "use_consumable",
             "REORDER_JOKERS": "reorder_jokers",
             "REORDER_HAND": "reorder_hand",
+            "CASH_OUT": "cash_out",
         }
         for attr, value in expected.items():
             with self.subTest(attr=attr):
@@ -43,6 +44,7 @@ _ALL_KINDS = [
     ActionKind.USE_CONSUMABLE,
     ActionKind.REORDER_JOKERS,
     ActionKind.REORDER_HAND,
+    ActionKind.CASH_OUT,
 ]
 
 
