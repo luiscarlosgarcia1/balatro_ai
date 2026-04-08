@@ -238,6 +238,83 @@ do
 end
 
 -- ============================================================
+-- Cycle 4b — buy_and_use
+-- ============================================================
+
+-- buy_and_use success, no hand targets
+do
+  local buy_calls = 0
+  local buy_id = nil
+  local used_ref = nil
+  local tarot = { ID = 33, key = "c_the_fool" }
+  local mock_G = {
+    shop_jokers  = { cards = { tarot } },
+    shop_vouchers = { cards = {} },
+    shop_booster  = { cards = {} },
+    hand = { highlighted = {}, cards = {} },
+    FUNCS = {
+      buy_from_shop = function(e)
+        buy_calls = buy_calls + 1
+        buy_id    = e.config.id
+        used_ref  = e.config.ref_table
+      end,
+    },
+  }
+
+  local err = handlers.dispatch(
+    { kind = "buy_and_use", target_ids = { 33 }, target_key = nil, order = {} },
+    mock_G
+  )
+  is_nil(err, "buy_and_use should succeed")
+  eq(buy_calls, 1, "buy_and_use should call G.FUNCS.buy_from_shop once")
+  eq(buy_id, "buy_and_use", "buy_and_use should pass config.id = 'buy_and_use'")
+  ok(used_ref == tarot, "buy_and_use should pass correct item as ref_table")
+end
+
+-- buy_and_use with hand targets highlights those cards before buying
+do
+  local buy_calls = 0
+  local tarot = { ID = 34, key = "c_strength" }
+  local card_a = { ID = 10, highlighted = false }
+  local card_b = { ID = 11, highlighted = false }
+  local mock_G = {
+    shop_jokers  = { cards = { tarot } },
+    shop_vouchers = { cards = {} },
+    shop_booster  = { cards = {} },
+    hand = { highlighted = {}, cards = { card_a, card_b } },
+    FUNCS = {
+      buy_from_shop = function() buy_calls = buy_calls + 1 end,
+    },
+  }
+
+  local err = handlers.dispatch(
+    { kind = "buy_and_use", target_ids = { 34, 10, 11 }, target_key = nil, order = {} },
+    mock_G
+  )
+  is_nil(err, "buy_and_use with hand targets should succeed")
+  eq(buy_calls, 1, "buy_and_use should call G.FUNCS.buy_from_shop once")
+  eq(#mock_G.hand.highlighted, 2, "buy_and_use should highlight 2 hand cards")
+  ok(card_a.highlighted, "buy_and_use should highlight card_a")
+  ok(card_b.highlighted, "buy_and_use should highlight card_b")
+end
+
+-- buy_and_use returns error when item not found
+do
+  local mock_G = {
+    shop_jokers  = { cards = {} },
+    shop_vouchers = { cards = {} },
+    shop_booster  = { cards = {} },
+    FUNCS = { buy_from_shop = function() end },
+  }
+  local err = handlers.dispatch(
+    { kind = "buy_and_use", target_ids = { 99999 }, target_key = nil, order = {} },
+    mock_G
+  )
+  ne(err, nil, "buy_and_use should return error when item not found")
+  ok(string.find(err, "buy_and_use") ~= nil, "buy_and_use error should mention 'buy_and_use'")
+end
+
+-- ============================================================
 -- Cycle 5 — sell_joker
 -- ============================================================
 

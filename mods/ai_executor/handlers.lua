@@ -162,6 +162,25 @@ DISPATCH["buy_shop_item"] = function(action, G)
   end
 end
 
+DISPATCH["buy_and_use"] = function(action, G)
+  local id = action.target_ids[1]
+  local item = find_in_areas({ G.shop_jokers, G.shop_vouchers, G.shop_booster }, id)
+  if not item then
+    error("buy_and_use: item not found with ID " .. tostring(id))
+  end
+
+  local target_card_ids = {}
+  for i = 2, #action.target_ids do
+    target_card_ids[#target_card_ids + 1] = action.target_ids[i]
+  end
+
+  if #target_card_ids > 0 then
+    select_cards_in_area(G.hand, target_card_ids)
+  end
+
+  G.FUNCS.buy_from_shop({ config = { ref_table = item, id = 'buy_and_use' } })
+end
+
 DISPATCH["sell_joker"] = function(action, G)
   local id = action.target_ids[1]
   local card = handlers.find_card_by_id(G.jokers.cards, id)

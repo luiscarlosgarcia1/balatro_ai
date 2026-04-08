@@ -13,6 +13,7 @@ class ActionKind:
     PICK_PACK_ITEM = "pick_pack_item"
     SKIP_PACK = "skip_pack"
     USE_CONSUMABLE = "use_consumable"
+    BUY_AND_USE = "buy_and_use"
     REORDER_JOKERS = "reorder_jokers"
     REORDER_HAND = "reorder_hand"
     CASH_OUT = "cash_out"
