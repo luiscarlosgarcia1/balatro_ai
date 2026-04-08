@@ -115,6 +115,7 @@ local shaped_market = schema.build_shell({
     {
       voucher = {
         key = "v_clearance_sale",
+        instance_id = 5,
         cost = 10,
       },
     },
@@ -153,6 +154,7 @@ eq(shaped_market.shop_items[1].pack, nil, "shell should omit inactive shop pack 
 eq(shaped_market.shop_items[2].card, nil, "shell should omit inactive shop card member")
 eq(shaped_market.shop_items[2].joker, nil, "shell should omit inactive shop joker member on voucher wrappers")
 eq(shaped_market.shop_items[2].voucher.key, "v_clearance_sale", "shell should preserve active shop voucher payload")
+eq(shaped_market.shop_items[2].voucher.instance_id, 5, "shell should preserve voucher instance_id")
 ok(type(shaped_market.pack_contents) == "table", "shell should keep active pack_contents object")
 eq(shaped_market.pack_contents.choices_remaining, 2, "shell should preserve pack choice count")
 eq(shaped_market.pack_contents.skip_available, false, "shell should preserve pack skip flag")

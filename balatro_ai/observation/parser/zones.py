@@ -39,7 +39,7 @@ def parse_card(payload: object, fallback_index: int = 0) -> ObservedCard | None:
     )
 
 
-def parse_voucher(payload: object) -> ObservedVoucher | None:
+def parse_voucher(payload: object, fallback_index: int = 0) -> ObservedVoucher | None:
     if not isinstance(payload, dict):
         return None
 
@@ -49,6 +49,7 @@ def parse_voucher(payload: object) -> ObservedVoucher | None:
 
     return ObservedVoucher(
         key=key,
+        instance_id=parse_instance_id(payload, fallback_index),
         cost=int_or_zero(payload.get("cost")),
     )
 
@@ -170,8 +171,8 @@ def parse_vouchers(payload: object) -> list[ObservedVoucher]:
     if not isinstance(payload, list):
         return vouchers
 
-    for item in payload:
-        voucher = parse_voucher(item)
+    for index, item in enumerate(payload):
+        voucher = parse_voucher(item, index)
         if voucher is not None:
             vouchers.append(voucher)
     return vouchers

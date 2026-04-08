@@ -19,6 +19,12 @@ class LiveParserSmokeTests(unittest.TestCase):
             "money": 10,
             "hands_left": 4,
             "discards_left": 2,
+            "vouchers": [
+                {
+                    "key": "v_overstock",
+                    "cost": 10,
+                }
+            ],
             "shop_items": [
                 {
                     "joker": {
@@ -31,6 +37,7 @@ class LiveParserSmokeTests(unittest.TestCase):
                 {
                     "voucher": {
                         "key": "v_clearance_sale",
+                        "instance_id": 301,
                         "cost": 10,
                     }
                 },
@@ -58,6 +65,11 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertEqual(observation.dollars, 10)
         self.assertEqual(observation.hands_left, 4)
         self.assertEqual(observation.discards_left, 2)
+        self.assertEqual(len(observation.vouchers), 1)
+        self.assertIsInstance(observation.vouchers[0], ObservedVoucher)
+        self.assertEqual(observation.vouchers[0].key, "v_overstock")
+        self.assertEqual(observation.vouchers[0].instance_id, -1)
+        self.assertEqual(observation.vouchers[0].cost, 10)
         self.assertEqual(observation.jokers, ())
         self.assertEqual(observation.cards_in_hand, ())
         self.assertEqual(observation.selected_cards, ())
@@ -72,6 +84,7 @@ class LiveParserSmokeTests(unittest.TestCase):
         self.assertIsInstance(observation.shop_items[1], ObservedVoucher)
         self.assertEqual(observation.shop_items[1].key, "v_clearance_sale")
         self.assertEqual(observation.shop_items[1].cost, 10)
+        self.assertEqual(observation.shop_items[1].instance_id, 301)
         self.assertIsInstance(observation.shop_items[2], ObservedPack)
         self.assertEqual(observation.shop_items[2].key, "p_arcana_normal_1")
         self.assertEqual(observation.shop_items[2].instance_id, 202)

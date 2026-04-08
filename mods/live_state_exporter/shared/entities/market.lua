@@ -81,6 +81,7 @@ return function(common, owned)
   end
 
   function market.read_voucher(card, key)
+    local instance_id = common.read_instance_id(card)
     key = key or common.read_center_key(card)
     if key == nil then
       return nil
@@ -88,6 +89,7 @@ return function(common, owned)
 
     return {
       key = key,
+      instance_id = instance_id,
       cost = common.read_cost(card) or 0,
     }
   end

@@ -64,6 +64,7 @@ class ObserverServiceSmokeTests(unittest.TestCase):
         self.assertTrue(observation.shop_items[0].perishable)
         self.assertIsInstance(observation.shop_items[1], ObservedVoucher)
         self.assertEqual(observation.shop_items[1].key, "v_clearance_sale")
+        self.assertEqual(observation.shop_items[1].instance_id, -2)
         self.assertIsInstance(observation.shop_items[2], ObservedPack)
         self.assertEqual(observation.shop_items[2].key, "p_arcana_normal_1")
 

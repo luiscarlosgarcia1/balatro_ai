@@ -64,6 +64,7 @@ return function(values, primitives)
     voucher = as_table(voucher) or {}
     return {
       key = voucher.key,
+      instance_id = voucher.instance_id,
       cost = required_or(to_number(voucher.cost), 0),
     }
   end

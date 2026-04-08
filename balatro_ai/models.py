@@ -84,6 +84,7 @@ class ObservedVoucher:
     """Minimal voucher identity and price for owned or shop-visible vouchers."""
 
     key: str                             # card.lua: voucher card.config.center_key / G.GAME.used_vouchers[key]
+    instance_id: int                     # card.lua: card.ID
     cost: int                            # card.lua: voucher card.cost
 
 

@@ -78,12 +78,14 @@ local shop = market.collect({
   shop_vouchers = {
     cards = {
       {
+        ID = 105,
         cost = 10,
         config = {
           center_key = "v_clearance_sale",
         },
       },
       {
+        ID = 106,
         config = {
           center_key = "v_missing_cost",
         },
@@ -106,8 +108,10 @@ eq(shop.shop_items[3].consumable.cost, 4, "collector should keep shop consumable
 eq(shop.shop_items[3].consumable.sell_cost, nil, "collector should omit shop consumable sell_cost")
 eq(shop.shop_items[4].voucher.key, "v_clearance_sale", "collector should append voucher row after shop row")
 eq(shop.shop_items[4].voucher.cost, 10, "collector should keep voucher cost")
+eq(shop.shop_items[4].voucher.instance_id, 105, "collector should keep voucher instance_id")
 eq(shop.shop_items[5].voucher.key, "v_missing_cost", "collector should keep voucher keys without cost")
 eq(shop.shop_items[5].voucher.cost, 0, "collector should default voucher cost to 0")
+eq(shop.shop_items[5].voucher.instance_id, 106, "collector should keep voucher instance_id")
 ok(shop.shop_items[5].pack == nil, "voucher wrapper should leave other shop members nil")
 eq(shop.shop_items[6].pack.key, "p_arcana_normal_1", "collector should classify visible boosters from the shop_booster area")
 eq(shop.shop_items[6].pack.instance_id, 104, "collector should keep booster ids")

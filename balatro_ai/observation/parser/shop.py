@@ -34,7 +34,7 @@ def parse_shop_item(payload: object, fallback_index: int = 0) -> ObservedShopIte
 
     voucher_payload = payload.get("voucher")
     if voucher_payload is not None:
-        return parse_voucher(voucher_payload)
+        return parse_voucher(voucher_payload, fallback_index)
 
     pack_payload = payload.get("pack")
     if pack_payload is not None:
