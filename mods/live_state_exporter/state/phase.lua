@@ -36,7 +36,8 @@ function phase.infer(root)
     or state == states.PLANET_PACK
     or state == states.SPECTRAL_PACK
     or state == states.BUFFOON_PACK
-    or state == states.STANDARD_PACK then
+    or state == states.STANDARD_PACK
+    or state == states.SMODS_BOOSTER_OPENED then
     return "pack_reward"
   end
 

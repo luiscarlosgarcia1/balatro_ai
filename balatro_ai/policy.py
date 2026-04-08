@@ -3,20 +3,11 @@ from __future__ import annotations
 from .models import GameAction, GameObservation, ValidationResult
 
 
-def infer_phase(observation: GameObservation) -> str:
-    """Infer a coarse gameplay phase from the current observation shape."""
-
-    if observation.state_id == 8:  # G.STATES.ROUND_EVAL
-        return "cash_out"
-    if observation.pack_contents is not None:
-        return "pack_reward"
-    if observation.shop_items or observation.reroll_cost is not None:
-        return "shop"
-    if observation.blinds:
-        return "blind_select"
-    if observation.hands_left > 0:
-        return "play_hand"
-    return "unknown"
+def infer_phase(observation: GameObservation) -> str | None:
+    """Return the interaction_phase exported by the Lua exporter (G.STATE vs G.STATES.*).
+    Returns None if the field is absent — indicates a fixture/debug gap, not a valid phase.
+    """
+    return observation.interaction_phase
 
 
 class DemoPolicy:

@@ -167,23 +167,58 @@ do
   ok(bought_ref == joker_item, "buy_shop_item should pass correct item as ref_table")
 end
 
--- buy_shop_item finds items in the booster area
+-- buy_shop_item calls use_card for booster packs (found in shop_booster)
 do
-  local buy_calls = 0
+  local use_calls = 0
+  local used_ref = nil
   local booster = { ID = 31, key = "p_arcana_normal_1" }
   local mock_G = {
     shop_jokers = { cards = {} },
     shop_vouchers = { cards = {} },
     shop_booster = { cards = { booster } },
-    FUNCS = { buy_from_shop = function() buy_calls = buy_calls + 1 end },
+    FUNCS = {
+      use_card = function(e)
+        use_calls = use_calls + 1
+        used_ref = e.config.ref_table
+      end,
+      buy_from_shop = function() error("buy_from_shop must not be called for booster packs") end,
+    },
   }
 
   local err = handlers.dispatch(
     { kind = "buy_shop_item", target_ids = { 31 }, target_key = nil, order = {} },
     mock_G
   )
-  is_nil(err, "buy_shop_item should find items in booster area")
-  eq(buy_calls, 1, "buy_shop_item from booster should call buy_from_shop")
+  is_nil(err, "buy_shop_item for booster should succeed")
+  eq(use_calls, 1, "buy_shop_item for booster should call use_card")
+  ok(used_ref == booster, "buy_shop_item for booster should pass correct item as ref_table")
+end
+
+-- buy_shop_item calls use_card for vouchers (found in shop_vouchers)
+do
+  local use_calls = 0
+  local used_ref = nil
+  local voucher = { ID = 32, key = "v_overstock_norm" }
+  local mock_G = {
+    shop_jokers = { cards = {} },
+    shop_vouchers = { cards = { voucher } },
+    shop_booster = { cards = {} },
+    FUNCS = {
+      use_card = function(e)
+        use_calls = use_calls + 1
+        used_ref = e.config.ref_table
+      end,
+      buy_from_shop = function() error("buy_from_shop must not be called for vouchers") end,
+    },
+  }
+
+  local err = handlers.dispatch(
+    { kind = "buy_shop_item", target_ids = { 32 }, target_key = nil, order = {} },
+    mock_G
+  )
+  is_nil(err, "buy_shop_item for voucher should succeed")
+  eq(use_calls, 1, "buy_shop_item for voucher should call use_card")
+  ok(used_ref == voucher, "buy_shop_item for voucher should pass correct item as ref_table")
 end
 
 -- buy_shop_item returns error when item not found
@@ -192,7 +227,7 @@ do
     shop_jokers = { cards = {} },
     shop_vouchers = { cards = {} },
     shop_booster = { cards = {} },
-    FUNCS = { buy_from_shop = function() end },
+    FUNCS = { use_card = function() end, buy_from_shop = function() end },
   }
   local err = handlers.dispatch(
     { kind = "buy_shop_item", target_ids = { 999 }, target_key = nil, order = {} },
@@ -524,7 +559,7 @@ end
 -- ============================================================
 
 do
-  eq(#handlers.ACTIONABLE_STATE_NAMES, 9, "should declare exactly 9 actionable states")
+  eq(#handlers.ACTIONABLE_STATE_NAMES, 10, "should declare exactly 10 actionable states")
 
   local name_set = {}
   for _, name in ipairs(handlers.ACTIONABLE_STATE_NAMES) do
@@ -540,6 +575,7 @@ do
   ok(name_set["SPECTRAL_PACK"], "SPECTRAL_PACK should be actionable")
   ok(name_set["BUFFOON_PACK"], "BUFFOON_PACK should be actionable")
   ok(name_set["STANDARD_PACK"], "STANDARD_PACK should be actionable")
+  ok(name_set["SMODS_BOOSTER_OPENED"], "SMODS_BOOSTER_OPENED should be actionable")
 end
 
 do
@@ -557,6 +593,7 @@ do
       ROUND_EVAL = 11,
       HAND_PLAYED = 9,
       SCORING = 10,
+      SMODS_BOOSTER_OPENED = 12,
     },
   }
 
@@ -573,6 +610,9 @@ do
 
   mock_G.STATE = 11
   ok(handlers.is_actionable_state(mock_G), "ROUND_EVAL (11) should be actionable")
+
+  mock_G.STATE = 12
+  ok(handlers.is_actionable_state(mock_G), "SMODS_BOOSTER_OPENED (12) should be actionable")
 
   ok(not handlers.is_actionable_state({ STATE = 5 }), "no G.STATES should mean not actionable")
   ok(not handlers.is_actionable_state(nil), "nil G should not be actionable")

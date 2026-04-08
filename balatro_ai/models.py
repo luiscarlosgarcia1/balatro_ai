@@ -200,6 +200,8 @@ class GameObservation:
     run_info: ObservedRunInfo | None = None  # main.lua: collect_run_info(game)
     interest: ObservedInterest | None = None  # main.lua: interest.amount/cap/no_interest
 
+    interaction_phase: str | None = None          # state/phase.lua: phase.infer(root) → G.STATE vs G.STATES.*
+
     shop_items: tuple[ObservedShopItem, ...] = ()  # main.lua: collect_shop_items(root, interaction_phase)
     reroll_cost: int | None = None           # game.lua: G.GAME.current_round.reroll_cost
     pack_contents: ObservedPackContents | None = None  # main.lua: collect_pack_contents(root, game, interaction_phase)

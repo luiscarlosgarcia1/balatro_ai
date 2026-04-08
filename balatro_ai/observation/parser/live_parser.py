@@ -66,6 +66,7 @@ class LiveObservationParser:
 
         return GameObservation(
             state_id=int_or_zero(state.get("state_id")),
+            interaction_phase=string_or_none(state.get("interaction_phase")),
             dollars=int_or_zero(state.get("dollars", state.get("money"))),
             hands_left=int_or_zero(state.get("hands_left")),
             discards_left=int_or_zero(state.get("discards_left")),

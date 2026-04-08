@@ -73,7 +73,7 @@ function market.collect(root, interaction_phase)
     pack_contents = nil,
   }
 
-  if interaction_phase == "shop" then
+  if interaction_phase == "shop" or interaction_phase == "pack_reward" then
     local shop_jokers = as_table(root.shop_jokers)
     local shop_booster = as_table(root.shop_booster)
     local shop_vouchers = as_table(root.shop_vouchers)
@@ -81,7 +81,6 @@ function market.collect(root, interaction_phase)
     append_row_items(out.shop_items, shop_jokers and shop_jokers.cards)
     append_row_items(out.shop_items, shop_vouchers and shop_vouchers.cards)
     append_row_items(out.shop_items, shop_booster and shop_booster.cards)
-    return out
   end
 
   if interaction_phase == "pack_reward" then
@@ -96,10 +95,6 @@ function market.collect(root, interaction_phase)
       if item ~= nil then
         items[#items + 1] = item
       end
-    end
-
-    if #items == 0 and not skip_available then
-      return out
     end
 
     out.pack_contents = {

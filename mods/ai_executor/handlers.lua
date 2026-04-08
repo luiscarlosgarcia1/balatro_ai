@@ -14,6 +14,7 @@ local ACTIONABLE_STATE_NAMES = {
   "SPECTRAL_PACK",
   "BUFFOON_PACK",
   "STANDARD_PACK",
+  "SMODS_BOOSTER_OPENED",
 }
 
 handlers.ACTIONABLE_STATE_NAMES = ACTIONABLE_STATE_NAMES
@@ -142,7 +143,14 @@ DISPATCH["buy_shop_item"] = function(action, G)
   if not item then
     error("buy_shop_item: item not found with ID " .. tostring(id))
   end
-  G.FUNCS.buy_from_shop({ config = { ref_table = item } })
+  local ability_set = item.ability and item.ability.set
+  local in_booster = handlers.find_card_by_id(G.shop_booster and G.shop_booster.cards, id) ~= nil
+  local in_voucher = handlers.find_card_by_id(G.shop_vouchers and G.shop_vouchers.cards, id) ~= nil
+  if in_booster or in_voucher or ability_set == "Booster" or ability_set == "Voucher" then
+    G.FUNCS.use_card({ config = { ref_table = item } })
+  else
+    G.FUNCS.buy_from_shop({ config = { ref_table = item } })
+  end
 end
 
 DISPATCH["sell_joker"] = function(action, G)

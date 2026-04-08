@@ -23,6 +23,7 @@ class DemoPolicySmokeTests(unittest.TestCase):
         action = DemoPolicy().choose_action(
             make_observation(
                 state_id=6,
+                interaction_phase="blind_select",
                 dollars=4,
                 hands_left=4,
                 discards_left=3,
@@ -50,7 +51,8 @@ class RuleBasedValidatorSmokeTests(unittest.TestCase):
     def test_validator_rejects_invalid_action_for_phase(self) -> None:
         result = RuleBasedValidator().validate(
             make_observation(
-                state_id=5,  # G.STATES.SHOP
+                state_id=5,
+                interaction_phase="shop",
                 dollars=8,
                 hands_left=0,
                 discards_left=0,
@@ -59,6 +61,7 @@ class RuleBasedValidatorSmokeTests(unittest.TestCase):
             action=DemoPolicy().choose_action(
                 make_observation(
                     state_id=9,
+                    interaction_phase="play_hand",
                     dollars=8,
                     hands_left=1,
                     discards_left=1,
@@ -73,6 +76,7 @@ class RuleBasedValidatorSmokeTests(unittest.TestCase):
         result = RuleBasedValidator().validate(
             make_observation(
                 state_id=10,
+                interaction_phase="shop",
                 dollars=3,
                 hands_left=0,
                 discards_left=0,
@@ -81,6 +85,7 @@ class RuleBasedValidatorSmokeTests(unittest.TestCase):
             action=DemoPolicy().choose_action(
                 make_observation(
                     state_id=11,
+                    interaction_phase="shop",
                     dollars=8,
                     hands_left=0,
                     discards_left=0,

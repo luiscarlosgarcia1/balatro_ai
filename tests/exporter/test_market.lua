@@ -234,7 +234,9 @@ local pack_skip_blocked = market.collect({
   },
 }, "pack_reward")
 
-eq(pack_skip_blocked.pack_contents, nil, "collector should suppress pack_contents when STOP_USE blocks skip and no pack items are visible")
+eq(type(pack_skip_blocked.pack_contents), "table", "collector should emit pack_contents even when STOP_USE blocks skip and no pack items are visible")
+eq(pack_skip_blocked.pack_contents.skip_available, false, "skip_available should be false when STOP_USE blocks skip")
+eq(#pack_skip_blocked.pack_contents.items, 0, "items should be empty when no pack cards are present")
 
 local pack_no_skip = market.collect({
   pack = {
@@ -251,4 +253,25 @@ local pack_no_skip = market.collect({
   },
 }, "pack_reward")
 
-eq(pack_no_skip.pack_contents, nil, "collector should suppress pack_contents when there are no visible pack items and no skip action")
+eq(type(pack_no_skip.pack_contents), "table", "collector should emit pack_contents even when there are no visible pack items and no skip action")
+eq(pack_no_skip.pack_contents.skip_available, false, "skip_available should be false when no skip is available")
+eq(#pack_no_skip.pack_contents.items, 0, "items should be empty when no pack cards are present")
+
+local pack_reward_with_shop = market.collect({
+  pack = { skip_available = true },
+  pack_cards = {
+    cards = {
+      { ID = 401, config = { center_key = "c_tarot" } },
+    },
+  },
+  shop_jokers = {
+    cards = {
+      { ID = 501, config = { center_key = "j_joker" }, cost = 4 },
+    },
+  },
+  GAME = { pack_choices = 1 },
+}, "pack_reward")
+
+eq(type(pack_reward_with_shop.pack_contents), "table", "pack_reward phase should populate pack_contents")
+eq(#pack_reward_with_shop.pack_contents.items, 1, "pack_reward phase should export pack cards")
+eq(#pack_reward_with_shop.shop_items, 1, "pack_reward phase should also collect shop_items")

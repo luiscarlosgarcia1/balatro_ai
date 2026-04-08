@@ -37,6 +37,7 @@ class TypedRuntimeSmokeTests(unittest.TestCase):
     def test_runner_executes_typed_observation_flow_and_records_same_instance(self) -> None:
         observation = make_observation(
             state_id=1,
+            interaction_phase="shop",
             dollars=6,
             hands_left=0,
             discards_left=0,

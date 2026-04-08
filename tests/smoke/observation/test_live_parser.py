@@ -60,6 +60,7 @@ class LiveParserSmokeTests(unittest.TestCase):
 
         self.assertIsInstance(observation, GameObservation)
         self.assertEqual(observation.state_id, 41)
+        self.assertEqual(observation.interaction_phase, "shop")
         self.assertEqual(observation.deck_key, "b_erratic")
         self.assertEqual(observation.score, ObservedScore(current=75, target=300))
         self.assertEqual(observation.dollars, 10)
