@@ -301,12 +301,29 @@ do
   eq(calls, 1, "leave_shop should call G.FUNCS.toggle_shop")
 end
 
+-- Builds a mock blind_select_opts entry: a UIBox-like table with
+-- get_UIE_by_ID('select_blind_button') returning a UIElement-like child whose
+-- .UIBox back-references the container and .config.ref_table holds the blind data.
+local function make_blind_opt(blind_config)
+  local elem = { config = { ref_table = blind_config } }
+  local opt = {}
+  opt.get_UIE_by_ID = function(self, id)
+    if id == "select_blind_button" then return elem end
+    return nil
+  end
+  elem.UIBox = opt
+  return opt, elem
+end
+
 -- ============================================================
 -- Cycle 8 — select_blind
 -- ============================================================
 
 do
-  local selected_opt = nil
+  local selected_elem = nil
+  local small_opt, small_elem = make_blind_opt({ key = "bl_small" })
+  local big_opt,   big_elem   = make_blind_opt({ key = "bl_big"   })
+  local boss_opt,  boss_elem  = make_blind_opt({ key = "bl_hook"  })
   local mock_G = {
     GAME = {
       round_resets = {
@@ -317,12 +334,8 @@ do
         },
       },
     },
-    blind_select_opts = {
-      small = { config = { blind = { key = "bl_small" } } },
-      big = { config = { blind = { key = "bl_big" } } },
-      boss = { config = { blind = { key = "bl_hook" } } },
-    },
-    FUNCS = { select_blind = function(opt) selected_opt = opt end },
+    blind_select_opts = { small = small_opt, big = big_opt, boss = boss_opt },
+    FUNCS = { select_blind = function(e) selected_elem = e end },
   }
 
   local err = handlers.dispatch(
@@ -330,15 +343,17 @@ do
     mock_G
   )
   is_nil(err, "select_blind should succeed")
-  ok(selected_opt ~= nil, "select_blind should call G.FUNCS.select_blind")
-  ok(selected_opt == mock_G.blind_select_opts.big, "select_blind should pass the correct blind opt")
+  ok(selected_elem ~= nil, "select_blind should call G.FUNCS.select_blind")
+  ok(selected_elem == big_elem, "select_blind should pass the UIElement from get_UIE_by_ID")
+  ok(selected_elem.UIBox == big_opt, "selected element's .UIBox should be the blind UIBox")
 end
 
 -- select_blind returns error when blind key not found
 do
+  local opt, _ = make_blind_opt({ key = "bl_small" })
   local mock_G = {
     GAME = { round_resets = { blind_choices = { small = "bl_small" } } },
-    blind_select_opts = { small = {} },
+    blind_select_opts = { small = opt },
     FUNCS = { select_blind = function() end },
   }
   local err = handlers.dispatch(
@@ -353,7 +368,10 @@ end
 -- ============================================================
 
 do
-  local skipped_opt = nil
+  local skipped_elem = nil
+  local small_opt, small_elem = make_blind_opt({ key = "bl_small" })
+  local big_opt,   big_elem   = make_blind_opt({ key = "bl_big"   })
+  local boss_opt,  boss_elem  = make_blind_opt({ key = "bl_hook"  })
   local mock_G = {
     GAME = {
       round_resets = {
@@ -364,12 +382,8 @@ do
         },
       },
     },
-    blind_select_opts = {
-      small = { config = { blind = { key = "bl_small" } } },
-      big = { config = { blind = { key = "bl_big" } } },
-      boss = { config = { blind = { key = "bl_hook" } } },
-    },
-    FUNCS = { skip_blind = function(opt) skipped_opt = opt end },
+    blind_select_opts = { small = small_opt, big = big_opt, boss = boss_opt },
+    FUNCS = { skip_blind = function(e) skipped_elem = e end },
   }
 
   local err = handlers.dispatch(
@@ -377,7 +391,8 @@ do
     mock_G
   )
   is_nil(err, "skip_blind should succeed")
-  ok(skipped_opt == mock_G.blind_select_opts.small, "skip_blind should pass the correct blind opt")
+  ok(skipped_elem == small_elem, "skip_blind should pass the UIElement from get_UIE_by_ID")
+  ok(skipped_elem.UIBox == small_opt, "skipped element's .UIBox should be the blind UIBox")
 end
 
 -- ============================================================

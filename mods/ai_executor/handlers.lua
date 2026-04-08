@@ -108,11 +108,20 @@ local function find_blind_opt(G, target_key)
   if not position then
     return nil, "blind not found: " .. tostring(target_key)
   end
-  local opt = G.blind_select_opts and G.blind_select_opts[position]
+  local pos_index = position:lower()
+  local opt = G.blind_select_opts and G.blind_select_opts[pos_index]
   if not opt then
     return nil, "blind option not available for position: " .. tostring(position)
   end
-  return opt, nil
+  -- G.blind_select_opts[pos] is a UIBox container. Both select_blind and
+  -- skip_blind expect a UIElement child (with .UIBox pointing back to the
+  -- container). Use UIBox:get_UIE_by_ID to get the select button element,
+  -- which carries the correct ref_table and has .UIBox set to this container.
+  if type(opt.get_UIE_by_ID) == "function" then
+    local elem = opt:get_UIE_by_ID('select_blind_button')
+    if elem then return elem, nil end
+  end
+  return nil, "select_blind_button not found in blind opt for position: " .. tostring(position)
 end
 
 -- ============================================================
