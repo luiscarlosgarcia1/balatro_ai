@@ -1,56 +1,82 @@
 # balatro_ai
 
-## Project Overview
+`balatro_ai` is a Balatro agent project and an AI-engineering sandbox built in the open at the same time.
 
-`balatro_ai` is a Balatro-playing agent project and an AI-engineering sandbox built in the open at the same time.
+The repository is not a finished autonomous player yet. Its current center of gravity is a typed live-observation pipeline: a Steamodded Lua exporter writes canonical game state, Python parses that handoff into `GameObservation`, and a small runtime layer exercises policy and validation boundaries on top of that typed model.
 
-The two core goals of the project have not changed:
+The action-execution bridge also exists in-tree. A Python `FileExecutor` can write `ai/action.json`, and the `mods/ai_executor/` Steamodded mod can consume that queue in-game. That bridge is implemented and tested, but it is not the default top-level runtime entrypoint yet.
 
-- Build a real Balatro agent that can eventually play faster and better than a human.
-- Practice practical AI engineering patterns while building it: clean boundaries, delegated work, validation loops, and testable local workflows.
+## Current Repo State
 
-Today, the repo is centered on a typed live-observation pipeline rather than a finished bot. The current system can export live game state from a Balatro mod, parse it into Python, and run that state through a typed observer/policy/validator/runtime seam.
+- `mods/live_state_exporter/` writes canonical live state to `%USERPROFILE%\\AppData\\Roaming\\Balatro\\ai\\live_state.json`.
+- `balatro_ai.observation` exposes a public `BalatroObserver` API backed by a typed `LiveObservationParser`.
+- `balatro_ai/models.py` defines the frozen dataclass contract used inside Python, centered on `GameObservation`.
+- `balatro_ai/runtime.py`, `balatro_ai/policy.py`, and `balatro_ai/interfaces.py` provide the current observer -> policy -> validator -> executor seam.
+- `main.py` runs a local scripted demo loop, not a live in-game agent.
+- `pretty_printer.py` reads the latest live observation and writes a readable dataclass-tree dump into `prints/`.
+- `balatro_ai/executor/file_executor.py` and `mods/ai_executor/` provide the file-channel execution path for future end-to-end play.
+- The repo currently has no third-party Python dependencies declared.
 
-### Current features
+Verified locally on 2026-04-25:
 
-- A Lua mod in `mods/live_state_exporter/` that writes canonical live state to `AppData/Roaming/Balatro/ai/live_state.json`
-- A typed Python observation boundary built around `GameObservation`
-- A public `BalatroObserver` API for reading and parsing the live handoff file
-- A small runtime loop with explicit `Observer`, `Policy`, `Validator`, and `Executor` boundaries
-- A demo runtime for exercising the typed loop without the game
-- A readable observation printer that writes snapshots into `prints/`
-- Smoke coverage for live parsing, public imports, pretty printing, and typed runtime flow
+- Python 3.14.3
+- Lua 5.4.6
+- `python -m unittest discover -s tests -p "test*.py" -v` passed with 39 tests
+- All `tests/exporter/test_*.lua` scripts passed
+- All `tests/ai_executor/test_*.lua` scripts passed
+
+## Architecture
+
+### Live observation path
+
+1. `mods/live_state_exporter/` reads Balatro runtime state from `G`.
+2. The exporter shapes that data into a canonical JSON payload and writes `ai/live_state.json`.
+3. `BalatroObserver` reads the file through `BalatroPaths`.
+4. `LiveObservationParser` converts the payload into typed Python dataclasses.
+5. Runtime, policy, validation, and debug tools operate on `GameObservation`, not raw dicts.
+
+### Execution path that already exists
+
+1. Python creates a `GameAction`.
+2. `FileExecutor` serializes one or more actions into `ai/action.json`.
+3. `mods/ai_executor/` polls that file from inside the game and dispatches handlers against Balatro APIs.
+4. The Lua mod deletes `action.json` on success or writes `ai/action_error.json` on failure.
+
+### Important current gap
+
+The repo has both sides of the bridge, but the default entrypoint is still the demo runtime in `main.py`. There is not yet a single top-level script that observes the live game, chooses actions, validates them, and sends them through `FileExecutor` in one integrated production loop.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.10+ for the Python codebase
-- Balatro with Steamodded if you want live in-game observation
-- A Windows environment if you want the default `AppData/Roaming/Balatro` path to work without overrides
+- Python 3.14 was used for the latest local verification
+- Lua 5.4 if you want to run the Lua test scripts directly
+- Balatro with Steamodded if you want live in-game observation or execution
+- Windows if you want the default `%AppData%\\Roaming\\Balatro` path without overrides
 
 ### Installation
 
-```bash
+```powershell
 git clone <repo-url>
 cd balatro_ai
 ```
 
-No third-party Python dependencies are declared in the repo today. The current Python workflow uses the standard library test runner.
+No dependency installation step is currently required for the Python package.
 
-For live observation, install the Balatro mod from `mods/live_state_exporter/` into your Steamodded setup so Balatro can write `ai/live_state.json`.
+For live observation, install `mods/live_state_exporter/` into your Steamodded setup.
 
-### Configuration
+For action execution, also install `mods/ai_executor/`.
 
-There are no environment variables to set right now.
+### Default paths
 
-By default, the observer reads:
+By default, Python looks for the exporter output at:
 
 ```text
 %USERPROFILE%\AppData\Roaming\Balatro\ai\live_state.json
 ```
 
-That path comes from `BalatroPaths`. If you need a different root, override it in code:
+That path comes from `BalatroPaths`. If you want to point the observer at another Balatro root:
 
 ```python
 from pathlib import Path
@@ -61,78 +87,70 @@ observer = BalatroObserver(paths=BalatroPaths(root=Path(r"C:\path\to\Balatro")))
 observation = observer.observe()
 ```
 
-### Troubleshooting
+## Common Commands
 
-- If `BalatroObserver` raises `FileNotFoundError`, Balatro has not written `ai/live_state.json` yet.
-- If `BalatroObserver` raises `ValueError`, the file exists but the payload does not match the current live parser.
-- If you only want to exercise the architecture without running the game, use the demo runtime in `main.py`.
+Run the local scripted runtime:
 
-## Running the Project
-
-### Usage
-
-Run the local typed demo loop:
-
-```bash
+```powershell
 python main.py
 ```
 
-Read the latest live observation from Balatro and write a readable printout:
+Read the latest live observation and write a readable printout:
 
-```bash
+```powershell
 python pretty_printer.py
 ```
 
-Run the Python smoke suite:
+Run the Python test suite:
 
-```bash
+```powershell
 python -m unittest discover -s tests -p "test*.py" -v
 ```
 
-### Scripts and commands
+Run the exporter Lua tests from the project root:
 
-- `python main.py`
-  Runs the scripted demo runtime built around `EpisodeRunner`, `DemoPolicy`, and `RuleBasedValidator`.
-- `python pretty_printer.py`
-  Reads the live observation through `BalatroObserver` and writes a readable dataclass tree into `prints/`.
-- `python -m unittest discover -s tests -p "test*.py" -v`
-  Runs the current Python smoke suite.
+```powershell
+Get-ChildItem tests\exporter\test_*.lua | ForEach-Object { lua $_.FullName }
+```
+
+Run the AI executor Lua tests from the project root:
+
+```powershell
+Get-ChildItem tests\ai_executor\test_*.lua | ForEach-Object { lua $_.FullName }
+```
 
 ## Project Structure
 
 - `balatro_ai/`
-  Main Python package. Holds the typed models, interfaces, observer service, parser modules, policy, runtime, and demo runtime.
+  Python package holding the typed models, observer service, parser modules, runtime, policy, interfaces, and file executor.
 - `mods/live_state_exporter/`
-  Steamodded Lua mod that exports canonical Balatro state into `ai/live_state.json`.
+  Steamodded Lua mod that exports canonical Balatro state to `ai/live_state.json`.
+- `mods/ai_executor/`
+  Steamodded Lua mod that reads `ai/action.json` and executes queued actions in-game.
 - `tests/smoke/`
-  Python smoke tests protecting the surviving typed observer and runtime boundaries.
+  Python smoke coverage for parser behavior, public imports, pretty printing, and typed runtime flow.
+- `tests/ai_executor/`
+  Python tests for the action contract and `FileExecutor`, plus Lua tests for the in-game executor mod.
 - `tests/exporter/`
-  Lua-side tests for exporter modules, schema shaping, collectors, and write behavior.
+  Lua tests for exporter shaping, collectors, probes, schema defaults, and write behavior.
 - `prints/`
   Human-readable observation dumps written by `pretty_printer.py`.
 - `docs/prds/`
-  PRDs, plans, and follow-up notes for the observer/exporter work that shaped the current architecture.
+  PRDs and plans for the observer, exporter, mod refactor, and executor work.
 - `WORKFLOW.md`
-  Notes on how the repo approaches coding-agent collaboration and delegation boundaries.
+  Notes on how the repo approaches coding-agent collaboration and module boundaries.
 
-## Next Steps
+## Practical Notes
 
-- Build a stronger policy and knowledge layer on top of `GameObservation` before spending real effort on UI automation.
-- Expand runtime-verified observation coverage for crowded game state such as shop details, modifiers, and interaction-heavy zones.
-- Add a real execution boundary after the decision loop is stronger, ideally through direct in-game actions rather than fragile pixel clicking.
-- Keep tightening tests and module boundaries so future delegated work stays easy to verify.
+- The observation architecture is typed-first inside Python. JSON is only the Lua-to-Python ingress boundary.
+- `balatro_ai/observation/README.md` is the best guardrail doc for the observation package.
+- `CLAUDE.md` is the fast-start context file for coding agents working in this repo.
+- The current demo policy is intentionally tiny. It exists to exercise the seam, not to play Balatro well.
+- The execution bridge is more concrete than the policy layer right now, so avoid assuming the top-level app is further along than it is.
 
-## Collaboration
+## Near-Term Direction
 
-### Contributing
-
-- Keep changes grounded in the typed live-observer architecture.
-- Prefer small, reviewable slices over broad rewrites.
-- Run `python -m unittest discover -s tests -p "test*.py" -v` before closing work.
-- Treat `GameObservation` as the in-process contract and avoid reintroducing dict-first or save-first flows.
-
-### Credits
-
-- Built around Balatro as the target game.
-- Uses a Steamodded Lua mod as the live observation ingress.
-- Shaped by the repo's PRD-driven workflow in `docs/prds/`.
+- Wire the typed observer/runtime seam to the real `FileExecutor` for a genuine live loop.
+- Strengthen the policy layer on top of the richer `GameObservation` contract.
+- Continue extending exporter coverage for interaction-heavy states while keeping the typed boundary clean.
+- Keep tests focused on surviving contracts instead of preserving old transitional structure.
