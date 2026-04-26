@@ -6,12 +6,12 @@
 
 Durable decisions that apply across all phases:
 
-- **File channel**: `ai/action.json` (Python → Lua), `ai/action_error.json` (Lua → Python on failure). No separate ack file — deletion of `action.json` is the completion signal.
+- **File channel**: `ai/action.json` (Python -> Lua), `ai/action_error.json` (Lua -> Python on failure). No separate ack file - deletion of `action.json` is the completion signal.
 - **Action schema**: `action.json` is a JSON object with a top-level `"actions"` array. Each item has `kind` (string), `target_ids` (int array), `target_key` (string or null), and `order` (int array). Python writes the full sequence atomically.
-- **Bridge key**: `instance_id` in `GameObservation` is identical to `card.ID` in Lua. This is the lookup key the Lua executor uses to find card objects — no screen positions, no display indices.
+- **Bridge key**: `instance_id` in `GameObservation` is identical to `card.ID` in Lua. This is the lookup key the Lua executor uses to find card objects - no screen positions, no display indices.
 - **Stable-state completion signal**: The Lua executor does not delete `action.json` immediately after queuing the last `G.FUNCS.*` call. It appends a final `G.E_MANAGER` condition event that polls `G.STATE` and fires only once the game has settled into a known actionable state. The actionable states are defined as a constant set in `ai_executor`: `SELECTING_HAND`, `SHOP`, `BLIND_SELECT`, and all pack states (`TAROT_PACK`, `PLANET_PACK`, `SPECTRAL_PACK`, `BUFFOON_PACK`, `STANDARD_PACK`). Scoring periods, interest screens, and ante transitions are not in this set and cause the condition event to keep waiting.
-- **Exporter gate**: `live_state_exporter` skips its write cycle while `action.json` is present. It writes exactly once after `action.json` is deleted (transition-triggered, not tick-triggered). This guarantees Python always reads a stable, post-action observation.
-- **Startup write**: On game load, before any `action.json` has ever been written, the exporter performs one unconditional write so Python has an initial observation to act on. After that it switches to the transition-triggered model.
+- **Exporter readiness gate**: `live_state_exporter` no longer treats `action.json` deletion as the sole write trigger. Instead, it polls a very cheap in-memory readiness predicate and only promotes a fresh canonical `live_state.json` snapshot when the game appears input-ready. The first candidate predicate is controller-based: `not G.CONTROLLER.locked`, `not G.CONTROLLER.interrupt.focus`, and `(G.GAME.STOP_USE or 0) == 0`. If needed, one or two tiny presence checks may be added later, but full observation reads are not used to determine readiness.
+- **Startup write**: On game load, before any action has ever been submitted, the exporter performs one unconditional write so Python has an initial observation to act on. After that it switches to the readiness-gated model.
 - **Separate mods**: `ai_executor` and `live_state_exporter` are independent mods. Each can be installed, disabled, or modified without touching the other.
 - **Protocol unchanged**: The `Executor` Python protocol (`execute(action: GameAction) -> None`) is not modified. `EpisodeRunner` and `Validator` are not touched.
 - **Lua trusts Python**: The Lua executor performs no re-validation. It executes what the queue says and writes an error file if execution fails at the game API level.
@@ -24,7 +24,7 @@ Durable decisions that apply across all phases:
 
 ### What to build
 
-Define the shared vocabulary that both sides of the file channel will depend on. This is pure Python — no file I/O, no Lua, no running game required.
+Define the shared vocabulary that both sides of the file channel will depend on. This is pure Python - no file I/O, no Lua, no running game required.
 
 Introduce an `ActionKind` module that declares string constants for every valid action kind: `play_hand`, `discard`, `buy_shop_item`, `sell_joker`, `reroll_shop`, `leave_shop`, `select_blind`, `skip_blind`, `pick_pack_item`, `skip_pack`, `use_consumable`, `reorder_jokers`, `reorder_hand`. Policy code imports from this module rather than using bare strings.
 
@@ -54,7 +54,7 @@ On `execute`, it serializes the action as a one-item queue and writes `action.js
 
 A companion `execute_sequence` method accepts a pre-built list of `GameAction` and writes them as a multi-item queue in one atomic write. The runtime loop continues to call `execute` for single actions; `execute_sequence` is available for future policy upgrades.
 
-All tests use a real temporary filesystem directory — no mocks, no running game.
+All tests use a real temporary filesystem directory - no mocks, no running game.
 
 ### Acceptance criteria
 
@@ -68,7 +68,7 @@ All tests use a real temporary filesystem directory — no mocks, no running gam
 
 ---
 
-## Phase 3: Lua Executor — All Game Actions
+## Phase 3: Lua Executor - All Game Actions
 
 **User stories**: 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 34, 35, 36, 37, 38, 39
 
@@ -91,31 +91,31 @@ After the last action event is queued, a final `G.E_MANAGER` condition event is 
 - [ ] `action.json` is deleted only after `G.STATE` settles into the actionable set
 - [ ] `action_error.json` is written with action kind and reason on any handler failure
 - [ ] Queue processing halts at the first error; subsequent actions in the queue are not executed
-- [ ] A real play-through of at least one full blind (select blind → play hand to completion → enter shop) works end-to-end
+- [ ] A real play-through of at least one full blind (select blind -> play hand to completion -> enter shop) works end-to-end
 
 ---
 
-## Phase 4: Exporter Gate and Deduplication Removal
+## Phase 4: Readiness-Gated Export Polling
 
 **User stories**: 28, 29, 30, 31
 
 ### What to build
 
-Modify `live_state_exporter` to integrate with the action channel. The exporter now checks for the presence of `action.json` at the start of each write cycle. If the file exists, the write is skipped entirely — the game is mid-execution and the state is not yet stable.
+Modify `live_state_exporter` to stop treating `action.json` deletion as the sole trigger for canonical exports. Instead, the exporter should poll a very cheap readiness predicate in memory on each update, or at another equally cheap cadence, and only build the full observation when the game appears ready for player input.
 
-The exporter tracks whether it has written since the last `action.json` deletion. When it detects the file has been deleted (transition from present to absent), it writes `live_state.json` exactly once, then returns to waiting. It does not write again until the next deletion transition.
+The initial readiness predicate should prefer controller and action gates over expensive world reads: `not G.CONTROLLER.locked`, `not G.CONTROLLER.interrupt.focus`, and `(G.GAME.STOP_USE or 0) == 0`. If live testing shows that this still admits fragmented reads, the phase may add one or two tiny presence checks, but it should not fall back to a full-state stabilization loop or a global `T`/`VT` convergence scan.
 
-On game load, before any `action.json` has been written, the exporter performs one unconditional startup write so Python has an initial observation to work from.
+When the predicate is false, the exporter does not promote a new canonical snapshot. When the predicate is true, it performs a normal `live_state.json` build/write. Startup still gets one unconditional initial write so Python has a baseline observation on boot.
 
-With the transition-triggered model confirmed working, remove the deduplication logic from the exporter. It is no longer needed — state only changes as a result of actions, and the exporter only writes post-action.
+Deduplication should remain in place for canonical output suppression: repeated ready snapshots that are identical should not cause extra writes. The old post-action dedupe/stability-window experiment is not revived; the goal is a cheap readiness gate plus normal canonical dedupe.
 
 ### Acceptance criteria
 
-- [ ] Exporter skips all write cycles while `action.json` is present
-- [ ] Exporter writes exactly once after `action.json` is deleted
-- [ ] Exporter does not write again until the next action queue completes
+- [ ] Exporter polls a cheap in-memory readiness predicate without building the full observation while the predicate is false
+- [ ] The initial readiness predicate is controller-based: `not G.CONTROLLER.locked`, `not G.CONTROLLER.interrupt.focus`, and `(G.GAME.STOP_USE or 0) == 0`
+- [ ] Canonical `live_state.json` writes occur only when the readiness predicate is true
 - [ ] Startup write fires once on game load before any action has been submitted
-- [ ] Deduplication logic is removed
+- [ ] Canonical deduplication remains in place so identical ready snapshots do not cause extra writes
 - [ ] Existing observation parser and smoke tests continue to pass against the new export behavior
 
 ---

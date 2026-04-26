@@ -21,6 +21,7 @@ _G.Game = nil
 _G.G = {
   STATE = 9,
   GAME = {},
+  CONTROLLER = {},
 }
 
 _G.love = {
@@ -58,6 +59,13 @@ _G.G.GAME.dollars = 6
 _G.love.update()
 eq(#writes, 4, "wrapped update should delegate changed payload and probe writes")
 
+t = 0.16
+_G.G.CONTROLLER.locked = true
+_G.G.GAME.dollars = 7
+_G.love.update()
+eq(#writes, 5, "readiness false should still allow probe writes without canonical export")
+eq(writes[5].path, "ai/live_state_probe.json", "probe should remain ungated when canonical export is blocked")
+
 _G.love = old.love
 _G.Game = old.Game
 _G.G = old.G
@@ -74,13 +82,16 @@ _G.SMODS = {
 _G.NFS = {
   read = function(path)
     if path == "virtual/shared/loader.lua" then
-      return "return { load = function(name) if name == 'state/raw.lua' then return { read_state = function() return {} end } end if name == 'state/schema.lua' then return { build_shell = function() return {} end } end if name == 'out.lua' then return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end, make_signature = function() return 'sig' end, encode_json = function() return '{}' end } end if name == 'probe.lua' then return { tick = function() error('boom from probe tick') end } end error('unexpected module name: ' .. tostring(name)) end }"
+      return "return { load = function(name) if name == 'state/raw.lua' then return { read_state = function() return {} end } end if name == 'state/schema.lua' then return { build_shell = function() return {} end } end if name == 'state/readiness.lua' then return { is_ready = function() return true end } end if name == 'out.lua' then return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end, make_signature = function() return 'sig' end, encode_json = function() return '{}' end } end if name == 'probe.lua' then return { tick = function() error('boom from probe tick') end } end error('unexpected module name: ' .. tostring(name)) end }"
     end
     if path == "virtual/state/raw.lua" then
       return "return { read_state = function() return {} end }"
     end
     if path == "virtual/state/schema.lua" then
       return "return { build_shell = function() return {} end }"
+    end
+    if path == "virtual/state/readiness.lua" then
+      return "return { is_ready = function() return true end }"
     end
     if path == "virtual/out.lua" then
       return "return { new_exporter = function() return { tick = function() error('boom from exporter tick') end } end, make_signature = function() return 'sig' end, encode_json = function() return '{}' end }"

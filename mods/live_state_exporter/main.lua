@@ -28,6 +28,7 @@ end
 
 local raw = load_module("state/raw.lua")
 local schema = load_module("state/schema.lua")
+local readiness = load_module("state/readiness.lua")
 local out = load_module("out.lua")
 local probe = load_module("probe.lua")
 
@@ -45,6 +46,9 @@ local exporter = out.new_exporter({
   now = current_time,
   read_state = function()
     return raw.read_state(rawget(_G, "G"))
+  end,
+  is_ready = function()
+    return readiness.is_ready(rawget(_G, "G"))
   end,
   build_shell = schema.build_shell,
   make_signature = out.make_signature,

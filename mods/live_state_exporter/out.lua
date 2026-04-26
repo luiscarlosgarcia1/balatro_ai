@@ -137,18 +137,32 @@ function out.new_exporter(options)
     dt = options.dt or 0.05,
     now = options.now,
     read_state = options.read_state,
+    is_ready = options.is_ready,
     build_shell = options.build_shell,
     make_signature = options.make_signature or out.make_signature,
     encode_json = options.encode_json or out.encode_json,
     write_snapshot = options.write_snapshot or out.write_snapshot,
     last_write_at = nil,
     last_signature = nil,
+    has_written_once = false,
   }
 
   function exporter:tick()
     local now = self.now and self.now() or 0
     if self.last_write_at ~= nil and (now - self.last_write_at) < self.dt then
       return false
+    end
+
+    if self.has_written_once then
+      local ok_ready, ready = pcall(function()
+        if self.is_ready == nil then
+          return true
+        end
+        return self.is_ready()
+      end)
+      if not ok_ready or not ready then
+        return false
+      end
     end
 
     local ok_read, raw_state = pcall(function()
@@ -191,6 +205,7 @@ function out.new_exporter(options)
 
     self.last_write_at = now
     self.last_signature = signature
+    self.has_written_once = true
     return true
   end
 
