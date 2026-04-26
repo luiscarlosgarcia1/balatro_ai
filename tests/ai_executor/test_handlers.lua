@@ -32,6 +32,8 @@ ok(handlers.find_card_by_id ~= nil, "handlers should export find_card_by_id")
 ok(handlers.dispatch ~= nil, "handlers should export dispatch")
 ok(handlers.ACTIONABLE_STATE_NAMES ~= nil, "handlers should export ACTIONABLE_STATE_NAMES")
 ok(handlers.is_actionable_state ~= nil, "handlers should export is_actionable_state")
+ok(handlers.reorder_area_cards ~= nil, "handlers should export reorder_area_cards")
+ok(handlers.refresh_area_display ~= nil, "handlers should export refresh_area_display")
 
 local cards = {
   { ID = 1, key = "c_ace" },
@@ -46,6 +48,63 @@ eq(found.key, "c_king", "find_card_by_id should return correct card")
 is_nil(handlers.find_card_by_id(cards, 99), "find_card_by_id should return nil for missing ID")
 is_nil(handlers.find_card_by_id({}, 1), "find_card_by_id should return nil on empty table")
 is_nil(handlers.find_card_by_id(nil, 1), "find_card_by_id should handle nil cards table")
+
+-- ============================================================
+-- Cycle 1b - reorder helper
+-- ============================================================
+
+do
+  local set_ranks_calls = 0
+  local align_calls = 0
+  local c1 = { ID = 101, highlighted = false }
+  local c2 = { ID = 102, highlighted = true }
+  local c3 = { ID = 103, highlighted = false }
+  local area = {
+    cards = { c1, c2, c3 },
+    highlighted = { c2 },
+    set_ranks = function(self) set_ranks_calls = set_ranks_calls + 1 end,
+    align_cards = function(self) align_calls = align_calls + 1 end,
+  }
+
+  local ok_reorder, err = handlers.reorder_area_cards(area, { 103, 101, 102 })
+  ok(ok_reorder, "reorder_area_cards should succeed with a full valid order")
+  is_nil(err, "reorder_area_cards should not return an error on success")
+  eq(area.cards[1].ID, 103, "reorder_area_cards should move card 103 to slot 1")
+  eq(area.cards[2].ID, 101, "reorder_area_cards should move card 101 to slot 2")
+  eq(area.cards[3].ID, 102, "reorder_area_cards should move card 102 to slot 3")
+  eq(#area.highlighted, 1, "reorder_area_cards should preserve highlighted cards")
+  eq(area.highlighted[1].ID, 102, "reorder_area_cards should rebuild highlights from reordered cards")
+  eq(set_ranks_calls, 1, "reorder_area_cards should refresh ranks once")
+  eq(align_calls, 1, "reorder_area_cards should align cards once")
+end
+
+do
+  local c1 = { ID = 201 }
+  local c2 = { ID = 202 }
+  local original_cards = { c1, c2 }
+  local area = { cards = original_cards }
+
+  local ok_reorder, err = handlers.reorder_area_cards(area, { 201 })
+  ok(not ok_reorder, "reorder_area_cards should reject length mismatches")
+  ok(string.find(err, "length mismatch") ~= nil, "length mismatch error should mention the mismatch")
+  ok(area.cards == original_cards, "reorder_area_cards should not replace cards on length mismatch")
+  eq(area.cards[1].ID, 201, "reorder_area_cards should leave original card order intact on failure")
+  eq(area.cards[2].ID, 202, "reorder_area_cards should leave original card order intact on failure")
+end
+
+do
+  local c1 = { ID = 301 }
+  local c2 = { ID = 302 }
+  local original_cards = { c1, c2 }
+  local area = { cards = original_cards }
+
+  local ok_reorder, err = handlers.reorder_area_cards(area, { 302, 999 })
+  ok(not ok_reorder, "reorder_area_cards should reject unknown IDs")
+  ok(string.find(err, "not found") ~= nil, "unknown ID error should mention 'not found'")
+  ok(area.cards == original_cards, "reorder_area_cards should not replace cards when an ID is unknown")
+  eq(area.cards[1].ID, 301, "reorder_area_cards should keep original slot 1 on unknown ID")
+  eq(area.cards[2].ID, 302, "reorder_area_cards should keep original slot 2 on unknown ID")
+end
 
 -- ============================================================
 -- Cycle 2 — play_hand
@@ -165,6 +224,105 @@ do
   is_nil(err, "buy_shop_item should succeed")
   eq(buy_calls, 1, "buy_shop_item should call buy_from_shop once")
   ok(bought_ref == joker_item, "buy_shop_item should pass correct item as ref_table")
+end
+
+-- ============================================================
+-- Cycle 12 - reorder actions
+-- ============================================================
+
+do
+  local set_ranks_calls = 0
+  local align_calls = 0
+  local j1 = { ID = 401 }
+  local j2 = { ID = 402 }
+  local j3 = { ID = 403 }
+  local mock_G = {
+    jokers = {
+      cards = { j1, j2, j3 },
+      set_ranks = function(self) set_ranks_calls = set_ranks_calls + 1 end,
+      align_cards = function(self) align_calls = align_calls + 1 end,
+    },
+    FUNCS = {},
+  }
+
+  local err = handlers.dispatch(
+    { kind = "reorder_jokers", target_ids = {}, target_key = nil, order = { 403, 401, 402 } },
+    mock_G
+  )
+  is_nil(err, "reorder_jokers should succeed")
+  eq(mock_G.jokers.cards[1].ID, 403, "reorder_jokers should update joker slot 1")
+  eq(mock_G.jokers.cards[2].ID, 401, "reorder_jokers should update joker slot 2")
+  eq(mock_G.jokers.cards[3].ID, 402, "reorder_jokers should update joker slot 3")
+  eq(set_ranks_calls, 1, "reorder_jokers should refresh ranks once")
+  eq(align_calls, 1, "reorder_jokers should align cards once")
+end
+
+-- reorder_hand success and failure cases
+do
+  local set_ranks_calls = 0
+  local align_calls = 0
+  local c1 = { ID = 501, highlighted = false }
+  local c2 = { ID = 502, highlighted = true }
+  local c3 = { ID = 503, highlighted = false }
+  local mock_G = {
+    hand = {
+      cards = { c1, c2, c3 },
+      highlighted = { c2 },
+      set_ranks = function(self) set_ranks_calls = set_ranks_calls + 1 end,
+      align_cards = function(self) align_calls = align_calls + 1 end,
+    },
+    FUNCS = {},
+  }
+
+  local err = handlers.dispatch(
+    { kind = "reorder_hand", target_ids = {}, target_key = nil, order = { 502, 503, 501 } },
+    mock_G
+  )
+  is_nil(err, "reorder_hand should succeed")
+  eq(mock_G.hand.cards[1].ID, 502, "reorder_hand should update hand slot 1")
+  eq(mock_G.hand.cards[2].ID, 503, "reorder_hand should update hand slot 2")
+  eq(mock_G.hand.cards[3].ID, 501, "reorder_hand should update hand slot 3")
+  eq(#mock_G.hand.highlighted, 1, "reorder_hand should preserve highlighted cards")
+  eq(mock_G.hand.highlighted[1].ID, 502, "reorder_hand should rebuild highlights from reordered cards")
+  eq(set_ranks_calls, 1, "reorder_hand should refresh ranks once")
+  eq(align_calls, 1, "reorder_hand should align cards once")
+end
+
+do
+  local mock_G = {
+    hand = {
+      cards = { { ID = 601 }, { ID = 602 } },
+      highlighted = {},
+    },
+    FUNCS = {},
+  }
+
+  local err = handlers.dispatch(
+    { kind = "reorder_hand", target_ids = {}, target_key = nil, order = { 601 } },
+    mock_G
+  )
+  ne(err, nil, "reorder_hand should return an error on length mismatch")
+  ok(string.find(err, "length mismatch") ~= nil, "reorder_hand mismatch error should mention the mismatch")
+  eq(mock_G.hand.cards[1].ID, 601, "reorder_hand should not partially reorder on mismatch")
+  eq(mock_G.hand.cards[2].ID, 602, "reorder_hand should leave original order on mismatch")
+end
+
+do
+  local mock_G = {
+    jokers = {
+      cards = { { ID = 701 }, { ID = 702 } },
+    },
+    FUNCS = {},
+  }
+
+  local err = handlers.dispatch(
+    { kind = "reorder_jokers", target_ids = {}, target_key = nil, order = { 702, 999 } },
+    mock_G
+  )
+  ne(err, nil, "reorder_jokers should return an error on unknown IDs")
+  ok(string.find(err, "not found") ~= nil, "reorder_jokers error should mention missing IDs")
+  eq(mock_G.jokers.cards[1].ID, 701, "reorder_jokers should not partially reorder on failure")
+  eq(mock_G.jokers.cards[2].ID, 702, "reorder_jokers should leave original order on failure")
 end
 
 -- buy_shop_item calls use_card for booster packs (found in shop_booster)

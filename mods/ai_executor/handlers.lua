@@ -124,6 +124,79 @@ local function find_blind_opt(G, target_key)
   return nil, "select_blind_button not found in blind opt for position: " .. tostring(position)
 end
 
+function handlers.refresh_area_display(area)
+  if type(area) ~= "table" then
+    return
+  end
+  if type(area.set_ranks) == "function" then
+    area:set_ranks()
+  end
+  if type(area.align_cards) == "function" then
+    area:align_cards()
+  end
+end
+
+function handlers.reorder_area_cards(area, order)
+  if type(area) ~= "table" then
+    return nil, "missing card area"
+  end
+
+  local cards = area.cards
+  if type(cards) ~= "table" then
+    return nil, "card area has no cards table"
+  end
+  if type(order) ~= "table" then
+    return nil, "order must be a table"
+  end
+  if #order ~= #cards then
+    return nil, "order length mismatch: expected " .. tostring(#cards) .. ", got " .. tostring(#order)
+  end
+
+  local cards_by_id = {}
+  for i = 1, #cards do
+    local card = cards[i]
+    local id = type(card) == "table" and card.ID or nil
+    if id == nil then
+      return nil, "card missing ID at position " .. tostring(i)
+    end
+    if cards_by_id[id] ~= nil then
+      return nil, "duplicate card ID in area: " .. tostring(id)
+    end
+    cards_by_id[id] = card
+  end
+
+  local reordered = {}
+  local seen = {}
+  for i = 1, #order do
+    local id = order[i]
+    local card = cards_by_id[id]
+    if card == nil then
+      return nil, "card not found with ID " .. tostring(id)
+    end
+    if seen[id] then
+      return nil, "duplicate order ID " .. tostring(id)
+    end
+    seen[id] = true
+    reordered[i] = card
+  end
+
+  area.cards = reordered
+
+  if type(area.highlighted) == "table" then
+    local highlighted = {}
+    for i = 1, #reordered do
+      local card = reordered[i]
+      if type(card) == "table" and card.highlighted then
+        highlighted[#highlighted + 1] = card
+      end
+    end
+    area.highlighted = highlighted
+  end
+
+  handlers.refresh_area_display(area)
+  return true
+end
+
 -- ============================================================
 -- Action handlers
 -- ============================================================
@@ -233,6 +306,20 @@ end
 
 DISPATCH["cash_out"] = function(action, G)
   G.FUNCS.cash_out({ config = {} })
+end
+
+DISPATCH["reorder_jokers"] = function(action, G)
+  local ok_reorder, err = handlers.reorder_area_cards(G.jokers, action.order)
+  if not ok_reorder then
+    error("reorder_jokers: " .. err)
+  end
+end
+
+DISPATCH["reorder_hand"] = function(action, G)
+  local ok_reorder, err = handlers.reorder_area_cards(G.hand, action.order)
+  if not ok_reorder then
+    error("reorder_hand: " .. err)
+  end
 end
 
 DISPATCH["use_consumable"] = function(action, G)
