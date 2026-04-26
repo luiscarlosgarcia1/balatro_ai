@@ -15,6 +15,16 @@ local old = {
 local t = 0
 local writes = {}
 
+local function count_writes(path)
+  local total = 0
+  for i = 1, #writes do
+    if writes[i].path == path then
+      total = total + 1
+    end
+  end
+  return total
+end
+
 _G.SMODS = nil
 _G.NFS = nil
 _G.Game = nil
@@ -46,25 +56,32 @@ _G.love = {
 
 dofile("mods/live_state_exporter/main.lua")
 
-eq(#writes, 2, "boot should attempt initial snapshot and probe writes")
-eq(writes[1].path, "ai/live_state.json", "main should write to canonical path")
-eq(writes[2].path, "ai/live_state_probe.json", "main should write probe output alongside the canonical snapshot")
+eq(count_writes("ai/live_state.json"), 1, "boot should write one canonical snapshot")
+eq(count_writes("ai/live_state_probe.json"), 0, "boot should keep probe output silent")
 
 t = 0.02
 _G.love.update()
-eq(#writes, 2, "wrapped update should respect throttle and probe dedupe")
+eq(count_writes("ai/live_state.json"), 1, "wrapped update should respect canonical throttle")
+eq(count_writes("ai/live_state_probe.json"), 0, "wrapped update should keep probe output silent")
 
 t = 0.10
 _G.G.GAME.dollars = 6
 _G.love.update()
-eq(#writes, 4, "wrapped update should delegate changed payload and probe writes")
+eq(count_writes("ai/live_state.json"), 1, "canonical reads should stay throttled below the 0.25s cadence")
+eq(count_writes("ai/live_state_probe.json"), 0, "probe should remain silent when payload changes")
 
-t = 0.16
+t = 0.30
+_G.G.GAME.dollars = 6
+_G.love.update()
+eq(count_writes("ai/live_state.json"), 2, "changed payload should add one canonical write")
+eq(count_writes("ai/live_state_probe.json"), 0, "probe should stay silent after later canonical writes")
+
+t = 0.40
 _G.G.CONTROLLER.locked = true
 _G.G.GAME.dollars = 7
 _G.love.update()
-eq(#writes, 5, "readiness false should still allow probe writes without canonical export")
-eq(writes[5].path, "ai/live_state_probe.json", "probe should remain ungated when canonical export is blocked")
+eq(count_writes("ai/live_state.json"), 2, "readiness false should block canonical exports")
+eq(count_writes("ai/live_state_probe.json"), 0, "readiness false should still keep probe output silent")
 
 _G.love = old.love
 _G.Game = old.Game

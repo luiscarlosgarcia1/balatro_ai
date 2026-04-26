@@ -42,7 +42,7 @@ local function current_time()
 end
 
 local exporter = out.new_exporter({
-  dt = 0.05,
+  dt = 0.25,
   now = current_time,
   read_state = function()
     return raw.read_state(rawget(_G, "G"))

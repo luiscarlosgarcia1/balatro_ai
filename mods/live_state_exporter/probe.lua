@@ -2,6 +2,7 @@ local probe = {}
 
 local dir = "ai"
 local path = dir .. "/live_state_probe.json"
+local ENABLED = false
 
 local load_module = rawget(_G, "__live_state_exporter_load_module")
 if not load_module then
@@ -174,6 +175,10 @@ function probe.capture(root)
 end
 
 function probe.tick(root)
+  if not ENABLED then
+    return false
+  end
+
   local payload = capture_probe(root)
   local signature = out.make_signature(payload)
   if signature == last_signature then

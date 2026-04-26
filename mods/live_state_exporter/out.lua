@@ -142,14 +142,14 @@ function out.new_exporter(options)
     make_signature = options.make_signature or out.make_signature,
     encode_json = options.encode_json or out.encode_json,
     write_snapshot = options.write_snapshot or out.write_snapshot,
-    last_write_at = nil,
+    last_read_at = nil,
     last_signature = nil,
     has_written_once = false,
   }
 
   function exporter:tick()
     local now = self.now and self.now() or 0
-    if self.last_write_at ~= nil and (now - self.last_write_at) < self.dt then
+    if self.last_read_at ~= nil and (now - self.last_read_at) < self.dt then
       return false
     end
 
@@ -164,6 +164,8 @@ function out.new_exporter(options)
         return false
       end
     end
+
+    self.last_read_at = now
 
     local ok_read, raw_state = pcall(function()
       return self.read_state and self.read_state() or {}
@@ -203,7 +205,6 @@ function out.new_exporter(options)
       return false
     end
 
-    self.last_write_at = now
     self.last_signature = signature
     self.has_written_once = true
     return true

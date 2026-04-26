@@ -79,9 +79,9 @@ local wrote_third = probe.tick({
   },
 })
 
-ok(wrote_first, "probe should write the first snapshot")
-eq(writes[1].path, "ai/live_state_probe.json", "probe should write to the canonical probe path")
+eq(wrote_first, false, "probe should stay silent when disabled")
 eq(wrote_second, false, "probe should dedupe unchanged payloads")
-ok(wrote_third, "probe should write after payload changes")
+eq(wrote_third, false, "probe should stay silent even when payload changes")
+eq(#writes, 0, "disabled probe should not write probe snapshots")
 
 _G.love = old_love

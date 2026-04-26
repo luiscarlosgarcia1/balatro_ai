@@ -167,7 +167,13 @@ eq(startup_retry_writes, 1, "failed startup write should still attempt the write
 eq(startup_retry_reads, 1, "failed startup write should still read state")
 
 startup_retry_t = 0.01
-eq(startup_retry_exporter:tick(), true, "failed startup write should retry immediately before first success")
+eq(startup_retry_exporter:tick(), false, "failed startup write should still respect the read cadence before retrying")
+eq(startup_retry_writes, 1, "sub-cadence retry should not attempt another startup write yet")
+eq(startup_retry_reads, 1, "sub-cadence retry should not perform another read yet")
+ok(not startup_retry_exporter.has_written_once, "startup write should stay incomplete until a successful retry")
+
+startup_retry_t = 0.06
+eq(startup_retry_exporter:tick(), true, "failed startup write should retry on the next read slot")
 eq(startup_retry_writes, 2, "retry should attempt another startup write")
 eq(startup_retry_reads, 2, "retry should still bypass readiness until first success")
 ok(startup_retry_exporter.has_written_once, "successful retry should mark startup write complete")
