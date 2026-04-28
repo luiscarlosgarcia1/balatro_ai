@@ -1,0 +1,367 @@
+{
+  "manager_pid": 18071,
+  "n": 36,
+  "updated_at": "2026-04-27 23:00:16",
+  "instances": [
+    {
+      "index": 0,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18072,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_0",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_0.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 1,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18073,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_1",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_1.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 2,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18074,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_2",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_2.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 3,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18075,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_3",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_3.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 4,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18076,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_4",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_4.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 5,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18077,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_5",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_5.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 6,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18078,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_6",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_6.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 7,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18079,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_7",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_7.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 8,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18080,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_8",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_8.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 9,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18081,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_9",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_9.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 10,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18082,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_10",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_10.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 11,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18084,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_11",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_11.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 12,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18090,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_12",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_12.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 13,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18097,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_13",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_13.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 14,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18105,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_14",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_14.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 15,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18113,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_15",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_15.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 16,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18116,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_16",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_16.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 17,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18118,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_17",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_17.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 18,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18126,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_18",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_18.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 19,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18128,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_19",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_19.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 20,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18134,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_20",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_20.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 21,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18142,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_21",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_21.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 22,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18155,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_22",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_22.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 23,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18160,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_23",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_23.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 24,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18167,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_24",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_24.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 25,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18177,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_25",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_25.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 26,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18183,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_26",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_26.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 27,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18187,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_27",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_27.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 28,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18189,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_28",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_28.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 29,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18191,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_29",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_29.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 30,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18194,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_30",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_30.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 31,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18200,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_31",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_31.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 32,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18204,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_32",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_32.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 33,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18211,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_33",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_33.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 34,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18216,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_34",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_34.log",
+      "last_event": "stopped"
+    },
+    {
+      "index": 35,
+      "state": "stopped",
+      "alive": false,
+      "pid": 18219,
+      "returncode": -15,
+      "save_dir": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/.save/instance_35",
+      "log_path": "/Users/luisgarcia/Documents/Projects/Balatro/Balaitro/headless/logs/instance_35.log",
+      "last_event": "stopped"
+    }
+  ]
+}
