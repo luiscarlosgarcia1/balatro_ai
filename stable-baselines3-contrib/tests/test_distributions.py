@@ -1,0 +1,365 @@
+import numpy as np
+import pytest
+import torch as th
+from torch.distributions.utils import logits_to_probs
+
+from sb3_contrib.common.maskable.distributions import (
+    MaskableBernoulliDistribution,
+    MaskableCategorical,
+    MaskableCategoricalDistribution,
+    MaskableMultiCategoricalDistribution,
+)
+
+
+class TestMaskableCategorical:
+    def test_applying_mask(self):
+        """
+        Show that probs change as a result of masking
+        """
+
+        starting_probs = th.tensor([[0.2, 0.2, 0.6], [1, 0, 0]])
+        expected_probs = th.tensor([[0, 0.25, 0.75], [0, 0.5, 0.5]])
+        mask = np.array([[False, True, True], [False, True, True]])
+
+        distribution = MaskableCategorical(probs=starting_probs)
+        distribution.apply_masking(mask)
+        assert th.allclose(distribution.probs, expected_probs)
+
+    def test_modifying_mask(self):
+        """
+        Show that masks apply independently of each other
+        """
+
+        starting_probs = th.tensor([[0.2, 0.2, 0.6], [1, 0, 0]])
+        expected_probs = th.tensor([[0.5, 0.5, 0], [0, 1, 0]])
+        first_mask = np.array([[False, True, True], [False, True, True]])
+        second_mask = np.array([[True, True, False], [False, True, False]])
+
+        # pytorch converts probs to logits in a way that loses some precision and makes
+        # 0 probability outcomes slightly non-zero.
+        atol = 2e-07
+        distribution = MaskableCategorical(probs=starting_probs)
+        assert th.allclose(distribution.probs, starting_probs, atol=atol)
+
+        target_distribution = MaskableCategorical(probs=expected_probs)
+
+        distribution.apply_masking(first_mask)
+        distribution.apply_masking(second_mask)
+
+        assert th.allclose(distribution.probs, target_distribution.probs, atol=atol)
+
+    def test_removing_mask(self):
+        """
+        Show that masking may be unapplied to recover original probs
+        """
+
+        starting_probs = th.tensor([[0.2, 0.2, 0.6], [1, 0, 0]])
+        mask = np.array([[False, True, True], [False, True, True]])
+
+        distribution = MaskableCategorical(probs=starting_probs)
+        target_distribution = MaskableCategorical(probs=starting_probs)
+        distribution.apply_masking(mask)
+        distribution.apply_masking(None)
+        assert th.allclose(distribution.probs, target_distribution.probs)
+
+    def test_masking_affects_entropy(self):
+        # All outcomes equally likely
+        NUM_DIMS = 3
+        logits = th.zeros((1, NUM_DIMS), dtype=th.float32)
+        dist = MaskableCategorical(logits=logits)
+
+        # For each possible number of valid actions valid_action, show that e^entropy == valid_action
+        for valid_action in range(1, NUM_DIMS + 1):
+            masks = [j < valid_action for j in range(NUM_DIMS)]
+            dist.apply_masking(masks)
+            assert int(dist.entropy().exp()) == valid_action
+
+    def test_apply_masking_no_simplex_error_with_cached_probs(self):
+        """
+        Regression test for issue #322.
+        apply_masking() should not raise a Simplex validate_args error
+        when probs are cached before masking is re-applied (torch 2.9+, large action spaces).
+        """
+        n = 992
+        delta = 17
+        # Set all logits to -delta, then set the first one to 0 to make it the most likely
+        logits = th.full((1, n), -delta, dtype=th.float32)
+        logits[0, 0] = 0.0
+
+        # Expected probs: first dim is close to one, rest are almost zero after the softmax
+        expected_proba = th.cat((th.ones(1, 1), th.zeros(1, n - 1)), dim=1)
+
+        distribution = MaskableCategorical(logits=logits, validate_args=True)
+        _ = distribution.probs  # cache probs on the instance
+
+        th.testing.assert_close(distribution.probs, expected_proba, rtol=5e-5, atol=5e-5)
+        # Apply softmax, should be within the default tolerance
+        th.testing.assert_close(distribution.probs, logits_to_probs(logits))
+
+        mask = th.zeros((1, n), dtype=th.bool)
+        # Only the first action is valid, mask the rest of the actions,
+        # the rtol and atol when comparing to expected_proba can be kept to the default values
+        mask[0, 0] = True
+
+        # Should not raise ValueError: Simplex constraint
+        distribution.apply_masking(mask.numpy())
+        th.testing.assert_close(distribution.probs, expected_proba)
+        # After masking, it should deviate from the original probs
+        assert not th.allclose(distribution.probs, logits_to_probs(logits))
+
+
+class TestMaskableCategoricalDistribution:
+    def test_distribution_must_be_initialized(self):
+        """
+        Cannot use distribution before it has logits
+        """
+
+        DIMS = 2
+        dist = MaskableCategoricalDistribution(DIMS)
+        with pytest.raises(AttributeError):
+            dist.log_prob(th.randint(DIMS - 1, (1, 3)))
+
+        with pytest.raises(AttributeError):
+            dist.entropy()
+
+        with pytest.raises(AttributeError):
+            dist.sample()
+
+        with pytest.raises(AttributeError):
+            dist.mode()
+
+        with pytest.raises(AttributeError):
+            dist.apply_masking(None)
+
+        # But now we can
+        action_logits = th.randn(1, DIMS)
+        dist.proba_distribution(action_logits)
+        actions = th.randint(DIMS - 1, (3, 1))
+        dist.log_prob(actions)
+        dist.entropy()
+        dist.sample()
+        dist.mode()
+        # Test api
+        dist.actions_from_params(action_logits)
+        dist.log_prob_from_params(action_logits)
+        dist.apply_masking(None)
+
+    def test_logits_must_align_with_dims(self):
+        NUM_DIMS = 3
+        dist = MaskableCategoricalDistribution(NUM_DIMS)
+
+        # There should be one logit per dim, we're one short
+        logits = th.randn(1, NUM_DIMS - 1)
+        with pytest.raises(RuntimeError):
+            dist.proba_distribution(logits)
+
+        # That's better
+        logits = th.randn(1, NUM_DIMS)
+        dist.proba_distribution(logits)
+
+        # Other numbers of dimensions are acceptable as long as they can be realigned
+        logits = th.randn(NUM_DIMS)
+        dist.proba_distribution(logits)
+        logits = th.randn(3, NUM_DIMS, 3)
+        dist.proba_distribution(logits)
+
+    def test_dim_masking(self):
+        NUM_DIMS = 2
+        dist = MaskableCategoricalDistribution(NUM_DIMS)
+
+        logits = th.zeros((1, NUM_DIMS), dtype=th.float32)
+        dist.proba_distribution(logits)
+
+        assert (dist.distribution.probs == 0.5).all()
+        assert int(dist.entropy().exp()) == NUM_DIMS
+
+        for i in range(NUM_DIMS):
+            mask = np.array([False] * NUM_DIMS)
+            mask[i] = True
+            dist.apply_masking(mask)
+            probs = dist.distribution.probs
+            assert probs.sum() == 1
+            assert probs[0][i] == 1
+            assert int(dist.entropy().exp()) == 1
+
+        dist.apply_masking(None)
+        assert (dist.distribution.probs == 0.5).all()
+        assert int(dist.entropy().exp()) == NUM_DIMS
+
+
+class TestMaskableMultiCategoricalDistribution:
+    def test_distribution_must_be_initialized(self):
+        """
+        Cannot use distribution before it has logits
+        """
+
+        DIMS_PER_CAT = 2
+        NUM_CATS = 2
+        dist = MaskableMultiCategoricalDistribution([DIMS_PER_CAT] * NUM_CATS)
+
+        with pytest.raises(AssertionError):
+            dist.log_prob(th.randint(DIMS_PER_CAT - 1, (3, NUM_CATS)))
+
+        with pytest.raises(AssertionError):
+            dist.entropy()
+
+        with pytest.raises(AssertionError):
+            dist.sample()
+
+        with pytest.raises(AssertionError):
+            dist.mode()
+
+        with pytest.raises(AssertionError):
+            dist.apply_masking(None)
+
+        # But now we can
+        action_logits = th.randn(1, DIMS_PER_CAT * NUM_CATS)
+        dist.proba_distribution(action_logits)
+        actions = th.randint(DIMS_PER_CAT - 1, (3, NUM_CATS))
+        dist.log_prob(actions)
+        dist.entropy()
+        dist.sample()
+        dist.mode()
+        # Test api
+        dist.actions_from_params(action_logits)
+        dist.log_prob_from_params(action_logits)
+        dist.apply_masking(None)
+
+    def test_logits_must_align_with_dims(self):
+        DIMS_PER_CAT = 3
+        NUM_CATS = 2
+        dist = MaskableMultiCategoricalDistribution([DIMS_PER_CAT] * NUM_CATS)
+
+        # There should be one logit per dim, we're one short
+        logits = th.randn(1, DIMS_PER_CAT * NUM_CATS - 1)
+        with pytest.raises(RuntimeError):
+            dist.proba_distribution(logits)
+
+        # That's better
+        logits = th.randn(1, DIMS_PER_CAT * NUM_CATS)
+        dist.proba_distribution(logits)
+
+        # Other numbers of dimensions are acceptable as long as they can be realigned
+        logits = th.randn(DIMS_PER_CAT * NUM_CATS)
+        dist.proba_distribution(logits)
+        logits = th.randn(3, DIMS_PER_CAT * NUM_CATS, 3)
+        dist.proba_distribution(logits)
+
+    def test_dim_masking(self):
+        DIMS_PER_CAT = 2
+        NUM_CATS = 3
+        dist = MaskableMultiCategoricalDistribution([DIMS_PER_CAT] * NUM_CATS)
+
+        logits = th.tensor([[0] * DIMS_PER_CAT * NUM_CATS], dtype=th.float32)
+        dist.proba_distribution(logits)
+
+        assert len(dist.distributions) == NUM_CATS
+        for i in range(NUM_CATS):
+            assert (dist.distributions[i].probs == 0.5).all()
+        assert int(dist.entropy().exp()) == DIMS_PER_CAT**NUM_CATS
+
+        for i in range(DIMS_PER_CAT):
+            mask = np.array([False] * DIMS_PER_CAT * NUM_CATS)
+            for j in range(NUM_CATS):
+                mask[j * DIMS_PER_CAT + i] = True
+
+            dist.apply_masking(mask)
+            for j in range(NUM_CATS):
+                probs = dist.distributions[j].probs
+                assert probs.sum() == 1
+                assert probs[0][i] == 1
+
+            assert int(dist.entropy().exp()) == 1
+
+        dist.apply_masking(None)
+        for i in range(NUM_CATS):
+            assert (dist.distributions[i].probs == 0.5).all()
+        assert int(dist.entropy().exp()) == DIMS_PER_CAT**NUM_CATS
+
+
+class TestMaskableBernoulliDistribution:
+    def test_distribution_must_be_initialized(self):
+        """
+        Cannot use distribution before it has logits
+        """
+
+        DIMS = 2
+        dist = MaskableBernoulliDistribution(DIMS)
+
+        with pytest.raises(AssertionError):
+            dist.log_prob(th.randint(1, (2, DIMS)))
+
+        with pytest.raises(AssertionError):
+            dist.entropy()
+
+        with pytest.raises(AssertionError):
+            dist.sample()
+
+        with pytest.raises(AssertionError):
+            dist.mode()
+
+        with pytest.raises(AssertionError):
+            dist.apply_masking(None)
+
+        # But now we can
+        action_logits = th.randn(1, 2 * DIMS)
+        dist.proba_distribution(action_logits)
+        actions = th.randint(1, (2, DIMS))
+        dist.log_prob(actions)
+        dist.entropy()
+        dist.sample()
+        dist.mode()
+        # Test api
+        dist.actions_from_params(action_logits)
+        dist.log_prob_from_params(action_logits)
+        dist.apply_masking(None)
+
+    def test_logits_must_align_with_dims(self):
+        NUM_DIMS = 3
+        dist = MaskableBernoulliDistribution(NUM_DIMS)
+
+        # There should be two logits per dim, we're one short
+        logits = th.randn(1, 2 * NUM_DIMS - 1)
+        with pytest.raises(RuntimeError):
+            dist.proba_distribution(logits)
+
+        # That's better
+        logits = th.randn(1, 2 * NUM_DIMS)
+        dist.proba_distribution(logits)
+
+        # Other numbers of dimensions are acceptable as long as they can be realigned
+        logits = th.randn(2 * NUM_DIMS)
+        dist.proba_distribution(logits)
+        logits = th.randn(3, 2 * NUM_DIMS, 3)
+        dist.proba_distribution(logits)
+
+    def test_dim_masking(self):
+        NUM_DIMS = 2
+        BINARY_STATES = 2
+        dist = MaskableBernoulliDistribution(NUM_DIMS)
+
+        logits = th.tensor([[0] * BINARY_STATES * NUM_DIMS], dtype=th.float32)
+        dist.proba_distribution(logits)
+
+        assert len(dist.distributions) == NUM_DIMS
+        for i in range(NUM_DIMS):
+            assert (dist.distributions[i].probs == 0.5).all()
+        assert int(dist.entropy().exp()) == BINARY_STATES * NUM_DIMS
+
+        for i in range(BINARY_STATES):
+            mask = np.array([False] * BINARY_STATES * NUM_DIMS)
+            for j in range(NUM_DIMS):
+                mask[j * BINARY_STATES + i] = True
+
+            dist.apply_masking(mask)
+            for j in range(NUM_DIMS):
+                probs = dist.distributions[j].probs
+                assert probs.sum() == 1
+                assert probs[0][i] == 1
+
+            assert int(dist.entropy().exp()) == 1
+
+        dist.apply_masking(None)
+        for i in range(NUM_DIMS):
+            assert (dist.distributions[i].probs == 0.5).all()
+        assert int(dist.entropy().exp()) == BINARY_STATES * NUM_DIMS
