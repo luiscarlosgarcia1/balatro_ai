@@ -1,1 +1,0 @@
-"""Public-surface smoke tests."""

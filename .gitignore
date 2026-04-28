@@ -1,4 +1,15 @@
-__pycache__/
-*.pyc
-obs_test_output/
-prints/
+# Created by `python3 headless/pool.py start|run` for manager PID, status, and manager logs.
+/headless/.pool/
+
+# Created by `luajit headless/run.lua` and by pool-managed instances via `BALATRO_SAVE_DIR`.
+/headless/.save/
+
+# Created by `python3 headless/pool.py start|run` for per-instance stdout/stderr logs.
+/headless/logs/
+
+# Created by Python when importing or compiling `headless/pool.py`.
+/headless/__pycache__/
+/headless/*.pyc
+
+# Balatro game folder.
+/Balatro/

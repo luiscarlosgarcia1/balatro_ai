@@ -1,156 +1,162 @@
-# balatro_ai
+# Balaitro Headless Runner
 
-`balatro_ai` is a Balatro agent project and an AI-engineering sandbox built in the open at the same time.
+This repo contains the Balatro game source in `Balatro/` plus a headless harness in `headless/` for booting the game, starting a run, and playing scripted actions without a LÖVE window.
 
-The repository is not a finished autonomous player yet. Its current center of gravity is a typed live-observation pipeline: a Steamodded Lua exporter writes canonical game state, Python parses that handoff into `GameObservation`, and a small runtime layer exercises policy and validation boundaries on top of that typed model.
-
-The action-execution bridge also exists in-tree. A Python `FileExecutor` can write `ai/action.json`, and the `mods/ai_executor/` Steamodded mod can consume that queue in-game. That bridge is implemented and tested, but it is not the default top-level runtime entrypoint yet.
-
-## Current Repo State
-
-- `mods/live_state_exporter/` writes canonical live state to `%USERPROFILE%\\AppData\\Roaming\\Balatro\\ai\\live_state.json`.
-- `balatro_ai.observation` exposes a public `BalatroObserver` API backed by a typed `LiveObservationParser`.
-- `balatro_ai/models.py` defines the frozen dataclass contract used inside Python, centered on `GameObservation`.
-- `balatro_ai/runtime.py`, `balatro_ai/policy.py`, and `balatro_ai/interfaces.py` provide the current observer -> policy -> validator -> executor seam.
-- `main.py` runs a local scripted demo loop, not a live in-game agent.
-- `pretty_printer.py` reads the latest live observation and writes a readable dataclass-tree dump into `prints/`.
-- `balatro_ai/executor/file_executor.py` and `mods/ai_executor/` provide the file-channel execution path for future end-to-end play.
-- The repo currently has no third-party Python dependencies declared.
-
-Verified locally on 2026-04-25:
-
-- Python 3.14.3
-- Lua 5.4.6
-- `python -m unittest discover -s tests -p "test*.py" -v` passed with 39 tests
-- All `tests/exporter/test_*.lua` scripts passed
-- All `tests/ai_executor/test_*.lua` scripts passed
-
-## Architecture
-
-### Live observation path
-
-1. `mods/live_state_exporter/` reads Balatro runtime state from `G`.
-2. The exporter shapes that data into a canonical JSON payload and writes `ai/live_state.json`.
-3. `BalatroObserver` reads the file through `BalatroPaths`.
-4. `LiveObservationParser` converts the payload into typed Python dataclasses.
-5. Runtime, policy, validation, and debug tools operate on `GameObservation`, not raw dicts.
-
-### Execution path that already exists
-
-1. Python creates a `GameAction`.
-2. `FileExecutor` serializes one or more actions into `ai/action.json`.
-3. `mods/ai_executor/` polls that file from inside the game and dispatches handlers against Balatro APIs.
-4. The Lua mod deletes `action.json` on success or writes `ai/action_error.json` on failure.
-
-### Important current gap
-
-The repo has both sides of the bridge, but the default entrypoint is still the demo runtime in `main.py`. There is not yet a single top-level script that observes the live game, chooses actions, validates them, and sends them through `FileExecutor` in one integrated production loop.
+Current features:
+- Run a single headless Balatro instance with `luajit`.
+- Run a managed pool of headless instances with Python.
+- Write separate save data and log files per headless instance.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.14 was used for the latest local verification
-- Lua 5.4 if you want to run the Lua test scripts directly
-- Balatro with Steamodded if you want live in-game observation or execution
-- Windows if you want the default `%AppData%\\Roaming\\Balatro` path without overrides
+- `luajit`
+- `python3`
 
 ### Installation
 
-```powershell
-git clone <repo-url>
-cd balatro_ai
+No install step is currently required beyond having `luajit` and `python3` available on your `PATH`.
+
+### Configuration
+
+The headless runtime supports:
+
+- `BALATRO_SAVE_DIR`: Optional override for the instance save directory.
+- `BALATRO_HEADLESS_OS`: Optional OS name override used by the LÖVE stub.
+
+### Troubleshooting
+
+- If `python3 headless/pool.py status` shows instances as `"dead"` with `"last_event": "exited"`, that is expected with the current `headless/run.lua` flow because each instance completes its scripted work and exits.
+- Per-instance logs are written to `headless/logs/instance_{i}.log`.
+- Pool manager state is written to `headless/.pool/status.json`.
+
+## Running the Project
+
+### Single Instance
+
+Run one headless Balatro instance from the project root:
+
+```bash
+luajit headless/run.lua
 ```
 
-No dependency installation step is currently required for the Python package.
+### Pool Commands
 
-For live observation, install `mods/live_state_exporter/` into your Steamodded setup.
+Start a background pool manager with `N` headless instances:
 
-For action execution, also install `mods/ai_executor/`.
-
-### Default paths
-
-By default, Python looks for the exporter output at:
-
-```text
-%USERPROFILE%\AppData\Roaming\Balatro\ai\live_state.json
+```bash
+python3 headless/pool.py start --n 8
 ```
 
-That path comes from `BalatroPaths`. If you want to point the observer at another Balatro root:
+Show the current manager and instance status:
 
-```python
-from pathlib import Path
-
-from balatro_ai import BalatroObserver, BalatroPaths
-
-observer = BalatroObserver(paths=BalatroPaths(root=Path(r"C:\path\to\Balatro")))
-observation = observer.observe()
+```bash
+python3 headless/pool.py status
 ```
 
-## Common Commands
+Stop the background pool manager cleanly:
 
-Run the local scripted runtime:
-
-```powershell
-python main.py
+```bash
+python3 headless/pool.py stop
 ```
 
-Read the latest live observation and write a readable printout:
+Restart one managed instance by index:
 
-```powershell
-python pretty_printer.py
+```bash
+python3 headless/pool.py restart --index 3
 ```
 
-Run the Python test suite:
+Run the pool manager in the foreground for debugging or one-terminal workflows:
 
-```powershell
-python -m unittest discover -s tests -p "test*.py" -v
+```bash
+python3 headless/pool.py run --n 8
 ```
 
-Run the exporter Lua tests from the project root:
+The pool manager behavior is:
 
-```powershell
-Get-ChildItem tests\exporter\test_*.lua | ForEach-Object { lua $_.FullName }
-```
-
-Run the AI executor Lua tests from the project root:
-
-```powershell
-Get-ChildItem tests\ai_executor\test_*.lua | ForEach-Object { lua $_.FullName }
-```
+- Each instance runs `luajit headless/run.lua`.
+- Each instance gets its own save directory at `headless/.save/instance_{i}`.
+- Each instance writes logs to `headless/logs/instance_{i}.log`.
+- The manager PID and status files live in `headless/.pool/`.
 
 ## Project Structure
 
-- `balatro_ai/`
-  Python package holding the typed models, observer service, parser modules, runtime, policy, interfaces, and file executor.
-- `mods/live_state_exporter/`
-  Steamodded Lua mod that exports canonical Balatro state to `ai/live_state.json`.
-- `mods/ai_executor/`
-  Steamodded Lua mod that reads `ai/action.json` and executes queued actions in-game.
-- `tests/smoke/`
-  Python smoke coverage for parser behavior, public imports, pretty printing, and typed runtime flow.
-- `tests/ai_executor/`
-  Python tests for the action contract and `FileExecutor`, plus Lua tests for the in-game executor mod.
-- `tests/exporter/`
-  Lua tests for exporter shaping, collectors, probes, schema defaults, and write behavior.
-- `prints/`
-  Human-readable observation dumps written by `pretty_printer.py`.
-- `docs/prds/`
-  PRDs and plans for the observer, exporter, mod refactor, and executor work.
-- `WORKFLOW.md`
-  Notes on how the repo approaches coding-agent collaboration and module boundaries.
+```text
+Balatro/              Game source files
+headless/run.lua      Single-instance headless runner
+headless/start_run.lua
+headless/actions.lua
+headless/love_stub.lua
+headless/pool.py      Multi-instance pool manager and CLI
+```
 
-## Practical Notes
+## Game State Reference
 
-- The observation architecture is typed-first inside Python. JSON is only the Lua-to-Python ingress boundary.
-- `balatro_ai/observation/README.md` is the best guardrail doc for the observation package.
-- `CLAUDE.md` is the fast-start context file for coding agents working in this repo.
-- The current demo policy is intentionally tiny. It exists to exercise the seam, not to play Balatro well.
-- The execution bridge is more concrete than the policy layer right now, so avoid assuming the top-level app is further along than it is.
+The canonical top-level state enum lives in `Balatro/globals.lua` as `G.STATES`.
+For headless work, the most important distinction is:
 
-## Near-Term Direction
+- Top-level `G.STATE` values drive the game loop.
+- Some user-visible screens are overlays, not standalone states.
 
-- Wire the typed observer/runtime seam to the real `FileExecutor` for a genuine live loop.
-- Strengthen the policy layer on top of the richer `GameObservation` contract.
-- Continue extending exporter coverage for interaction-heavy states while keeping the typed boundary clean.
-- Keep tests focused on surviving contracts instead of preserving old transitional structure.
+### Core Run States
+
+| State | Kind | Meaning | Typical entry | Typical exit |
+| --- | --- | --- | --- | --- |
+| `BLIND_SELECT` | top-level state | Blind choice screen before a round starts | Start run, finish shop, skip/select next blind | `DRAW_TO_HAND`, `GAME_OVER` |
+| `DRAW_TO_HAND` | top-level state | Draw/refill transition before the player can act | New round, after discard, after incomplete hand resolution | `SELECTING_HAND`, `GAME_OVER` |
+| `SELECTING_HAND` | top-level state | Main play screen with hand selection and play/discard buttons | After draw completes | `HAND_PLAYED`, `DRAW_TO_HAND`, `NEW_ROUND` |
+| `HAND_PLAYED` | top-level state | Immediate post-play resolution state | Press Play with a valid selection | `DRAW_TO_HAND`, `NEW_ROUND` |
+| `NEW_ROUND` | top-level state | End-of-blind transition state | Hand scored enough chips or ran out of hands | `ROUND_EVAL`, `GAME_OVER` via round-end flow |
+| `ROUND_EVAL` | top-level state | Round results / cash-out screen | Winning a blind | `SHOP`, win overlay |
+| `SHOP` | top-level state | Shop screen with jokers, vouchers, and boosters | Cash out from round eval | `BLIND_SELECT`, pack states, `PLAY_TAROT` |
+| `TAROT_PACK` | top-level state | Arcana booster pack screen | Open Arcana pack | Previous screen or pack close flow |
+| `PLANET_PACK` | top-level state | Celestial booster pack screen | Open Celestial pack | Previous screen or pack close flow |
+| `SPECTRAL_PACK` | top-level state | Spectral booster pack screen | Open Spectral pack | Previous screen or pack close flow |
+| `STANDARD_PACK` | top-level state | Standard booster pack screen | Open Standard pack | Previous screen or pack close flow |
+| `BUFFOON_PACK` | top-level state | Buffoon booster pack screen | Open Buffoon pack | Previous screen or pack close flow |
+| `PLAY_TAROT` | top-level interrupt state | Temporary consumeable-use interrupt outside pack-local use | Use a Tarot/Planet/Spectral/etc. from a normal screen | Returns to previous state |
+| `GAME_OVER` | top-level state | Loss state | Bust / failed round / forced loss | Game-over overlay menu |
+
+### Menu and Non-Run States
+
+| State | Kind | Meaning | Notes |
+| --- | --- | --- | --- |
+| `SPLASH` | top-level state | Startup splash screen | Precedes the main menu unless skipped |
+| `MENU` | top-level state | Main menu | Standard non-run landing state |
+| `DEMO_CTA` | top-level state | Demo call-to-action screen | Demo-specific main-menu-like state |
+| `SANDBOX` | top-level state | Developer sandbox mode | Debug/dev-only mode |
+| `TUTORIAL` | enum value only | Defined in `G.STATES` but appears unused as a real entered state | Tutorial behavior is implemented as an overlay instead |
+
+### Important Non-State Screens
+
+These are valid game/UI situations that matter, but they are not separate `G.STATE` values.
+
+| Screen | Kind | Trigger | Notes |
+| --- | --- | --- | --- |
+| Win screen | overlay menu | Win the boss blind at the win ante during `ROUND_EVAL` | Important special case: this is a full-screen overlay, not a `WIN` state |
+| Game over screen | overlay menu | Enter `GAME_OVER` | Opened by the `GAME_OVER` state handler |
+| Deck preview | submode inside `SELECTING_HAND` | Hover/inspect the deck while selecting a hand | Not a separate top-level state |
+| Tutorial overlay | overlay | Tutorial events during normal run states | Uses `G.OVERLAY_TUTORIAL`, not `G.STATE = TUTORIAL` |
+
+### Source Pointers
+
+- State enum: `Balatro/globals.lua`
+- Main state dispatch and handlers: `Balatro/game.lua`
+- Pack opening: `Balatro/card.lua`
+- Consumeable interrupt handling: `Balatro/functions/button_callbacks.lua`
+- Win/round-end flow: `Balatro/functions/state_events.lua`
+
+## Collaboration
+
+Contributions are currently `TBD`.
+
+## License
+
+License information is `TBD`.
+
+## Credits
+
+- [stable-baselines3-contrib](https://github.com/Stable-Baselines-Team/stable-baselines3-contrib) — contributed RL algorithm implementations used for training
+- [balatro-gym](https://github.com/cassiusfive/balatro-gym) — OpenAI Gym environment for Balatro
+- [balatrobot](https://github.com/coder/balatrobot) — headless Balatro bot framework
