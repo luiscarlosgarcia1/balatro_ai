@@ -4,13 +4,14 @@ import argparse
 import atexit
 import json
 import os
-import queue
 import signal
 import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
@@ -37,6 +38,7 @@ from typing import IO, Any
 #
 # Per-instance environment:
 #   BALATRO_SAVE_DIR is set to headless/.save/instance_{i}/ for each slot.
+#   BALATRO_PORT is set to a fixed per-slot HTTP port.
 #
 # Log files:
 #   Written to headless/logs/instance_{i}.log, truncated on each launch (not appended).
@@ -54,13 +56,12 @@ from typing import IO, Any
 #
 # BalatroPool is an alias for BalatraPool (backwards-compat name).
 #
-# wait_for_ready() blocks until the Lua process emits {"type":"ready"}, which is
-# sent once after boot and start_run complete (game is in SELECTING_HAND). Raises
-# RuntimeError if the instance errors or finishes before signalling ready. Returns
-# None — call read_state() afterwards to get the first game state.
+# wait_for_ready() blocks until the instance answers a JSON-RPC health request at
+# http://127.0.0.1:{port}/ with result.status == "ok". Raises RuntimeError if the
+# process exits before becoming healthy and TimeoutError if the deadline expires.
 #
 # main() with no subcommand runs a demo: starts 3 instances, waits for all to be
-# ready, then plays the first card of each opening hand and prints all responses.
+# ready, then prints each slot's port and status.
 #
 # stop CLI --timeout default is 2.0s (SIGTERM wait before SIGKILL).
 
@@ -74,15 +75,11 @@ from typing import IO, Any
 @dataclass
 class _InstanceSlot:
     index: int
+    port: int
     save_dir: Path
     log_path: Path
     process: subprocess.Popen[Any] | None = None
     log_handle: IO[str] | None = None
-    stdin_handle: IO[str] | None = None
-    stdout_handle: IO[str] | None = None
-    stdout_queue: queue.Queue[str | None] = field(default_factory=queue.Queue)
-    io_lock: threading.Lock = field(default_factory=threading.Lock)
-    stdout_thread: threading.Thread | None = None
     state: str = "stopped"
     pid: int | None = None
     returncode: int | None = None
@@ -108,6 +105,7 @@ class BalatraPool:
         project_root: str | os.PathLike[str] | None = None,
         shutdown_timeout: float = 2.0,
         poll_interval: float = 0.5,
+        base_port: int = 12346,
     ) -> None:
         if n <= 0:
             raise ValueError("n must be greater than zero")
@@ -121,6 +119,7 @@ class BalatraPool:
         self.saves_dir = self.headless_root / ".save"
         self.shutdown_timeout = shutdown_timeout
         self.poll_interval = poll_interval
+        self.base_port = base_port
 
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.saves_dir.mkdir(parents=True, exist_ok=True)
@@ -133,6 +132,7 @@ class BalatraPool:
         self._slots = [
             _InstanceSlot(
                 index=i,
+                port=self.base_port + i,
                 save_dir=self.saves_dir / f"instance_{i}",
                 log_path=self.logs_dir / f"instance_{i}.log",
             )
@@ -235,6 +235,7 @@ class BalatraPool:
             for slot in self._slots:
                 snapshot.append({
                     "index": slot.index,
+                    "port": slot.port,
                     "state": slot.state,
                     "alive": slot.state == "alive",
                     "pid": slot.pid,
@@ -247,45 +248,45 @@ class BalatraPool:
 
     def wait_for_ready(self, i: int, timeout: float = DEFAULT_IO_TIMEOUT) -> None:
         slot = self._get_live_slot(i)
-        with slot.io_lock:
-            deadline = time.monotonic() + timeout
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    self._mark_slot_dead(slot, f"timed out waiting {timeout:.1f}s for ready")
-                    raise TimeoutError(f"timed out waiting for instance {i} to be ready")
-                msg = self._read_state_for_slot(slot, timeout=remaining)
-                msg_type = msg.get("type")
-                if msg_type == "ready":
-                    return
-                if msg_type == "error":
-                    raise RuntimeError(
-                        f"instance {i} errored before ready: {msg.get('message', '(no message)')}"
-                    )
-                if msg_type == "done":
-                    raise RuntimeError(f"instance {i} finished before signalling ready")
+        deadline = time.monotonic() + timeout
+        payload = json.dumps({"jsonrpc": "2.0", "method": "health", "id": 1}).encode("utf-8")
+        url = f"http://127.0.0.1:{slot.port}/"
 
-    def read_state(self, i: int, timeout: float = DEFAULT_IO_TIMEOUT) -> dict[str, Any]:
-        slot = self._get_live_slot(i)
-        with slot.io_lock:
-            return self._read_state_for_slot(slot, timeout=timeout)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._mark_slot_dead(slot, f"timed out waiting {timeout:.1f}s for health check")
+                raise TimeoutError(f"timed out waiting for instance {i} to be ready")
 
-    def send_action(self, i: int, action: dict[str, Any]) -> dict[str, Any]:
-        slot = self._get_live_slot(i)
-        with slot.io_lock:
-            stdin_handle = slot.stdin_handle
-            if stdin_handle is None:
-                self._mark_slot_dead(slot, "stdin is not available")
-                raise RuntimeError(f"instance {i} is not accepting input")
+            with self._lock:
+                self._refresh_processes_locked()
+                process = slot.process
+                if process is None or process.poll() is not None or slot.state != "alive":
+                    raise RuntimeError(f"instance {i} exited before becoming healthy")
+
+            request = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
 
             try:
-                stdin_handle.write(json.dumps(action) + "\n")
-                stdin_handle.flush()
-            except (BrokenPipeError, OSError, ValueError) as exc:
-                self._mark_slot_dead(slot, f"failed to send action: {exc}")
-                raise RuntimeError(f"instance {i} is not accepting input") from exc
+                request_timeout = max(0.1, min(remaining, 1.0))
+                with urllib.request.urlopen(request, timeout=request_timeout) as response:
+                    body = response.read()
+                data = json.loads(body.decode("utf-8"))
+            except (urllib.error.URLError, TimeoutError, ValueError):
+                time.sleep(min(0.1, max(remaining, 0.0)))
+                continue
 
-            return self._read_state_for_slot(slot, timeout=self.DEFAULT_IO_TIMEOUT)
+            if not isinstance(data, dict):
+                time.sleep(min(0.1, max(remaining, 0.0)))
+                continue
+
+            result = data.get("result")
+            if isinstance(result, dict) and result.get("status") == "ok":
+                return
 
     def close(self) -> None:
         with self._lock:
@@ -336,7 +337,6 @@ class BalatraPool:
         if slot.process is not None and slot.process.poll() is None:
             return
 
-        self._close_streams_locked(slot)
         self._close_log_locked(slot)
         slot.save_dir.mkdir(parents=True, exist_ok=True)
         slot.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -346,12 +346,13 @@ class BalatraPool:
 
         env = os.environ.copy()
         env["BALATRO_SAVE_DIR"] = str(slot.save_dir)
+        env["BALATRO_PORT"] = str(slot.port)
 
         kwargs: dict[str, Any] = {
             "cwd": str(self.project_root),
             "env": env,
-            "stdin": subprocess.PIPE,
-            "stdout": subprocess.PIPE,
+            "stdin": subprocess.DEVNULL,
+            "stdout": log_handle,
             "stderr": log_handle,
             "text": True,
             "encoding": "utf-8",
@@ -371,15 +372,6 @@ class BalatraPool:
 
         slot.log_handle = log_handle
         slot.process = process
-        slot.stdin_handle = process.stdin
-        slot.stdout_handle = process.stdout
-        slot.stdout_queue = queue.Queue()
-        slot.stdout_thread = threading.Thread(
-            target=self._stdout_reader_loop,
-            args=(slot, slot.stdout_handle, slot.stdout_queue),
-            name=f"balatra-pool-stdout-{slot.index}",
-            daemon=True,
-        )
         slot.state = "alive"
         slot.pid = process.pid
         slot.returncode = None
@@ -387,9 +379,8 @@ class BalatraPool:
         slot.last_event = "started"
         self._append_log_locked(
             slot,
-            f"started pid={process.pid} save_dir={slot.save_dir}",
+            f"started pid={process.pid} port={slot.port} save_dir={slot.save_dir}",
         )
-        slot.stdout_thread.start()
 
     def _refresh_processes_locked(self) -> None:
         for slot in self._slots:
@@ -435,7 +426,6 @@ class BalatraPool:
 
         slot.process = None
         slot.expected_exit = False
-        self._close_streams_locked(slot)
         self._close_log_locked(slot)
 
     def _signal_slot_locked(self, slot: _InstanceSlot, sig: signal.Signals) -> None:
@@ -469,49 +459,6 @@ class BalatraPool:
             slot.log_handle.close()
             slot.log_handle = None
 
-    def _close_streams_locked(self, slot: _InstanceSlot) -> None:
-        if slot.stdin_handle is not None:
-            try:
-                slot.stdin_handle.close()
-            except OSError:
-                pass
-            finally:
-                slot.stdin_handle = None
-
-        if slot.stdout_handle is not None:
-            try:
-                slot.stdout_handle.close()
-            except OSError:
-                pass
-            finally:
-                slot.stdout_handle = None
-
-        slot.stdout_queue.put_nowait(None)
-        slot.stdout_thread = None
-
-    def _stdout_reader_loop(
-        self,
-        slot: _InstanceSlot,
-        handle: IO[str] | None,
-        line_queue: queue.Queue[str | None],
-    ) -> None:
-        if handle is None:
-            line_queue.put_nowait(None)
-            return
-
-        try:
-            while True:
-                line = handle.readline()
-                if line == "":
-                    break
-                line_queue.put(line.rstrip("\r\n"))
-        except Exception as exc:
-            with self._lock:
-                if slot.log_handle is not None:
-                    self._append_log_locked(slot, f"stdout reader stopped: {exc}")
-        finally:
-            line_queue.put_nowait(None)
-
     def _get_live_slot(self, index: int) -> _InstanceSlot:
         with self._lock:
             self._ensure_open()
@@ -521,45 +468,6 @@ class BalatraPool:
             if process is None or process.poll() is not None or slot.state != "alive":
                 raise RuntimeError(f"instance {index} is not alive")
             return slot
-
-    def _read_state_for_slot(self, slot: _InstanceSlot, *, timeout: float) -> dict[str, Any]:
-        deadline = time.monotonic() + timeout
-
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                self._mark_slot_dead(
-                    slot,
-                    f"timed out waiting {timeout:.1f}s for stdout response",
-                )
-                raise TimeoutError(f"timed out waiting for instance {slot.index} state")
-
-            try:
-                line = slot.stdout_queue.get(timeout=remaining)
-            except queue.Empty as exc:
-                self._mark_slot_dead(
-                    slot,
-                    f"timed out waiting {timeout:.1f}s for stdout response",
-                )
-                raise TimeoutError(f"timed out waiting for instance {slot.index} state") from exc
-
-            if line is None:
-                with self._lock:
-                    self._refresh_processes_locked()
-                    returncode = slot.returncode
-                message = "stdout closed while waiting for state"
-                if returncode is not None:
-                    message = f"{message} (returncode={returncode})"
-                self._mark_slot_dead(slot, message)
-                raise RuntimeError(f"instance {slot.index} stopped producing stdout")
-
-            try:
-                return json.loads(line)
-            except json.JSONDecodeError as exc:
-                self._mark_slot_dead(slot, f"received invalid JSON: {line!r}")
-                raise RuntimeError(
-                    f"instance {slot.index} produced invalid JSON: {line!r}"
-                ) from exc
 
     def _mark_slot_dead(self, slot: _InstanceSlot, reason: str) -> None:
         process_to_wait: subprocess.Popen[Any] | None = None
@@ -948,12 +856,8 @@ def main(argv: list[str] | None = None) -> int:
             pool.start()
             for i in range(3):
                 pool.wait_for_ready(i)
-
-            for i in range(3):
-                state = pool.read_state(i)
-                first_card = state["state"]["hand_cards"][0]["index"]
-                response = pool.send_action(i, {"type": "play", "cards": [first_card]})
-                print(json.dumps(response, indent=2))
+            for entry in pool.status():
+                print(f"instance {entry['index']}: port={entry['port']} status={entry['state']}")
         finally:
             pool.stop()
         return 0
