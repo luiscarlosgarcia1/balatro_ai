@@ -6,10 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-BalatroBot is a framework for Balatro bot development. It consists of two main parts:
+BalatroBot is a framework for Balatro bot development. It consists of three main parts:
 
 1. **Python Package** (`src/balatrobot/`): A CLI and library to manage the Balatro game process, inject the mod, and handle communication.
 2. **Lua API** (`src/lua/`): The mod code running inside Balatro (Love2D) that exposes a HTTP JSON-RPC 2.0 API.
+3. **Headless Layer** (`headless/`): A plain-LuaJIT runtime for Balatro's game logic, plus orchestration for running one or many headless instances.
 
 ### Testing
 
@@ -134,13 +135,33 @@ Runs inside the game engine and exposes an API.
     - `state.lua`: Test endpoint that requires specific game states.
     - `validation.lua`: Comprehensive validation test endpoint.
 
+### 3. Headless Layer (`headless/`)
+
+Runs Balatro without the Love2D desktop runtime while preserving the same HTTP API surface.
+
+- **Love Stub** (`headless/love_stub.lua`)
+
+    - Mocks Love2D graphics, audio, and event APIs so Balatro's game logic runs under plain LuaJIT without opening a window.
+
+- **Headless Runner** (`headless/run.lua`)
+
+    - Entry point for headless instances.
+    - Loads `love_stub.lua`, boots `Balatro/main.lua`, loads `balatrobot.lua`, then ticks `love.update` in a loop so the HTTP server runs normally.
+
+- **Instance Pool** (`headless/pool.py`)
+
+    - Manages N parallel headless instances, each on its own port with its own save directory and log file.
+    - Communicates with instances via the HTTP JSON-RPC API.
+
 ## Key Files
 
 - **Python**:
     - `src/balatrobot/cli.py`: Main entry point.
     - `src/balatrobot/manager.py`: Game process logic.
+    - `headless/pool.py`: Multi-instance headless process manager.
 - **Lua**:
     - `balatrobot.lua`: Mod entry point.
+    - `headless/run.lua`: Headless Balatro bootstrap and update loop.
     - `src/lua/core/server.lua`: HTTP/TCP handling.
     - `src/lua/endpoints/`: All API commands.
 - **Configuration**:

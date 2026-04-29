@@ -36,6 +36,12 @@ https://coder.github.io/balatrobot/
 - [**BalatroLLM**](https://github.com/coder/balatrollm): Play Balatro with LLMs
 - [**BalatroBench**](https://github.com/coder/balatrobench): Benchmark LLMs playing Balatro
 
+## Headless Mode
+
+Run a single headless instance with `luajit headless/run.lua`. This requires the Balatro game source to be present at `balatrobot/Balatro/`, and `BALATRO_MOD_ROOT` must point to the BalatroBot mod directory.
+
+Run a pool of parallel headless instances with `python headless/pool.py --n <count>`. Each instance gets its own port, save directory, and log file, and the HTTP JSON-RPC API is identical in headless and windowed modes.
+
 ## 🙏 Acknowledgments
 
 This project is a fork of the original [balatrobot](https://github.com/besteon/balatrobot) repository. We would like to acknowledge and thank the original contributors who laid the foundation for this framework:
