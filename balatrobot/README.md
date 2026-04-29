@@ -1,3 +1,13 @@
+> **Future work: SMODS (Steamodded) support in headless mode**
+>
+> Currently, headless instances run Balatro's game logic directly under LuaJIT, bypassing the Love2D binary entirely. This means **lovely** (the native DLL/SO that patches Love2D at runtime to inject Steamodded) never runs, so the `SMODS` global and mod loading pipeline don't exist in headless mode.
+>
+> Why it matters: training on modded content (modded jokers, decks, challenges) requires SMODS to be present so that Steamodded can scan `Mods/` and load them. Without it, only vanilla Balatro is available to the agent.
+>
+> Likely approach: instead of loading raw `Balatro/main.lua`, point the headless boot script at the lovely-patched entry point (`Balatro/Mods/lovely/dump/main.lua`), which already has the Steamodded bootstrap baked in. Steamodded would then set up `SMODS` and load mods naturally. The main prerequisite is making `love.filesystem` in `love_stub.lua` functional (backed by real Lua `io`/`lfs`) so Steamodded can actually scan directories and read mod files.
+>
+> Note: game speed for training is a separate concern — headless already runs uncapped (no 60 FPS limit), and animation timer speed can be controlled by adjusting `FIXED_DT` in `headless/run.lua` without needing any mod.
+
 <div align="center">
   <h1>BalatroBot</h1>
   <p align="center">

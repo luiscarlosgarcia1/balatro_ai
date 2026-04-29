@@ -158,10 +158,23 @@ local function infer_source_root()
     return join_path(module_dir(), "..", "Balatro")
 end
 
+local function infer_mod_root()
+    return join_path(module_dir(), "..")
+end
+
+local function ensure_trailing_sep(path)
+    local normalized = tostring(path or ""):gsub("[/\\]+", sep)
+    if normalized:sub(-1) ~= sep then
+        normalized = normalized .. sep
+    end
+    return normalized
+end
+
 local state = {
     installed = false,
     source_root = nil,
     save_root = nil,
+    mod_root = nil,
     os_name = os.getenv("BALATRO_HEADLESS_OS") or "Linux",
     width = 1280,
     height = 720,
@@ -626,6 +639,9 @@ function stub.setup(options)
     if options.save_root then
         state.save_root = options.save_root
     end
+    if options.mod_root then
+        state.mod_root = options.mod_root
+    end
     if options.os_name then
         state.os_name = options.os_name
     end
@@ -641,6 +657,7 @@ function stub.setup(options)
 
     state.source_root = state.source_root or infer_source_root()
     state.save_root = state.save_root or os.getenv("BALATRO_SAVE_DIR") or join_path(module_dir(), ".save")
+    state.mod_root = state.mod_root or infer_mod_root()
     mkdir_p(state.save_root)
     install_package_path()
     install_bit_compat()
@@ -925,6 +942,8 @@ function stub.setup(options)
         return love.window.setMode(width, height)
     end
 
+    love.quit = love.event.quit
+
     love.handlers = love.handlers or {}
     setmetatable(love.handlers, {
         __index = function(_, name)
@@ -964,11 +983,31 @@ function stub.setup(options)
         end
     end
 
+    local function install_logger(level)
+        return function(message, _)
+            io.stderr:write("[" .. level .. "] " .. tostring(message), "\n")
+        end
+    end
+
+    sendDebugMessage = install_logger("DEBUG")
+    sendInfoMessage = install_logger("INFO")
+    sendWarnMessage = install_logger("WARN")
+    sendErrorMessage = install_logger("ERROR")
+
+    SMODS = {
+        load_file = function(path)
+            local resolved = join_path(state.mod_root, path)
+            return loadfile(resolved)
+        end,
+        current_mod = {
+            path = ensure_trailing_sep(state.mod_root),
+            version = "headless",
+        },
+    }
+
     state.installed = true
     stub.love = love
     return love
 end
-
-stub.setup()
 
 return stub

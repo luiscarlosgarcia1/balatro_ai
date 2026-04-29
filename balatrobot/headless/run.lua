@@ -72,6 +72,16 @@ local function boot_game()
     love.load({})
 end
 
+local function load_mod()
+    local mod_path = join_path(stub.state.mod_root, "balatrobot.lua")
+    local chunk, err = loadfile(mod_path)
+    if not chunk then
+        error("Could not load balatrobot.lua: " .. tostring(err))
+    end
+
+    chunk()
+end
+
 local function tick_forever()
     while not stub.state.quit_requested do
         stub.advance(FIXED_DT)
@@ -81,6 +91,7 @@ end
 
 local ok, err = pcall(function()
     boot_game()
+    load_mod()
     tick_forever()
 end)
 
