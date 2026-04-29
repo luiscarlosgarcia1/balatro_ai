@@ -13,3 +13,6 @@
 
 # Balatro game folder.
 /Balatro/
+
+# DS Store thingy
+.DS_store
