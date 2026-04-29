@@ -1,12 +1,14 @@
 """Context manager for a Balatro instance."""
 
-import asyncio
+import json
 import subprocess
+import time
+import urllib.error
+import urllib.request
+from asyncio import TimeoutError as AsyncTimeoutError, get_running_loop, wait_for
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-
-import httpx
 
 from balatrobot.config import Config
 from balatrobot.platforms import get_launcher
@@ -50,27 +52,48 @@ class BalatroInstance:
         """Get the log file path, if available."""
         return self._log_path
 
-    async def _wait_for_health(self, timeout: float = HEALTH_TIMEOUT) -> None:
+    def _wait_for_health(self, timeout: float = HEALTH_TIMEOUT) -> None:
         """Wait for health endpoint to respond."""
-        url = f"http://{self._config.host}:{self._config.port}"
-        payload = {"jsonrpc": "2.0", "method": "health", "params": {}, "id": 1}
-        start = asyncio.get_event_loop().time()
-
-        while asyncio.get_event_loop().time() - start < timeout:
-            try:
-                async with httpx.AsyncClient(timeout=2.0) as client:
-                    response = await client.post(url, json=payload)
-                    data = response.json()
-                    if "result" in data and data["result"].get("status") == "ok":
-                        return
-            except (httpx.ConnectError, httpx.TimeoutException):
-                pass
-            await asyncio.sleep(0.5)
-
-        raise RuntimeError(
-            f"Health check failed after {timeout}s on "
-            f"{self._config.host}:{self._config.port}"
+        deadline = time.monotonic() + timeout
+        payload = json.dumps({"jsonrpc": "2.0", "method": "health", "id": 1}).encode(
+            "utf-8"
         )
+        url = f"http://{self._config.host}:{self._config.port}/"
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Health check failed after {timeout}s on 127.0.0.1:{self._config.port}"
+                )
+
+            process = self._process
+            if process is None or process.poll() is not None:
+                raise RuntimeError("Instance exited before becoming healthy")
+
+            request = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            try:
+                request_timeout = max(0.1, min(remaining, 1.0))
+                with urllib.request.urlopen(request, timeout=request_timeout) as response:
+                    body = response.read()
+                data = json.loads(body.decode("utf-8"))
+            except (urllib.error.URLError, TimeoutError, ValueError):
+                time.sleep(min(0.1, max(remaining, 0.0)))
+                continue
+
+            if not isinstance(data, dict):
+                time.sleep(min(0.1, max(remaining, 0.0)))
+                continue
+
+            result = data.get("result")
+            if isinstance(result, dict) and result.get("status") == "ok":
+                return
 
     async def start(self) -> None:
         """Start the Balatro instance and wait for health."""
@@ -90,10 +113,11 @@ class BalatroInstance:
         self._process = await launcher.start(self._config, session_dir)
 
         # Wait for health
-        print(f"Waiting for health check on {self._config.host}:{self._config.port}...")
+        print(f"Waiting for health check on 127.0.0.1:{self._config.port}...")
         try:
-            await self._wait_for_health()
-        except RuntimeError as e:
+            loop = get_running_loop()
+            await loop.run_in_executor(None, self._wait_for_health)
+        except (RuntimeError, TimeoutError) as e:
             await self.stop()
             raise RuntimeError(f"{e}. Check log file: {self._log_path}") from e
 
@@ -112,13 +136,13 @@ class BalatroInstance:
         # Try graceful termination first
         process.terminate()
 
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         try:
-            await asyncio.wait_for(
+            await wait_for(
                 loop.run_in_executor(None, process.wait),
                 timeout=5,
             )
-        except asyncio.TimeoutError:
+        except AsyncTimeoutError:
             print(f"Force killing instance on port {self._config.port}...")
             process.kill()
             await loop.run_in_executor(None, process.wait)
