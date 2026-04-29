@@ -16,3 +16,6 @@
 
 # DS Store thingy
 .DS_store
+
+# Instance logs
+/logs/
