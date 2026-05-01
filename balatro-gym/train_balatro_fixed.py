@@ -10,7 +10,7 @@ import gymnasium as gym
 import torch
 from pathlib import Path
 from sb3_contrib import RecurrentPPO
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 
@@ -295,7 +295,7 @@ def make_env_fixed(seed=0, rank=0):
 def train_fixed(args):
     """Main training function with fixes"""
     
-    print("ðŸ”§ BALATRO TRAINING - COMPREHENSIVE FIX")
+    print(" BALATRO TRAINING - COMPREHENSIVE FIX")
     print("=" * 60)
     print(f"Configuration:")
     print(f"  Environments: {args.n_envs}")
@@ -308,26 +308,28 @@ def train_fixed(args):
     try:
         test_env = BalatroEnvFixed(seed=42)
         obs, _ = test_env.reset()
-        print(f"âœ… Reset successful - {len(obs)} observations")
+        print(f" Reset successful - {len(obs)} observations")
         
         # Test a few steps
         for i in range(10):
             action = test_env.action_space.sample()
             obs, reward, terminated, truncated, info = test_env.step(action)
             if i == 0:
-                print(f"âœ… Step successful - reward: {reward}")
+                print(f" Step successful - reward: {reward}")
         
         test_env.close()
-        print("âœ… Environment test passed!")
+        print(" Environment test passed!")
     except Exception as e:
-        print(f"âŒ Environment test failed: {e}")
+        print(f" Environment test failed: {e}")
         import traceback
         traceback.print_exc()
         return
     
     # Create environments
-    print(f"\nðŸ“¦ Creating {args.n_envs} environments...")
-    env = SubprocVecEnv([make_env_fixed(args.seed, i) for i in range(args.n_envs)])
+    print(f"\n Creating {args.n_envs} environments...")
+    # SubprocVecEnv uses cloudpickle which has a recursion bug with Python 3.14 on Windows
+    VecEnvCls = DummyVecEnv if (os.name == "nt" or args.dummy_vec) else SubprocVecEnv
+    env = VecEnvCls([make_env_fixed(args.seed, i) for i in range(args.n_envs)])
     
     # Setup directories
     run_dir = Path(f"run_{args.run_name}")
@@ -337,14 +339,14 @@ def train_fixed(args):
     n_steps = max(256, args.batch_size // args.n_envs)
     n_steps = (n_steps // 64) * 64
     
-    print(f"\nðŸ§  Creating PPO model...")
+    print(f"\n  Creating PPO model...")
     print(f"  n_steps: {n_steps}")
     print(f"  Total batch: {n_steps * args.n_envs}")
     
     # Create model
     final_model_path = Path(f"run_{args.run_name}") / "final_model.zip"
     if final_model_path.exists():
-        print(f"\n📂 Resuming from {final_model_path}")
+        print(f"\n Resuming from {final_model_path}")
         model = RecurrentPPO.load(final_model_path, env=env)
     else:
         model = RecurrentPPO(
@@ -389,7 +391,7 @@ def train_fixed(args):
                     recent_rewards = self.episode_rewards[-100:] if len(self.episode_rewards) >= 100 else self.episode_rewards
                     print(f"\n[Step {self.num_timesteps:,}]")
                     print(f"  Episodes: {len(self.episode_rewards)}")
-                    print(f"  Mean reward: {np.mean(recent_rewards):.2f} Â± {np.std(recent_rewards):.2f}")
+                    print(f"  Mean reward: {np.mean(recent_rewards):.2f}  {np.std(recent_rewards):.2f}")
                     print(f"  Mean length: {np.mean(self.episode_lengths[-100:] if len(self.episode_lengths) >= 100 else self.episode_lengths):.0f}")
                 else:
                     print(f"\n[Step {self.num_timesteps:,}] Training...")
@@ -405,8 +407,8 @@ def train_fixed(args):
         )
     ]
     
-    print(f"\nðŸŽ® Starting training...")
-    print(f"ðŸ“ˆ Monitor with: tensorboard --logdir {run_dir}/tb_logs\n")
+    print(f"\n Starting training...")
+    print(f" Monitor with: tensorboard --logdir {run_dir}/tb_logs\n")
     
     try:
         model.learn(
@@ -415,19 +417,19 @@ def train_fixed(args):
             log_interval=50,
             progress_bar=True
         )
-        print("\nâœ… Training completed!")
+        print("\n Training completed!")
         
     except KeyboardInterrupt:
-        print("\nâš ï¸ Training interrupted")
+        print("\n  Training interrupted")
     except Exception as e:
-        print(f"\nâŒ Error: {e}")
+        print(f"\n Error: {e}")
         import traceback
         traceback.print_exc()
     finally:
         model.save(str(run_dir / "final_model"))
         env.close()
         torch.cuda.empty_cache()
-        print("\nðŸ’¾ Model saved")
+        print("\n Model saved")
 
 
 def main():
@@ -440,7 +442,8 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--run-name", type=str, default="balatro_fixed")
-    
+    parser.add_argument("--dummy-vec", action="store_true", help="Force DummyVecEnv (no multiprocessing)")
+
     args = parser.parse_args()
     train_fixed(args)
 
