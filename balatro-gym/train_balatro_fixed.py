@@ -437,7 +437,7 @@ def main():
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--timesteps", type=int, default=100_000_000)
-    parser.add_argument("--n-envs", type=int, default=64)
+    parser.add_argument("--n-envs", type=int, default=192)
     parser.add_argument("--batch-size", type=int, default=8192)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=42)
