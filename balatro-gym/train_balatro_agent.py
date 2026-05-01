@@ -32,6 +32,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
 
 from balatro_gym.balatro_env_2 import BalatroEnv, make_balatro_env, Phase
+from balatro_gym.balatro_live_env import BalatroLiveEnv
 import wandb
 
 
@@ -300,26 +301,40 @@ def train_balatro_agent(
     save_path.mkdir(parents=True, exist_ok=True)
     
     # Create environments
+    # Each env connects to a real Balatro instance on its own port.
+    # Launch N instances before training:
+    #   for port in $(seq 12345 $((12345 + N - 1))); do
+    #     uvx balatrobot serve --fast --headless --no-shaders \
+    #         --fps-cap 5 --gamespeed 16 --animation-fps 1 --port $port &
+    #   done
+    base_port = 12345
+
     def make_env(rank: int, seed: int = 0):
         def _init():
-            env = BalatroEnv(seed=seed + rank)
+            env = BalatroLiveEnv(port=base_port + rank)
             env = Monitor(env)
-            if use_curriculum:
-                env = CurriculumBalatroEnv(env)
             return env
         return _init
-    
+
+    # Eval env uses a dedicated instance one port above the training pool
+    eval_port = base_port + n_envs
+
+    def make_eval_env():
+        def _init():
+            return Monitor(BalatroLiveEnv(port=eval_port))
+        return _init
+
     # Create vectorized environment
     if n_envs > 1:
         env = SubprocVecEnv([make_env(i, seed) for i in range(n_envs)])
     else:
         env = DummyVecEnv([make_env(0, seed)])
-    
+
     # Normalize rewards and observations
     env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
-    
+
     # Create eval environment
-    eval_env = DummyVecEnv([make_env(1000, seed)])  # Different seed for eval
+    eval_env = DummyVecEnv([make_eval_env()])
     eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, clip_obs=10.)
     
     # Default hyperparameters
@@ -516,7 +531,7 @@ def tune_hyperparameters(
         )
         
         # Evaluate
-        eval_env = make_vec_env(lambda: Monitor(BalatroEnv()), n_envs=1)
+        eval_env = make_vec_env(lambda: Monitor(BalatroLiveEnv(port=12399)), n_envs=1)
         mean_reward, _ = evaluate_policy(model, eval_env, n_eval_episodes=10)
         
         return mean_reward
@@ -548,7 +563,7 @@ def test_trained_agent(
     model = PPO.load(model_path)
     
     # Create environment
-    env = BalatroEnv(render_mode="human" if render else None)
+    env = BalatroLiveEnv(port=12345, render_mode="human" if render else None)
     env = Monitor(env)
     
     if record_video:
