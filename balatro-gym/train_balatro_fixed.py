@@ -9,12 +9,12 @@ import numpy as np
 import gymnasium as gym
 import torch
 from pathlib import Path
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 
-from balatro_gym.envs.balatro_env_2 import BalatroEnv as OriginalBalatroEnv
+from balatro_gym.balatro_env_2 import BalatroEnv as OriginalBalatroEnv
 
 
 class BalatroEnvFixed(gym.Env):
@@ -342,8 +342,13 @@ def train_fixed(args):
     print(f"  Total batch: {n_steps * args.n_envs}")
     
     # Create model
-    model = PPO(
-        "MultiInputPolicy",
+    final_model_path = Path(f"run_{args.run_name}") / "final_model.zip"
+    if final_model_path.exists():
+        print(f"\n📂 Resuming from {final_model_path}")
+        model = RecurrentPPO.load(final_model_path, env=env)
+    else:
+        model = RecurrentPPO(
+        "MultiInputLstmPolicy",
         env,
         learning_rate=args.learning_rate,
         n_steps=n_steps,
@@ -379,7 +384,7 @@ def train_fixed(args):
                     self.episode_lengths.append(info["episode"]["l"])
             
             # Print progress every 100k steps
-            if self.num_timesteps % 100000 == 0:
+            if self.num_timesteps % 10000 == 0:
                 if len(self.episode_rewards) > 0:
                     recent_rewards = self.episode_rewards[-100:] if len(self.episode_rewards) >= 100 else self.episode_rewards
                     print(f"\n[Step {self.num_timesteps:,}]")
@@ -430,7 +435,7 @@ def main():
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--timesteps", type=int, default=100_000_000)
-    parser.add_argument("--n-envs", type=int, default=128)
+    parser.add_argument("--n-envs", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=8192)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=42)
