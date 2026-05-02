@@ -32,9 +32,74 @@ from stable_baselines3.common.preprocessing import get_flattened_obs_dim
 from sb3_contrib import MaskablePPO
 
 from balatro_gym.balatro_env_2 import BalatroEnv, make_balatro_env, Phase
-from balatro_gym.balatro_live_env import BalatroLiveEnv
-from balatro_gym.balatro_instance_pool import BalatroInstancePool
+from balatro_gym.constants import Action, ActionCounts
 import wandb
+
+
+def _action_name(action: int) -> str:
+    if action == Action.PLAY_HAND:       return "PLAY_HAND"
+    if action == Action.DISCARD:         return "DISCARD"
+    if action == Action.SHOP_REROLL:     return "SHOP_REROLL"
+    if action == Action.SHOP_END:        return "SHOP_END"
+    if action == Action.SKIP_BLIND:      return "SKIP_BLIND"
+    if action == Action.SKIP_PACK:       return "SKIP_PACK"
+    if Action.SELECT_CARD_BASE <= action < Action.SELECT_CARD_BASE + ActionCounts.SELECT_CARD_COUNT:
+        return f"SELECT_CARD_{action - Action.SELECT_CARD_BASE}"
+    if Action.USE_CONSUMABLE_BASE <= action < Action.USE_CONSUMABLE_BASE + ActionCounts.USE_CONSUMABLE_COUNT:
+        return f"USE_CONSUMABLE_{action - Action.USE_CONSUMABLE_BASE}"
+    if Action.SHOP_BUY_BASE <= action < Action.SHOP_BUY_BASE + ActionCounts.SHOP_BUY_COUNT:
+        return f"SHOP_BUY_{action - Action.SHOP_BUY_BASE}"
+    if Action.SELL_JOKER_BASE <= action < Action.SELL_JOKER_BASE + ActionCounts.SELL_JOKER_COUNT:
+        return f"SELL_JOKER_{action - Action.SELL_JOKER_BASE}"
+    if Action.SELL_CONSUMABLE_BASE <= action < Action.SELL_CONSUMABLE_BASE + ActionCounts.SELL_CONSUMABLE_COUNT:
+        return f"SELL_CONSUMABLE_{action - Action.SELL_CONSUMABLE_BASE}"
+    if Action.SELECT_BLIND_BASE <= action < Action.SELECT_BLIND_BASE + ActionCounts.SELECT_BLIND_COUNT:
+        return f"SELECT_BLIND_{action - Action.SELECT_BLIND_BASE}"
+    if Action.SELECT_FROM_PACK_BASE <= action < Action.SELECT_FROM_PACK_BASE + ActionCounts.SELECT_FROM_PACK_COUNT:
+        return f"SELECT_FROM_PACK_{action - Action.SELECT_FROM_PACK_BASE}"
+    return f"ACTION_{action}"
+
+
+class MaskableBalatroEnv(gym.Wrapper):
+    """Thin wrapper that exposes action_masks() so MaskablePPO can use the sim."""
+
+    def __init__(self, env, debug: bool = False):
+        super().__init__(env)
+        self.debug = debug
+        self._step_count = 0
+        self._ep_actions: list[tuple[int, str, float]] = []  # (step, action_name, reward)
+
+    def action_masks(self) -> np.ndarray:
+        return self.env._get_action_mask()
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        if self.debug:
+            self._step_count += 1
+            phase = Phase(obs['phase'].item()) if hasattr(obs['phase'], 'item') else Phase(obs['phase'])
+            action_str = _action_name(action)
+            self._ep_actions.append((self._step_count, action_str, reward))
+            print(
+                f"  step {self._step_count:>5d} | phase={phase.name:<12} "
+                f"ante={obs['ante'].item() if hasattr(obs['ante'], 'item') else obs['ante']:>2} "
+                f"round={obs['round'].item() if hasattr(obs['round'], 'item') else obs['round']:>1} "
+                f"hands={obs['hands_left'].item() if hasattr(obs['hands_left'], 'item') else obs['hands_left']:>2} "
+                f"disc={obs['discards_left'].item() if hasattr(obs['discards_left'], 'item') else obs['discards_left']:>2} "
+                f"| {action_str:<22} r={reward:>8.3f}"
+                + (" [DONE]" if terminated or truncated else "")
+            )
+        return obs, reward, terminated, truncated, info
+
+    def reset(self, **kwargs):
+        if self.debug and self._ep_actions:
+            # Print episode summary
+            action_counts: dict[str, int] = {}
+            for _, a, _ in self._ep_actions:
+                action_counts[a] = action_counts.get(a, 0) + 1
+            top = sorted(action_counts.items(), key=lambda x: -x[1])[:5]
+            print(f"  --- ep summary: {len(self._ep_actions)} steps | top actions: {top}")
+        self._ep_actions = []
+        return self.env.reset(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -179,37 +244,44 @@ class CurriculumBalatroEnv(gym.Wrapper):
 
 class BalatroMetricsCallback(BaseCallback):
     """Track Balatro-specific metrics during training"""
-    
+
     def __init__(self, verbose=0):
         super().__init__(verbose)
         self.episode_rewards = []
         self.episode_antes = []
         self.episode_scores = []
         self.episode_lengths = []
-        
+
     def _on_step(self) -> bool:
-        # Check for episode end
         for i, done in enumerate(self.locals['dones']):
             if done:
                 info = self.locals['infos'][i]
-                
-                # Extract metrics
-                self.episode_rewards.append(self.locals['rewards'][i])
+                ep_info = info.get('episode', {})
+
+                # Use Monitor's cumulative return, not just the terminal step reward
+                ep_return = ep_info.get('r', 0.0)
+                ep_length = ep_info.get('l', 0)
+
+                self.episode_rewards.append(ep_return)
                 self.episode_antes.append(info.get('ante', 1))
                 self.episode_scores.append(info.get('final_score', 0))
-                self.episode_lengths.append(info.get('episode_length', 0))
-                
-                # Log to tensorboard
+                self.episode_lengths.append(ep_length)
+
+                print(
+                    f"[ep {len(self.episode_rewards):>4d} | step {self.num_timesteps:>7d}] "
+                    f"return={ep_return:>8.2f}  len={ep_length:>5d}  ante={info.get('ante', 1)}"
+                )
+
                 self.logger.record('balatro/episode_ante', info.get('ante', 1))
                 self.logger.record('balatro/episode_score', info.get('final_score', 0))
-                self.logger.record('balatro/episode_reward', self.locals['rewards'][i])
-                
-                # Log to wandb if available
+                self.logger.record('balatro/episode_return', ep_return)
+
                 if wandb.run is not None:
                     wandb.log({
                         'episode_ante': info.get('ante', 1),
                         'episode_score': info.get('final_score', 0),
-                        'episode_reward': self.locals['rewards'][i],
+                        'episode_return': ep_return,
+                        'episode_length': ep_length,
                         'global_step': self.num_timesteps
                     })
         
@@ -279,7 +351,8 @@ def train_balatro_agent(
     save_dir: str = "models",
     checkpoint_freq: int = 10_000,
     expert_trajectories: Optional[str] = None,
-    hyperparams: Optional[Dict[str, Any]] = None
+    hyperparams: Optional[Dict[str, Any]] = None,
+    debug: bool = False
 ):
     """Train an RL agent on Balatro"""
 
@@ -306,21 +379,18 @@ def train_balatro_agent(
     save_path = Path(save_dir) / f"{algorithm}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     save_path.mkdir(parents=True, exist_ok=True)
     
-    # --n-envs = number of training envs. Always +1 dedicated eval instance.
     n_envs = max(1, n_envs)
-    pool = BalatroInstancePool(n=n_envs, base_port=12345)
-    pool.start()
 
-    def make_env(port: int):
+    def make_env(rank: int):
         def _init():
-            return Monitor(BalatroLiveEnv(port=port))
+            return Monitor(MaskableBalatroEnv(BalatroEnv(seed=seed + rank), debug=debug and rank == 0))
         return _init
 
     # Create vectorized environment
     if n_envs > 1:
-        env = SubprocVecEnv([make_env(p) for p in pool.ports])
+        env = SubprocVecEnv([make_env(i) for i in range(n_envs)])
     else:
-        env = DummyVecEnv([make_env(pool.ports[0])])
+        env = DummyVecEnv([make_env(0)])
 
     # Normalize rewards only — obs normalization is handled by the feature
     # extractor and can't be applied to MultiBinary spaces (action_mask etc.)
@@ -511,7 +581,7 @@ def tune_hyperparameters(
         )
         
         # Evaluate
-        eval_env = make_vec_env(lambda: Monitor(BalatroLiveEnv(port=12399)), n_envs=1)
+        eval_env = make_vec_env(lambda: Monitor(MaskableBalatroEnv(BalatroEnv())), n_envs=1)
         mean_reward, _ = evaluate_policy(model, eval_env, n_eval_episodes=10)
         
         return mean_reward
@@ -543,7 +613,7 @@ def test_trained_agent(
     model = PPO.load(model_path)
     
     # Create environment
-    env = BalatroLiveEnv(port=12345, render_mode="human" if render else None)
+    env = MaskableBalatroEnv(BalatroEnv())
     env = Monitor(env)
     
     if record_video:
@@ -625,8 +695,12 @@ if __name__ == "__main__":
                        help="Test a trained model")
     parser.add_argument("--quick-test", action="store_true",
                        help="Run a quick training test (10k steps)")
-    
+    parser.add_argument("--debug", action="store_true",
+                       help="Print every step: phase, action, reward (forces n-envs=1)")
+
     args = parser.parse_args()
+    if args.debug:
+        args.n_envs = 1
     
     if args.tune:
         # Run hyperparameter tuning
@@ -673,7 +747,8 @@ if __name__ == "__main__":
             seed=args.seed,
             use_curriculum=not args.no_curriculum,
             use_wandb=not args.no_wandb,
-            expert_trajectories=args.expert_trajectories
+            expert_trajectories=args.expert_trajectories,
+            debug=args.debug
         )
         
         print("\nTraining complete!")

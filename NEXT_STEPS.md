@@ -5,8 +5,6 @@
 ```
 Balatro (game)
   ↑
-headless (pool.py — runs N Balatro instances)
-  ↑
 balatrobot (API — reads game state, sends actions) ← verify this is the game bridge
   ↑
 balatro-gym (env — obs/reward/step interface)
@@ -16,32 +14,37 @@ ppo (model)
 
 ---
 
+## Deferred Observation Stubs
 
-## 1. Integration & Cleanup (do this first)
+These keys were declared in the `balatro_env_2.py` observation space but never implemented. They were removed to unblock training. Implement them later once there is a stable baseline and evidence the agent is struggling from lack of information.
 
-Clean up the four merged projects and wire them into a single pipeline:
+### Hand Analysis
+`rank_counts`, `suit_counts`, `flush_potential`, `straight_potential`, `hand_one_hot`, `hand_suits`, `hand_ranks`, `hand_potential_scores`
 
-```
-headless (pool.py) → balatro-gym (env) → balatrobot (API/game state) → ppo (model)
-```
+**What:** Derived features about the current hand — how many of each rank/suit, probability of completing a straight or flush, expected score per hand type.
 
-- Remove duplicate files and dead code across `balatro-gym`, `balatrobot`, `headless`, and `ppo`
-- Define clear boundaries: what each module owns and what it exposes
-- Establish a single entry point for training (one `train.py` that calls into all four)
-- Ensure the gym env talks to balatrobot through a stable interface, not ad-hoc imports
-- Confirm the headless pool is actually invoked by the gym env (not running standalone)
-- Wire multi-instance parallelism — pool exists but rollout collection across parallel instances is not connected to the gym env
+**Why:** Gives the agent structured signal about what hand to play instead of forcing it to infer everything from raw card indices. Should meaningfully speed up learning of card selection decisions.
+
+**When:** After the agent shows it can learn the basic play loop (reliably playing hands, not discarding randomly). If card selection quality plateaus early, add these.
 
 ---
 
-## 2. Missing / Incomplete
+### Joker Synergy
+`has_mult_jokers`, `has_chip_jokers`, `has_xmult_jokers`, `has_economy_jokers`, `joker_synergy_score`
 
-- **Reward shaping** — Balatro's win/lose signals are too sparse for PPO to learn from efficiently. Add intermediate rewards: chips scored per hand, gold earned, hand level-ups, blind clears. No hardcoded joker synergies — let the model discover those.
+**What:** Binary flags and a scalar score indicating what category of jokers the agent holds and how well they interact.
 
-- **Checkpoint + resume** — Save/load model weights AND optimizer state so training survives crashes and can be resumed mid-run.
+**Why:** Joker synergy is the core strategic layer of Balatro. Without this signal the agent has to discover synergies purely from reward, which is very slow given how sparse late-game rewards are.
 
-- **Evaluation harness** — Separate eval loop running greedy policy (no exploration noise). Tracks win rate per ante over time, decoupled from training rollouts.
+**When:** After the agent reliably clears early antes. If it starts buying jokers randomly with no coherent build strategy, this is the missing signal.
 
-- **Action masking** — Balatro has many state-dependent invalid actions (e.g. discard when 0 discards remain). Masking these out prevents PPO from wasting capacity on illegal moves.
+---
 
-- **Logging / metrics pipeline** — TensorBoard or W&B tracking: episode return, entropy, value loss, KL divergence, win rate per ante.
+### Risk / Economy Context
+`avg_score_per_hand`, `risk_level`, `economy_health`, `blind_difficulty`, `win_probability`, `hands_until_shop`, `rounds_until_boss`
+
+**What:** Scalars that summarize how dangerous the current situation is — how close to losing, how healthy the economy is, how far until the next shop or boss blind.
+
+**Why:** Helps the agent make conservative vs. aggressive tradeoffs (e.g. save discards when a boss blind is next, spend money aggressively when economy is healthy). Hard to infer from raw game state alone.
+
+**When:** Later-stage training, once the agent understands the basic economy loop. These matter most for ante 6+ decision quality.
