@@ -436,6 +436,11 @@ class BalatroEnv(gym.Env):
             'boss_blind_active': spaces.Box(0, 1, (), dtype=np.int8),
             'boss_blind_type': spaces.Box(0, 30, (), dtype=np.int8),
             'face_down_cards': spaces.MultiBinary(8),
+
+            'rank_counts': spaces.Box(0, 4, (13,), dtype=np.int8),
+            'suit_counts': spaces.Box(0, 8, (4,), dtype=np.int8),
+            'straight_potential': spaces.Box(0, 1, (), dtype=np.float32),
+            'flush_potential': spaces.Box(0, 1, (), dtype=np.float32),
         })
     def _calculate_hand_features(self, hand_cards: List[Card]) -> Dict[str, np.ndarray]:
         """Calculate advanced hand features for better decision making"""
@@ -1025,6 +1030,7 @@ class BalatroEnv(gym.Env):
                     self.state.selected_cards.remove(card_idx)
                 else:
                     self.state.selected_cards.append(card_idx)
+                reward -= 0.02  # time pressure: each selection step must pay off
                     
         elif Action.USE_CONSUMABLE_BASE <= action < Action.USE_CONSUMABLE_BASE + Action.USE_CONSUMABLE_COUNT:
             consumable_idx = action - Action.USE_CONSUMABLE_BASE
@@ -1146,6 +1152,7 @@ class BalatroEnv(gym.Env):
             return self._get_observation(), -1.0, False, False, {'error': 'No shop available'}
         
         info = {}
+        reward_offset = -0.02  # time pressure: each shop step must pay off
         
         # Map our action IDs to Shop action IDs
         if action == Action.SHOP_END:
@@ -1179,7 +1186,7 @@ class BalatroEnv(gym.Env):
                 # Sync with player state
                 self._sync_player_state()
                 
-                return self._get_observation(), sell_value / 5.0, False, False, {'sold_joker': sold_joker.name}
+                return self._get_observation(), sell_value / 5.0 + reward_offset, False, False, {'sold_joker': sold_joker.name}
             else:
                 return self._get_observation(), -1.0, False, False, {'error': 'Invalid joker index'}
         else:
@@ -1219,7 +1226,7 @@ class BalatroEnv(gym.Env):
             self.game._draw_cards()
             self._sync_state_from_game()
         
-        return self._get_observation(), reward, False, False, info
+        return self._get_observation(), reward + reward_offset, False, False, info
 
     def _step_blind_select(self, action: int):
         """Handle blind selection phase"""
@@ -1498,6 +1505,14 @@ class BalatroEnv(gym.Env):
             'boss_blind_type': np.int8(self.state.active_boss_blind.value if self.state.active_boss_blind else 0),
             'face_down_cards': np.array([1 if i in self.state.face_down_cards else 0 for i in range(8)]),
         }
+
+        # Hand composition features
+        hand_cards = [self.state.deck[i] for i in self.state.hand_indexes if i < len(self.state.deck)]
+        hand_features = self._calculate_hand_features(hand_cards)
+        obs['rank_counts'] = hand_features['rank_counts']
+        obs['suit_counts'] = hand_features['suit_counts']
+        obs['straight_potential'] = np.float32(hand_features['straight_potential'])
+        obs['flush_potential'] = np.float32(hand_features['flush_potential'])
         
         # Add shop info if in shop
         if self.state.phase == Phase.SHOP and self.shop:
