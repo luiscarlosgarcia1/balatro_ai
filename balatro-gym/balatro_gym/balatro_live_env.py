@@ -25,7 +25,6 @@ Usage:
 from __future__ import annotations
 
 import os
-import sys
 import time
 from typing import Any, Optional
 
@@ -36,14 +35,19 @@ from gymnasium import spaces
 from balatro_gym.constants import Phase, Action, ActionCounts
 
 # ---------------------------------------------------------------------------
-# Resolve balatrobot package (vendored at repo root)
+# Load BalatroClient directly from vendored source to avoid importing the
+# full balatrobot package (which pulls in typer via its __init__ chain).
 # ---------------------------------------------------------------------------
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_BALATROBOT_SRC = os.path.join(_REPO_ROOT, "balatrobot", "src")
-if _BALATROBOT_SRC not in sys.path:
-    sys.path.insert(0, _BALATROBOT_SRC)
+import importlib.util as _ilu
 
-from balatrobot.cli.client import BalatroClient, APIError  # noqa: E402
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_CLIENT_PY = os.path.join(_REPO_ROOT, "balatrobot", "src", "balatrobot", "cli", "client.py")
+_spec = _ilu.spec_from_file_location("balatrobot_client", _CLIENT_PY)
+_client_mod = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_client_mod)
+BalatroClient = _client_mod.BalatroClient
+APIError = _client_mod.APIError
+
 import httpx  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -149,11 +153,13 @@ class BalatroLiveEnv(gym.Env):
         port: int = 12346,
         host: str = "127.0.0.1",
         timeout: float = 60.0,
+        max_episode_steps: int = 10_000,
         render_mode: Optional[str] = None,
     ) -> None:
         super().__init__()
-        self.client = BalatroClient(host=host, port=port, timeout=timeout)
+        self.client = BalatroClient(host=host, port=port, timeout=min(timeout, 10.0))
         self.render_mode = render_mode
+        self.max_episode_steps = max_episode_steps
 
         self.action_space = spaces.Discrete(ActionCounts.ACTION_SPACE_SIZE)
         self.observation_space = self._create_observation_space()
@@ -166,6 +172,7 @@ class BalatroLiveEnv(gym.Env):
         self._hands_played: int = 0        # total hands played this episode
         self._prev_round_chips: int = 0    # round chips before last action (for delta)
         self._prev_progress: float = 0.0
+        self._step_count: int = 0
 
     # ------------------------------------------------------------------
     # Observation space — must match balatro_env_2.py exactly
@@ -253,6 +260,7 @@ class BalatroLiveEnv(gym.Env):
         self._hands_played = 0
         self._prev_round_chips = 0
         self._prev_progress = 0.0
+        self._step_count = 0
 
         # Attempt to return to the main menu (may already be there)
         try:
@@ -268,6 +276,11 @@ class BalatroLiveEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def step(self, action: int):
+        action = int(action)  # numpy int64 → Python int so httpx can JSON-serialize it
+        self._step_count += 1
+        if self._step_count >= self.max_episode_steps:
+            return self._build_obs(), 0.0, False, True, {"truncated": "max_steps"}
+
         # Settle any pending animations before acting
         state_str = self._gs.get("state", "UNKNOWN")
         if state_str in _TRANSITIONAL or state_str == "ROUND_EVAL":
@@ -292,7 +305,7 @@ class BalatroLiveEnv(gym.Env):
             return self._build_obs(), -1.0, False, False, {
                 "error": e.name, "message": e.message
             }
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.TimeoutException):
             return self._build_obs(), -10.0, True, False, {"error": "connection_lost"}
 
     # ------------------------------------------------------------------
@@ -508,7 +521,7 @@ class BalatroLiveEnv(gym.Env):
                 continue
 
             if state_str in _TRANSITIONAL:
-                time.sleep(0.15)
+                time.sleep(0.01)
                 gs = self.client.call("gamestate")
                 continue
 
@@ -757,6 +770,13 @@ class BalatroLiveEnv(gym.Env):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def action_masks(self) -> np.ndarray:
+        """Called by MaskablePPO before every action selection."""
+        return self._build_action_mask(self._gs, self._current_phase())
+
+    def _current_phase(self) -> Phase:
+        return STATE_TO_PHASE.get(self._gs.get("state", ""), Phase.PLAY)
 
     def _get_chips_needed(self, gs: dict) -> int:
         """Return chip requirement for the current blind."""

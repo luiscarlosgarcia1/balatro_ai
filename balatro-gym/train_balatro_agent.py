@@ -20,19 +20,20 @@ from datetime import datetime
 import gymnasium as gym
 from gymnasium import spaces
 
-from stable_baselines3 import PPO, A2C, DQN
+from stable_baselines3 import A2C, DQN
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import (
-    BaseCallback, EvalCallback, CheckpointCallback, CallbackList
+    BaseCallback, CheckpointCallback, CallbackList
 )
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
+from sb3_contrib import MaskablePPO
 
 from balatro_gym.balatro_env_2 import BalatroEnv, make_balatro_env, Phase
 from balatro_gym.balatro_live_env import BalatroLiveEnv
+from balatro_gym.balatro_instance_pool import BalatroInstancePool
 import wandb
 
 
@@ -48,8 +49,8 @@ class BalatroFeaturesExtractor(BaseFeaturesExtractor):
         
         # Calculate input dimensions for each component
         hand_dim = 8 * 52  # One-hot encoded cards
-        joker_dim = 10 * 16  # Joker embeddings
-        game_state_dim = 32  # All scalar features
+        joker_dim = 10     # 10 joker ID slots
+        game_state_dim = 21  # 8 scalars + 12 hand_levels + phase
         
         # Build the network
         self.hand_net = nn.Sequential(
@@ -99,18 +100,19 @@ class BalatroFeaturesExtractor(BaseFeaturesExtractor):
         joker_ids = observations['joker_ids'].float()
         joker_features = self.joker_net(joker_ids.view(batch_size, -1))
         
-        # Process game state
+        # Process game state — reshape to (batch, n) to handle scalar obs that
+        # SB3 may deliver as either (batch,) or (batch, 1) depending on version.
         game_features = torch.cat([
-            observations['chips_scored'].float().unsqueeze(1) / 1e6,  # Normalize
-            observations['chips_needed'].float().unsqueeze(1) / 1e5,
-            observations['progress_ratio'].float().unsqueeze(1),
-            observations['money'].float().unsqueeze(1) / 100,
-            observations['ante'].float().unsqueeze(1) / 10,
-            observations['round'].float().unsqueeze(1) / 3,
-            observations['hands_left'].float().unsqueeze(1) / 10,
-            observations['discards_left'].float().unsqueeze(1) / 5,
-            observations['hand_levels'].float() / 10,  # 12 values
-            observations['phase'].float().unsqueeze(1) / 3,
+            observations['chips_scored'].float().reshape(batch_size, -1) / 1e6,
+            observations['chips_needed'].float().reshape(batch_size, -1) / 1e5,
+            observations['progress_ratio'].float().reshape(batch_size, -1),
+            observations['money'].float().reshape(batch_size, -1) / 100,
+            observations['ante'].float().reshape(batch_size, -1) / 10,
+            observations['round'].float().reshape(batch_size, -1) / 3,
+            observations['hands_left'].float().reshape(batch_size, -1) / 10,
+            observations['discards_left'].float().reshape(batch_size, -1) / 5,
+            observations['hand_levels'].float().reshape(batch_size, -1) / 10,
+            observations['phase'].float().reshape(batch_size, -1) / 3,
         ], dim=1)
         
         game_state_features = self.game_state_net(game_features)
@@ -276,12 +278,16 @@ def train_balatro_agent(
     use_wandb: bool = True,
     save_dir: str = "models",
     checkpoint_freq: int = 10_000,
-    eval_freq: int = 5_000,
     expert_trajectories: Optional[str] = None,
     hyperparams: Optional[Dict[str, Any]] = None
 ):
     """Train an RL agent on Balatro"""
-    
+
+    def _to_python(v):
+        if isinstance(v, np.integer): return int(v)
+        if isinstance(v, np.floating): return float(v)
+        return v
+
     # Initialize wandb
     if use_wandb:
         wandb.init(
@@ -292,7 +298,7 @@ def train_balatro_agent(
                 "n_envs": n_envs,
                 "seed": seed,
                 "use_curriculum": use_curriculum,
-                "hyperparams": hyperparams or {}
+                "hyperparams": {k: _to_python(v) for k, v in (hyperparams or {}).items()}
             }
         )
     
@@ -300,42 +306,25 @@ def train_balatro_agent(
     save_path = Path(save_dir) / f"{algorithm}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     save_path.mkdir(parents=True, exist_ok=True)
     
-    # Create environments
-    # Each env connects to a real Balatro instance on its own port.
-    # Launch N instances before training:
-    #   for port in $(seq 12345 $((12345 + N - 1))); do
-    #     uvx balatrobot serve --fast --headless --no-shaders \
-    #         --fps-cap 5 --gamespeed 16 --animation-fps 1 --port $port &
-    #   done
-    base_port = 12345
+    # --n-envs = number of training envs. Always +1 dedicated eval instance.
+    n_envs = max(1, n_envs)
+    pool = BalatroInstancePool(n=n_envs, base_port=12345)
+    pool.start()
 
-    def make_env(rank: int, seed: int = 0):
+    def make_env(port: int):
         def _init():
-            env = BalatroLiveEnv(port=base_port + rank)
-            env = Monitor(env)
-            return env
-        return _init
-
-    # Eval env uses a dedicated instance one port above the training pool
-    eval_port = base_port + n_envs
-
-    def make_eval_env():
-        def _init():
-            return Monitor(BalatroLiveEnv(port=eval_port))
+            return Monitor(BalatroLiveEnv(port=port))
         return _init
 
     # Create vectorized environment
     if n_envs > 1:
-        env = SubprocVecEnv([make_env(i, seed) for i in range(n_envs)])
+        env = SubprocVecEnv([make_env(p) for p in pool.ports])
     else:
-        env = DummyVecEnv([make_env(0, seed)])
+        env = DummyVecEnv([make_env(pool.ports[0])])
 
-    # Normalize rewards and observations
-    env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
-
-    # Create eval environment
-    eval_env = DummyVecEnv([make_eval_env()])
-    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, clip_obs=10.)
+    # Normalize rewards only — obs normalization is handled by the feature
+    # extractor and can't be applied to MultiBinary spaces (action_mask etc.)
+    env = VecNormalize(env, norm_obs=False, norm_reward=True)
     
     # Default hyperparameters
     default_hyperparams = {
@@ -353,7 +342,7 @@ def train_balatro_agent(
             "policy_kwargs": {
                 "features_extractor_class": BalatroFeaturesExtractor,
                 "features_extractor_kwargs": {"features_dim": 512},
-                "net_arch": [dict(pi=[256, 256], vf=[256, 256])]
+                "net_arch": dict(pi=[256, 256], vf=[256, 256])
             }
         },
         "DQN": {
@@ -386,7 +375,7 @@ def train_balatro_agent(
             "policy_kwargs": {
                 "features_extractor_class": BalatroFeaturesExtractor,
                 "features_extractor_kwargs": {"features_dim": 512},
-                "net_arch": [dict(pi=[256, 256], vf=[256, 256])]
+                "net_arch": dict(pi=[256, 256], vf=[256, 256])
             }
         }
     }
@@ -398,7 +387,7 @@ def train_balatro_agent(
     
     # Create model
     if algorithm == "PPO":
-        model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
+        model = MaskablePPO("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
                    **algo_hyperparams)
     elif algorithm == "DQN":
         model = DQN("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
@@ -416,19 +405,7 @@ def train_balatro_agent(
     
     # Create callbacks
     callbacks = []
-    
-    # Evaluation callback
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=str(save_path / "best_model"),
-        log_path=str(save_path / "eval_logs"),
-        eval_freq=eval_freq,
-        deterministic=True,
-        render=False,
-        n_eval_episodes=10
-    )
-    callbacks.append(eval_callback)
-    
+
     # Checkpoint callback
     checkpoint_callback = CheckpointCallback(
         save_freq=checkpoint_freq,
@@ -472,17 +449,20 @@ def train_balatro_agent(
         "save_path": str(save_path)
     }
     
+    class _Encoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, np.integer):
+                return int(o)
+            if isinstance(o, np.floating):
+                return float(o)
+            if isinstance(o, np.ndarray):
+                return o.tolist()
+            return super().default(o)
+
     with open(save_path / "config.json", "w") as f:
-        json.dump(config, f, indent=2)
+        json.dump(config, f, indent=2, cls=_Encoder)
     
     print(f"\nTraining complete! Model saved to {save_path}")
-    
-    # Final evaluation
-    print("\nRunning final evaluation...")
-    mean_reward, std_reward = evaluate_policy(
-        model, eval_env, n_eval_episodes=20, deterministic=True
-    )
-    print(f"Final performance: {mean_reward:.2f} +/- {std_reward:.2f}")
     
     if use_wandb:
         wandb.finish()

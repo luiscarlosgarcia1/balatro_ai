@@ -10,6 +10,8 @@ readme = "README.md"
 python = "^3.12"
 gymnasium = "^0.29.1"
 numpy = "^1.26.4"
+httpx = "^0.28.1"
+wandb = "^0.26.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
