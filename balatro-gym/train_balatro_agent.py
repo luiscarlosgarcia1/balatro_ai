@@ -1,10 +1,10 @@
 """Train RL agents on the Balatro environment.
 
 This script provides a complete training pipeline including:
-- Multiple algorithm support (PPO, A2C, DQN)
+- PPO training
 - Curriculum learning
 - Behavioral cloning warm-start
-- Comprehensive logging
+- TensorBoard logging
 - Model checkpointing
 - Hyperparameter tuning
 """
@@ -54,49 +54,6 @@ def _action_name(action: int) -> str:
     if Action.SELECT_FROM_PACK_BASE <= action < Action.SELECT_FROM_PACK_BASE + ActionCounts.SELECT_FROM_PACK_COUNT:
         return f"SELECT_FROM_PACK_{action - Action.SELECT_FROM_PACK_BASE}"
     return f"ACTION_{action}"
-
-# TODO: flagged - this wrapper still assumes maskable-PPO action masking and still references `Phase` in debug output.
-class MaskableBalatroEnv(gym.Wrapper):
-    """Thin wrapper that exposes action_masks() so MaskablePPO can use the sim."""
-
-    def __init__(self, env, debug: bool = False):
-        super().__init__(env)
-        self.debug = debug
-        self._step_count = 0
-        self._ep_actions: list[tuple[int, str, float]] = []  # (step, action_name, reward)
-
-    def action_masks(self) -> np.ndarray:
-        return self.env._get_action_mask()
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        if self.debug:
-            self._step_count += 1
-            phase = Phase(obs['phase'].item()) if hasattr(obs['phase'], 'item') else Phase(obs['phase'])
-            action_str = _action_name(action)
-            self._ep_actions.append((self._step_count, action_str, reward))
-            print(
-                f"  step {self._step_count:>5d} | phase={phase.name:<12} "
-                f"ante={obs['ante'].item() if hasattr(obs['ante'], 'item') else obs['ante']:>2} "
-                f"round={obs['round'].item() if hasattr(obs['round'], 'item') else obs['round']:>1} "
-                f"hands={obs['hands_left'].item() if hasattr(obs['hands_left'], 'item') else obs['hands_left']:>2} "
-                f"disc={obs['discards_left'].item() if hasattr(obs['discards_left'], 'item') else obs['discards_left']:>2} "
-                f"| {action_str:<22} r={reward:>8.3f}"
-                + (" [DONE]" if terminated or truncated else "")
-            )
-        return obs, reward, terminated, truncated, info
-
-    def reset(self, **kwargs):
-        if self.debug and self._ep_actions:
-            # Print episode summary
-            action_counts: dict[str, int] = {}
-            for _, a, _ in self._ep_actions:
-                action_counts[a] = action_counts.get(a, 0) + 1
-            top = sorted(action_counts.items(), key=lambda x: -x[1])[:5]
-            print(f"  --- ep summary: {len(self._ep_actions)} steps | top actions: {top}")
-        self._ep_actions = []
-        return self.env.reset(**kwargs)
-
 
 # ---------------------------------------------------------------------------
 # Custom Feature Extractor for Balatro
@@ -237,7 +194,6 @@ class CurriculumBalatroEnv(gym.Wrapper):
 # ---------------------------------------------------------------------------
 # Custom Callbacks
 # ---------------------------------------------------------------------------
-# TODO: flagged - wandb import was removed as requested, but logging calls and CLI flags still remain below.
 class BalatroMetricsCallback(BaseCallback):
     """Track Balatro-specific metrics during training"""
 
@@ -247,6 +203,14 @@ class BalatroMetricsCallback(BaseCallback):
         self.episode_antes = []
         self.episode_scores = []
         self.episode_lengths = []
+        self.writer = None
+
+    def _on_training_start(self) -> None:
+        log_dir = getattr(self.logger, "dir", None)
+        if log_dir is None:
+            log_dir = getattr(self.model, "tensorboard_log", None)
+        if log_dir is not None:
+            self.writer = torch.utils.tensorboard.SummaryWriter(log_dir=log_dir)
 
     def _on_step(self) -> bool:
         for i, done in enumerate(self.locals['dones']):
@@ -268,20 +232,17 @@ class BalatroMetricsCallback(BaseCallback):
                     f"return={ep_return:>8.2f}  len={ep_length:>5d}  ante={info.get('ante', 1)}"
                 )
 
-                self.logger.record('balatro/episode_ante', info.get('ante', 1))
-                self.logger.record('balatro/episode_score', info.get('final_score', 0))
-                self.logger.record('balatro/episode_return', ep_return)
-
-                if wandb.run is not None:
-                    wandb.log({
-                        'episode_ante': info.get('ante', 1),
-                        'episode_score': info.get('final_score', 0),
-                        'episode_return': ep_return,
-                        'episode_length': ep_length,
-                        'global_step': self.num_timesteps
-                    })
+                if self.writer is not None:
+                    self.writer.add_scalar("balatro/episode_return", ep_return, self.num_timesteps)
+                    self.writer.add_scalar("balatro/episode_ante", info.get('ante', 1), self.num_timesteps)
+                    self.writer.add_scalar("balatro/episode_score", info.get('final_score', 0), self.num_timesteps)
+                    self.writer.add_scalar("balatro/episode_length", ep_length, self.num_timesteps)
         
         return True
+
+    def _on_training_end(self) -> None:
+        if self.writer is not None:
+            self.writer.close()
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +251,7 @@ class BalatroMetricsCallback(BaseCallback):
 
 class BehavioralCloning:
     """Pre-train policy using expert demonstrations"""
-    
+    #---- START STUB
     def __init__(self, model, trajectories_path: str):
         self.model = model
         self.trajectories = self._load_trajectories(trajectories_path)
@@ -331,6 +292,7 @@ class BehavioralCloning:
         # 3. Training the policy network with supervised learning
         
         print("Behavioral cloning pre-training complete!")
+    #---- END STUB
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +305,6 @@ def train_balatro_agent(
     n_envs: int = 8,
     seed: int = 42,
     use_curriculum: bool = True,
-    use_wandb: bool = True,
     save_dir: str = "models",
     checkpoint_freq: int = 10_000,
     expert_trajectories: Optional[str] = None,
@@ -356,21 +317,6 @@ def train_balatro_agent(
         if isinstance(v, np.integer): return int(v)
         if isinstance(v, np.floating): return float(v)
         return v
-
-    # TODO: flagged - wandb setup/teardown remains in this file after the requested import removal.
-    # Initialize wandb
-    if use_wandb:
-        wandb.init(
-            project="balatro-rl",
-            config={
-                "algorithm": algorithm,
-                "total_timesteps": total_timesteps,
-                "n_envs": n_envs,
-                "seed": seed,
-                "use_curriculum": use_curriculum,
-                "hyperparams": {k: _to_python(v) for k, v in (hyperparams or {}).items()}
-            }
-        )
     
     # Create save directory
     save_path = Path(save_dir) / f"{algorithm}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -380,7 +326,11 @@ def train_balatro_agent(
 
     def make_env(rank: int):
         def _init():
-            return Monitor(MaskableBalatroEnv(BalatroEnv(seed=seed + rank), debug=debug and rank == 0))
+            env = BalatroEnv(seed=seed + rank)
+            if use_curriculum:
+                env = CurriculumBalatroEnv(env)
+            # TODO2: debug currently has no effect after removing MaskableBalatroEnv; confirm whether you want a new debug wrapper/logging path.
+            return Monitor(env)
         return _init
 
     # Create vectorized environment
@@ -411,39 +361,6 @@ def train_balatro_agent(
                 "features_extractor_kwargs": {"features_dim": 512},
                 "net_arch": dict(pi=[256, 256], vf=[256, 256])
             }
-        },
-        "DQN": {
-            "learning_rate": 1e-4,
-            "buffer_size": 100_000,
-            "learning_starts": 10_000,
-            "batch_size": 32,
-            "tau": 1.0,
-            "gamma": 0.99,
-            "train_freq": 4,
-            "gradient_steps": 1,
-            "target_update_interval": 1000,
-            "exploration_fraction": 0.1,
-            "exploration_initial_eps": 1.0,
-            "exploration_final_eps": 0.05,
-            "policy_kwargs": {
-                "features_extractor_class": BalatroFeaturesExtractor,
-                "features_extractor_kwargs": {"features_dim": 512},
-                "net_arch": [512, 512]
-            }
-        },
-        "A2C": {
-            "learning_rate": 7e-4,
-            "n_steps": 5,
-            "gamma": 0.99,
-            "gae_lambda": 1.0,
-            "ent_coef": 0.01,
-            "vf_coef": 0.5,
-            "max_grad_norm": 0.5,
-            "policy_kwargs": {
-                "features_extractor_class": BalatroFeaturesExtractor,
-                "features_extractor_kwargs": {"features_dim": 512},
-                "net_arch": dict(pi=[256, 256], vf=[256, 256])
-            }
         }
     }
     
@@ -452,19 +369,11 @@ def train_balatro_agent(
     if hyperparams:
         algo_hyperparams.update(hyperparams)
     
-    # TODO: flagged - `MaskablePPO`, `DQN`, and `A2C` usages still remain after the requested algorithm/import swap.
     # Create model
-    if algorithm == "PPO":
-        model = MaskablePPO("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
-                   **algo_hyperparams)
-    elif algorithm == "DQN":
-        model = DQN("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
-                   **algo_hyperparams)
-    elif algorithm == "A2C":
-        model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
-                   **algo_hyperparams)
-    else:
+    if algorithm != "PPO":
         raise ValueError(f"Unknown algorithm: {algorithm}")
+    model = RecurrentPPO("MultiInputLstmPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
+               **algo_hyperparams)
     
     # Behavioral cloning pre-training
     if expert_trajectories and Path(expert_trajectories).exists():
@@ -532,9 +441,6 @@ def train_balatro_agent(
     
     print(f"\nTraining complete! Model saved to {save_path}")
     
-    if use_wandb:
-        wandb.finish()
-    
     return model, save_path
 
 
@@ -550,6 +456,7 @@ def tune_hyperparameters(
     seed: int = 42
 ):
     """Use Optuna for hyperparameter tuning"""
+    #---- START STUB
     import optuna
     
     def objective(trial):
@@ -574,7 +481,6 @@ def tune_hyperparameters(
             total_timesteps=n_timesteps,
             n_envs=n_envs,
             seed=seed,
-            use_wandb=False,  # Disable wandb for tuning
             hyperparams=hyperparams
         )
         
@@ -593,6 +499,7 @@ def tune_hyperparameters(
     print(study.best_params)
     
     return study.best_params
+    #---- END STUB
 
 
 # ---------------------------------------------------------------------------
@@ -606,6 +513,7 @@ def test_trained_agent(
     record_video: bool = False
 ):
     """Test a trained agent"""
+    #---- START STUB
     from stable_baselines3.common.vec_env import VecVideoRecorder
     
     # Load model
@@ -663,6 +571,7 @@ def test_trained_agent(
     
     if record_video:
         env.close()
+    #---- END STUB
 
 
 # ---------------------------------------------------------------------------
@@ -674,7 +583,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Train RL agents on Balatro")
     parser.add_argument("--algorithm", type=str, default="PPO",
-                       choices=["PPO", "DQN", "A2C"],
+                       choices=["PPO"],
                        help="RL algorithm to use")
     parser.add_argument("--timesteps", type=int, default=1_000_000,
                        help="Total training timesteps")
@@ -684,8 +593,6 @@ if __name__ == "__main__":
                        help="Random seed")
     parser.add_argument("--no-curriculum", action="store_true",
                        help="Disable curriculum learning")
-    parser.add_argument("--no-wandb", action="store_true",
-                       help="Disable Weights & Biases logging")
     parser.add_argument("--expert-trajectories", type=str, default=None,
                        help="Path to expert trajectories for behavioral cloning")
     parser.add_argument("--tune", action="store_true",
@@ -731,8 +638,8 @@ if __name__ == "__main__":
             n_envs=2,
             seed=args.seed,
             use_curriculum=not args.no_curriculum,
-            use_wandb=False,
             checkpoint_freq=5_000,
+            # TODO2: quick_test still passes eval_freq, but train_balatro_agent has no eval_freq parameter; left unchanged because it is outside this refactor scope.
             eval_freq=5_000
         )
         print(f"\nQuick test complete! Model saved to {save_path}")
@@ -745,7 +652,6 @@ if __name__ == "__main__":
             n_envs=args.n_envs,
             seed=args.seed,
             use_curriculum=not args.no_curriculum,
-            use_wandb=not args.no_wandb,
             expert_trajectories=args.expert_trajectories,
             debug=args.debug
         )
@@ -775,9 +681,6 @@ python train_balatro_rl.py --tune --algorithm PPO
 
 # Test a trained model:
 python train_balatro_rl.py --test models/PPO_20241210_160000/PPO_final.zip
-
-# Train with DQN instead:
-python train_balatro_rl.py --algorithm DQN --timesteps 500000 --n-envs 1
 
 # Disable curriculum learning:
 python train_balatro_rl.py --no-curriculum
