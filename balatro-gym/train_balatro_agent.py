@@ -20,20 +20,16 @@ from datetime import datetime
 import gymnasium as gym
 from gymnasium import spaces
 
-from stable_baselines3 import A2C, DQN
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
-from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import (
     BaseCallback, CheckpointCallback, CallbackList
 )
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.preprocessing import get_flattened_obs_dim
-from sb3_contrib import MaskablePPO
+from sb3_contrib import RecurrentPPO
 
-from balatro_gym.balatro_env_2 import BalatroEnv, make_balatro_env, Phase
+from balatro_gym.balatro_env_small import BalatroEnv, make_balatro_env
 from balatro_gym.constants import Action, ActionCounts
-import wandb
 
 
 def _action_name(action: int) -> str:
@@ -59,7 +55,7 @@ def _action_name(action: int) -> str:
         return f"SELECT_FROM_PACK_{action - Action.SELECT_FROM_PACK_BASE}"
     return f"ACTION_{action}"
 
-
+# TODO: flagged - this wrapper still assumes maskable-PPO action masking and still references `Phase` in debug output.
 class MaskableBalatroEnv(gym.Wrapper):
     """Thin wrapper that exposes action_masks() so MaskablePPO can use the sim."""
 
@@ -241,7 +237,7 @@ class CurriculumBalatroEnv(gym.Wrapper):
 # ---------------------------------------------------------------------------
 # Custom Callbacks
 # ---------------------------------------------------------------------------
-
+# TODO: flagged - wandb import was removed as requested, but logging calls and CLI flags still remain below.
 class BalatroMetricsCallback(BaseCallback):
     """Track Balatro-specific metrics during training"""
 
@@ -361,6 +357,7 @@ def train_balatro_agent(
         if isinstance(v, np.floating): return float(v)
         return v
 
+    # TODO: flagged - wandb setup/teardown remains in this file after the requested import removal.
     # Initialize wandb
     if use_wandb:
         wandb.init(
@@ -455,6 +452,7 @@ def train_balatro_agent(
     if hyperparams:
         algo_hyperparams.update(hyperparams)
     
+    # TODO: flagged - `MaskablePPO`, `DQN`, and `A2C` usages still remain after the requested algorithm/import swap.
     # Create model
     if algorithm == "PPO":
         model = MaskablePPO("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
@@ -580,6 +578,7 @@ def tune_hyperparameters(
             hyperparams=hyperparams
         )
         
+        # TODO: flagged - `make_vec_env` was removed from imports as requested, but it is still used here.
         # Evaluate
         eval_env = make_vec_env(lambda: Monitor(MaskableBalatroEnv(BalatroEnv())), n_envs=1)
         mean_reward, _ = evaluate_policy(model, eval_env, n_eval_episodes=10)
