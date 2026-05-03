@@ -26,31 +26,31 @@ class ActionHandler:
         mask = self._get_action_mask()
         return bool(mask[action])
 
-    def _get_action_mask(self, shop=None) -> np.ndarray:
+    def _get_action_mask(self) -> np.ndarray:
         """Get valid actions for current state"""
         mask = np.zeros(Action.ACTION_SPACE_SIZE, dtype=np.int8)
 
         if self.state.phase == Phase.PLAY:
+            n_selected = len(self.state.selected_cards)
             for i in range(min(8, len(self.state.hand_indexes))):
                 mask[Action.SELECT_CARD_BASE + i] = 1
 
-            if len(self.state.selected_cards) > 0:
+            if 0 < n_selected <= 5:
                 mask[Action.PLAY_HAND] = 1
 
-            if len(self.state.selected_cards) > 0 and self.state.discards_left > 0:
+            if n_selected > 0 and self.state.discards_left > 0:
                 mask[Action.DISCARD] = 1
 
             for i in range(len(self.state.consumables)):
                 mask[Action.USE_CONSUMABLE_BASE + i] = 1
 
         elif self.state.phase == Phase.SHOP:
-            if shop:
-                for i in range(len(shop.inventory)):
-                    if self.state.money >= shop.inventory[i].cost:
-                        mask[Action.SHOP_BUY_BASE + i] = 1
+            for i, item in enumerate(self.state.shop_inventory):
+                if self.state.money >= item.cost:
+                    mask[Action.SHOP_BUY_BASE + i] = 1
 
-                if self.state.money >= self.state.shop_reroll_cost:
-                    mask[Action.SHOP_REROLL] = 1
+            if self.state.money >= self.state.shop_reroll_cost:
+                mask[Action.SHOP_REROLL] = 1
 
             mask[Action.SHOP_END] = 1
 
