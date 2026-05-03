@@ -253,7 +253,7 @@ class PlayPhaseHandler:
         else:
             self.state.selected_cards.append(card_idx)
         
-        return 0.0, False, {'selected_cards': self.state.selected_cards.copy()}
+        return -0.05, False, {'selected_cards': self.state.selected_cards.copy()}  # time pressure: each selection step must pay off
     
     def _handle_consumable_use(self, action: int) -> Tuple[float, bool, Dict]:
         """Handle using a consumable."""

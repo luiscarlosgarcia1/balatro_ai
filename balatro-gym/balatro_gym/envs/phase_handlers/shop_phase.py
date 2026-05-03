@@ -76,7 +76,7 @@ class ShopPhaseHandler:
         # Draw initial hand for next round
         # This should be handled by the main environment
         
-        return 0.0, False, {'action': 'shop_ended'}
+        return -0.05, False, {'action': 'shop_ended'}  # time pressure: each shop visit must pay off
     
     def _handle_reroll(self) -> Tuple[float, bool, Dict]:
         """Handle rerolling the shop."""
