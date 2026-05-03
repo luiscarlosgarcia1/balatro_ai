@@ -1,7 +1,7 @@
 """Train RL agents on the Balatro environment.
 
 This script provides a complete training pipeline including:
-- Multiple algorithm support (PPO, A2C, DQN)
+- Multiple algorithm support (Recurrent PPO, A2C, DQN)
 - Curriculum learning
 - Behavioral cloning warm-start
 - Comprehensive logging
@@ -29,7 +29,7 @@ from stable_baselines3.common.callbacks import (
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim
-from sb3_contrib import MaskablePPO
+from sb3_contrib import RecurrentPPO
 
 from balatro_gym.balatro_env_2 import BalatroEnv, make_balatro_env, Phase
 from balatro_gym.balatro_live_env import BalatroLiveEnv
@@ -284,8 +284,22 @@ def train_balatro_agent(
     """Train an RL agent on Balatro"""
 
     def _to_python(v):
-        if isinstance(v, np.integer): return int(v)
-        if isinstance(v, np.floating): return float(v)
+        if isinstance(v, dict):
+            return {k: _to_python(val) for k, val in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [_to_python(val) for val in v]
+        if isinstance(v, np.integer):
+            return int(v)
+        if isinstance(v, np.floating):
+            return float(v)
+        if isinstance(v, np.ndarray):
+            return v.tolist()
+        if isinstance(v, Path):
+            return str(v)
+        if isinstance(v, type):
+            return v.__name__
+        if callable(v):
+            return getattr(v, "__name__", repr(v))
         return v
 
     # Initialize wandb
@@ -342,7 +356,10 @@ def train_balatro_agent(
             "policy_kwargs": {
                 "features_extractor_class": BalatroFeaturesExtractor,
                 "features_extractor_kwargs": {"features_dim": 512},
-                "net_arch": dict(pi=[256, 256], vf=[256, 256])
+                "net_arch": dict(pi=[256, 256], vf=[256, 256]),
+                "activation_fn": nn.ReLU,
+                "lstm_hidden_size": 256,
+                "n_lstm_layers": 1,
             }
         },
         "DQN": {
@@ -387,8 +404,13 @@ def train_balatro_agent(
     
     # Create model
     if algorithm == "PPO":
-        model = MaskablePPO("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
-                   **algo_hyperparams)
+        model = RecurrentPPO(
+            "MultiInputLstmPolicy",
+            env,
+            verbose=1,
+            tensorboard_log=str(save_path / "tb_logs"),
+            **algo_hyperparams,
+        )
     elif algorithm == "DQN":
         model = DQN("MultiInputPolicy", env, verbose=1, tensorboard_log=str(save_path / "tb_logs"),
                    **algo_hyperparams)
@@ -445,22 +467,12 @@ def train_balatro_agent(
         "n_envs": n_envs,
         "seed": seed,
         "use_curriculum": use_curriculum,
-        "hyperparams": algo_hyperparams,
+        "hyperparams": _to_python(algo_hyperparams),
         "save_path": str(save_path)
     }
-    
-    class _Encoder(json.JSONEncoder):
-        def default(self, o):
-            if isinstance(o, np.integer):
-                return int(o)
-            if isinstance(o, np.floating):
-                return float(o)
-            if isinstance(o, np.ndarray):
-                return o.tolist()
-            return super().default(o)
 
     with open(save_path / "config.json", "w") as f:
-        json.dump(config, f, indent=2, cls=_Encoder)
+        json.dump(config, f, indent=2)
     
     print(f"\nTraining complete! Model saved to {save_path}")
     
@@ -538,9 +550,31 @@ def test_trained_agent(
 ):
     """Test a trained agent"""
     from stable_baselines3.common.vec_env import VecVideoRecorder
-    
+
+    def _infer_algorithm(path: Path) -> str:
+        for candidate in (path.parent / "config.json", path.parent.parent / "config.json"):
+            if candidate.exists():
+                with open(candidate, "r") as f:
+                    config = json.load(f)
+                return config.get("algorithm", "PPO")
+        model_name = path.stem.upper()
+        for algorithm_name in ("PPO", "DQN", "A2C"):
+            if algorithm_name in model_name:
+                return algorithm_name
+        return "PPO"
+
+    model_path_obj = Path(model_path)
+    algorithm = _infer_algorithm(model_path_obj)
+
     # Load model
-    model = PPO.load(model_path)
+    if algorithm == "PPO":
+        model = RecurrentPPO.load(model_path)
+    elif algorithm == "DQN":
+        model = DQN.load(model_path)
+    elif algorithm == "A2C":
+        model = A2C.load(model_path)
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm}")
     
     # Create environment
     env = BalatroLiveEnv(port=12345, render_mode="human" if render else None)
@@ -563,13 +597,24 @@ def test_trained_agent(
         episode_reward = 0
         done = False
         step = 0
+        recurrent_state = None
+        episode_start = np.array([True], dtype=bool)
         
         print(f"\nEpisode {episode + 1}/{n_episodes}")
         
         while not done and step < 5000:
-            action, _ = model.predict(obs, deterministic=True)
+            if algorithm == "PPO":
+                action, recurrent_state = model.predict(
+                    obs,
+                    state=recurrent_state,
+                    episode_start=episode_start,
+                    deterministic=True,
+                )
+            else:
+                action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
+            episode_start = np.array([done], dtype=bool)
             
             episode_reward += reward
             step += 1
@@ -660,7 +705,6 @@ if __name__ == "__main__":
             use_curriculum=not args.no_curriculum,
             use_wandb=False,
             checkpoint_freq=5_000,
-            eval_freq=5_000
         )
         print(f"\nQuick test complete! Model saved to {save_path}")
         
