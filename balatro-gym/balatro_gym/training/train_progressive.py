@@ -17,8 +17,8 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 
-from train_balatro_fixed import BalatroEnvFixed
-from robust_training import SafeBalatroEnv
+from balatro_gym.training.robust_training import SafeBalatroEnv
+from balatro_gym.training.train_balatro_fixed import BalatroEnvFixed
 
 
 class ProgressionRewardWrapper(gym.Wrapper):

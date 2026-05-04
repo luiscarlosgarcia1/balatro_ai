@@ -6,7 +6,7 @@ cards from booster packs.
 
 from typing import Tuple, Dict, List, Optional
 
-from balatro_gym.envs.state import UnifiedGameState
+from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.cards import Card, Enhancement, Edition, Seal
 

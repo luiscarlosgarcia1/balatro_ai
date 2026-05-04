@@ -9,7 +9,7 @@ from balatro_gym.core.constants import Phase, Action
 from balatro_gym.scoring.scoring_engine import HandType
 
 if TYPE_CHECKING:
-    from balatro_gym.envs.state import UnifiedGameState
+    from balatro_gym.core_utils.state import UnifiedGameState
 
 
 class ObservationBuilder:

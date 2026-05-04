@@ -10,10 +10,10 @@ This module handles all actions during the PLAY phase including:
 from typing import Tuple, Dict, List, Any, Optional
 import numpy as np
 
-from balatro_gym.envs.state import UnifiedGameState, CardState
-from balatro_gym.envs.rng import DeterministicRNG
-from balatro_gym.envs.card_adapter import CardAdapter
-from balatro_gym.envs.reward_calculator import RewardCalculator
+from balatro_gym.core_utils.card_adapter import CardAdapter
+from balatro_gym.core_utils.reward_calculator import RewardCalculator
+from balatro_gym.core_utils.rng import DeterministicRNG
+from balatro_gym.core_utils.state import UnifiedGameState, CardState
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.cards import Card, Enhancement, Edition, Seal, EnhancementEffects, SealEffects
 from balatro_gym.scoring.scoring_engine import ScoreEngine, HandType
@@ -154,8 +154,13 @@ class PlayPhaseHandler:
         terminated = False
         if self.state.round_chips_scored >= self.state.chips_needed:
             # Beat the blind!
-            from balatro_gym.envs.utils.round_manager import RoundManager
-            round_manager = RoundManager(self.state, self.game, self.joker_effects_engine)
+            from balatro_gym.core_utils.round_manager import RoundManager
+            round_manager = RoundManager(
+                self.state,
+                self.game,
+                self.joker_effects_engine,
+                self.boss_blind_manager,
+            )
             round_manager.advance_round()
             info['beat_blind'] = True
         elif self.state.hands_left <= 1:

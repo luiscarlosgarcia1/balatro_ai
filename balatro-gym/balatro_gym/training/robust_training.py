@@ -24,7 +24,10 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback,
 from stable_baselines3.common.utils import set_random_seed
 
 # Import the fixed environment and safe wrapper from train_balatro_fixed
-from train_balatro_fixed import BalatroEnvFixed as BalatroEnvSB3, SafeBalatroEnv
+from balatro_gym.training.train_balatro_fixed import (
+    BalatroEnvFixed as BalatroEnvSB3,
+    SafeBalatroEnv,
+)
 
 
 def make_env(seed=0, rank=0):

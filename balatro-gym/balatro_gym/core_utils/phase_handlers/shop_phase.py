@@ -10,9 +10,9 @@ This module handles all actions during the SHOP phase including:
 from typing import Tuple, Dict, Optional
 import numpy as np
 
-from balatro_gym.envs.state import UnifiedGameState
-from balatro_gym.envs.rng import DeterministicRNG
-from balatro_gym.core.constants import Action
+from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core_utils.rng import DeterministicRNG
+from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.shop import Shop, ShopAction, PlayerState, ItemType
 from balatro_gym.core.jokers import JOKER_LIBRARY
 
@@ -319,6 +319,3 @@ class ShopPhaseHandler:
         }
         
         return voucher_effects.get(voucher_name, 'Unknown voucher effect')
-
-
-from balatro_gym.core.constants import Phase  # Add this import at the top

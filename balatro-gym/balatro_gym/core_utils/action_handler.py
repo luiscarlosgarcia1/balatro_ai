@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from balatro_gym.core.constants import Phase, Action
 
 if TYPE_CHECKING:
-    from balatro_gym.envs.rng import DeterministicRNG
-    from balatro_gym.envs.state import UnifiedGameState
+    from balatro_gym.core_utils.rng import DeterministicRNG
+    from balatro_gym.core_utils.state import UnifiedGameState
 
 
 class ActionHandler:

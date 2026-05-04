@@ -9,14 +9,14 @@ from typing import Dict, Optional, Any, Tuple
 import gymnasium as gym
 from gymnasium import spaces
 
-from balatro_gym.envs.state import UnifiedGameState
-from balatro_gym.envs.rng import DeterministicRNG
-from balatro_gym.envs.observation_builder import ObservationBuilder
-from balatro_gym.envs.action_handler import ActionHandler
-from balatro_gym.envs.phase_handlers import (
+from balatro_gym.core_utils.action_handler import ActionHandler
+from balatro_gym.core_utils.observation_builder import ObservationBuilder
+from balatro_gym.core_utils.phase_handlers import (
     PlayPhaseHandler, ShopPhaseHandler, 
     BlindSelectHandler, PackOpenHandler
 )
+from balatro_gym.core_utils.rng import DeterministicRNG
+from balatro_gym.core_utils.state import UnifiedGameState
 
 from balatro_gym.core.constants import Phase
 from balatro_gym.core.cards import Card, Suit, Rank
@@ -200,7 +200,7 @@ class BalatroEnv(gym.Env):
         if self.render_mode != "human":
             return
         
-        from balatro_gym.envs.renderer import ConsoleRenderer
+        from balatro_gym.core_utils.renderer import ConsoleRenderer
         renderer = ConsoleRenderer()
         renderer.render(self.state, self.boss_blind_manager)
 
