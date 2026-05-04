@@ -9,10 +9,10 @@ from typing import Tuple, Dict
 from balatro_gym.envs.state import UnifiedGameState
 from balatro_gym.envs.rng import DeterministicRNG
 from balatro_gym.envs.utils.blind_scaling import get_blind_chips
-from balatro_gym.constants import Action, Phase
-from balatro_gym.boss_blinds import BossBlindManager, select_boss_blind
-from balatro_gym.complete_joker_effects import CompleteJokerEffects
-from balatro_gym.balatro_game import BalatroGame
+from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.boss_blinds import BossBlindManager, select_boss_blind
+from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
+from balatro_gym.core.balatro_game import BalatroGame
 
 
 class BlindSelectHandler:

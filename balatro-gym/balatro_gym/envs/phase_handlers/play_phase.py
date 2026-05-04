@@ -14,14 +14,14 @@ from balatro_gym.envs.state import UnifiedGameState, CardState
 from balatro_gym.envs.rng import DeterministicRNG
 from balatro_gym.envs.card_adapter import CardAdapter
 from balatro_gym.envs.reward_calculator import RewardCalculator
-from balatro_gym.constants import Action, Phase
-from balatro_gym.cards import Card, Enhancement, Edition, Seal, EnhancementEffects, SealEffects
-from balatro_gym.scoring_engine import ScoreEngine, HandType
-from balatro_gym.unified_scoring import UnifiedScorer, ScoringContext
-from balatro_gym.complete_joker_effects import CompleteJokerEffects
-from balatro_gym.consumables import ConsumableManager
-from balatro_gym.boss_blinds import BossBlindManager
-from balatro_gym.balatro_game import BalatroGame
+from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.cards import Card, Enhancement, Edition, Seal, EnhancementEffects, SealEffects
+from balatro_gym.scoring.scoring_engine import ScoreEngine, HandType
+from balatro_gym.scoring.unified_scoring import UnifiedScorer, ScoringContext
+from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
+from balatro_gym.core.consumables import ConsumableManager
+from balatro_gym.core.boss_blinds import BossBlindManager
+from balatro_gym.core.balatro_game import BalatroGame
 
 
 class PlayPhaseHandler:
@@ -636,7 +636,7 @@ class PlayPhaseHandler:
         created = 0
         for joker_name in joker_names:
             if len(self.state.jokers) < self.state.joker_slots:
-                from balatro_gym.jokers import JOKER_LIBRARY
+                from balatro_gym.core.jokers import JOKER_LIBRARY
                 for joker_info in JOKER_LIBRARY:
                     if joker_info.name == joker_name:
                         self.state.jokers.append(joker_info)

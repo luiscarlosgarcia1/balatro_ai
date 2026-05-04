@@ -5,8 +5,8 @@ from typing import Dict, List, Any, Optional, TYPE_CHECKING
 import numpy as np
 from gymnasium import spaces
 
-from balatro_gym.constants import Phase, Action
-from balatro_gym.scoring_engine import HandType
+from balatro_gym.core.constants import Phase, Action
+from balatro_gym.scoring.scoring_engine import HandType
 
 if TYPE_CHECKING:
     from balatro_gym.envs.state import UnifiedGameState

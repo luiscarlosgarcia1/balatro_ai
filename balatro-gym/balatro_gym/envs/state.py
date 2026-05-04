@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from enum import Enum
 
-from balatro_gym.cards import Card, Enhancement, Edition, Seal
-from balatro_gym.constants import Phase
-from balatro_gym.scoring_engine import HandType
-from balatro_gym.jokers import JokerInfo
-from balatro_gym.boss_blinds import BossBlindType
+from balatro_gym.core.cards import Card, Enhancement, Edition, Seal
+from balatro_gym.core.constants import Phase
+from balatro_gym.scoring.scoring_engine import HandType
+from balatro_gym.core.jokers import JokerInfo
+from balatro_gym.core.boss_blinds import BossBlindType
 
 
 @dataclass

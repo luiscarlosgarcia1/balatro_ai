@@ -12,9 +12,9 @@ import numpy as np
 
 from balatro_gym.envs.state import UnifiedGameState
 from balatro_gym.envs.rng import DeterministicRNG
-from balatro_gym.constants import Action
-from balatro_gym.shop import Shop, ShopAction, PlayerState, ItemType
-from balatro_gym.jokers import JOKER_LIBRARY
+from balatro_gym.core.constants import Action
+from balatro_gym.core.shop import Shop, ShopAction, PlayerState, ItemType
+from balatro_gym.core.jokers import JOKER_LIBRARY
 
 
 class ShopPhaseHandler:
@@ -321,4 +321,4 @@ class ShopPhaseHandler:
         return voucher_effects.get(voucher_name, 'Unknown voucher effect')
 
 
-from balatro_gym.constants import Phase  # Add this import at the top
+from balatro_gym.core.constants import Phase  # Add this import at the top

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
 
-from balatro_gym.constants import Phase, Action
+from balatro_gym.core.constants import Phase, Action
 
 if TYPE_CHECKING:
     from balatro_gym.envs.rng import DeterministicRNG
