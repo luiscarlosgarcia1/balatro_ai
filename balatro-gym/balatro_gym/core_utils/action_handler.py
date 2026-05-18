@@ -32,7 +32,7 @@ class ActionHandler:
 
         if self.state.phase == Phase.PLAY:
             n_selected = len(self.state.selected_cards)
-            for i in range(min(8, len(self.state.hand_indexes))):
+            for i in range(min(Action.SELECT_CARD_COUNT, len(self.state.hand_indexes))):
                 mask[Action.SELECT_CARD_BASE + i] = 1
 
             if 0 < n_selected <= 5:
@@ -41,11 +41,11 @@ class ActionHandler:
             if n_selected > 0 and self.state.discards_left > 0:
                 mask[Action.DISCARD] = 1
 
-            for i in range(len(self.state.consumables)):
+            for i in range(min(Action.USE_CONSUMABLE_COUNT, len(self.state.consumables))):
                 mask[Action.USE_CONSUMABLE_BASE + i] = 1
 
         elif self.state.phase == Phase.SHOP:
-            for i, item in enumerate(self.state.shop_inventory):
+            for i, item in enumerate(self.state.shop_inventory[:Action.SHOP_BUY_COUNT]):
                 if self.state.money >= item.cost:
                     mask[Action.SHOP_BUY_BASE + i] = 1
 
@@ -54,8 +54,21 @@ class ActionHandler:
 
             mask[Action.SHOP_END] = 1
 
-            for i in range(len(self.state.jokers)):
+            for i in range(min(Action.SELL_JOKER_COUNT, len(self.state.jokers))):
                 mask[Action.SELL_JOKER_BASE + i] = 1
+
+        elif self.state.phase == Phase.PACK_OPEN:
+            pack_contents = self._get_pack_contents()
+            selected_indexes = set(self._get_pack_selected_indexes())
+            cards_to_select = self._get_pack_cards_to_select()
+
+            if len(selected_indexes) < cards_to_select:
+                for i in range(min(Action.SELECT_FROM_PACK_COUNT, len(pack_contents))):
+                    if i not in selected_indexes:
+                        mask[Action.SELECT_FROM_PACK_BASE + i] = 1
+
+            if pack_contents:
+                mask[Action.SKIP_PACK] = 1
 
         elif self.state.phase == Phase.BLIND_SELECT:
             for i in range(Action.SELECT_BLIND_COUNT):
@@ -63,3 +76,38 @@ class ActionHandler:
             mask[Action.SKIP_BLIND] = 1
 
         return mask
+
+    def _get_pack_contents(self) -> list:
+        for attr in (
+            "pack_contents",
+            "current_pack_contents",
+            "pack_items",
+            "pack_cards",
+            "pack_choices",
+        ):
+            value = getattr(self.state, attr, None)
+            if value is not None:
+                return list(value)
+        return []
+
+    def _get_pack_selected_indexes(self) -> list:
+        for attr in (
+            "selected_indexes",
+            "pack_selected_indexes",
+            "selected_pack_indexes",
+        ):
+            value = getattr(self.state, attr, None)
+            if value is not None:
+                return list(value)
+        return []
+
+    def _get_pack_cards_to_select(self) -> int:
+        for attr in (
+            "cards_to_select",
+            "pack_cards_to_select",
+            "pack_selection_limit",
+        ):
+            value = getattr(self.state, attr, None)
+            if value is not None:
+                return max(0, int(value))
+        return 1

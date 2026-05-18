@@ -127,12 +127,10 @@ class ObservationBuilder:
         obs['straight_potential'] = np.float32(hand_features['straight_potential'])
         obs['flush_potential'] = np.float32(hand_features['flush_potential'])
 
-        if state.phase == Phase.SHOP and shop:
-            shop_obs = shop.get_observation()
-            for i, (item_type, cost) in enumerate(zip(shop_obs['shop_item_type'][:10],
-                                                      shop_obs['shop_cost'][:10])):
-                obs['shop_items'][i] = item_type
-                obs['shop_costs'][i] = cost
+        if state.phase == Phase.SHOP:
+            shop_items, shop_costs = self._get_shop_arrays(state, shop)
+            obs['shop_items'][:len(shop_items)] = shop_items
+            obs['shop_costs'][:len(shop_costs)] = shop_costs
 
         return obs
 
@@ -141,31 +139,46 @@ class ObservationBuilder:
         mask = np.zeros(Action.ACTION_SPACE_SIZE, dtype=np.int8)
 
         if state.phase == Phase.PLAY:
-            for i in range(min(8, len(state.hand_indexes))):
+            n_selected = len(state.selected_cards)
+
+            for i in range(min(Action.SELECT_CARD_COUNT, len(state.hand_indexes))):
                 mask[Action.SELECT_CARD_BASE + i] = 1
 
-            if len(state.selected_cards) > 0:
+            if 0 < n_selected <= 5:
                 mask[Action.PLAY_HAND] = 1
 
-            if len(state.selected_cards) > 0 and state.discards_left > 0:
+            if n_selected > 0 and state.discards_left > 0:
                 mask[Action.DISCARD] = 1
 
-            for i in range(len(state.consumables)):
+            for i in range(min(Action.USE_CONSUMABLE_COUNT, len(state.consumables))):
                 mask[Action.USE_CONSUMABLE_BASE + i] = 1
 
         elif state.phase == Phase.SHOP:
-            if shop:
-                for i in range(len(shop.inventory)):
-                    if state.money >= shop.inventory[i].cost:
-                        mask[Action.SHOP_BUY_BASE + i] = 1
+            for i, item in enumerate(self._get_shop_inventory(state, shop)[:Action.SHOP_BUY_COUNT]):
+                cost = self._get_shop_item_cost(item)
+                if cost is not None and state.money >= cost:
+                    mask[Action.SHOP_BUY_BASE + i] = 1
 
-                if state.money >= state.shop_reroll_cost:
-                    mask[Action.SHOP_REROLL] = 1
+            if state.money >= state.shop_reroll_cost:
+                mask[Action.SHOP_REROLL] = 1
 
             mask[Action.SHOP_END] = 1
 
-            for i in range(len(state.jokers)):
+            for i in range(min(Action.SELL_JOKER_COUNT, len(state.jokers))):
                 mask[Action.SELL_JOKER_BASE + i] = 1
+
+        elif state.phase == Phase.PACK_OPEN:
+            pack_contents = self._get_pack_contents(state, shop)
+            selected_indexes = set(self._get_pack_selected_indexes(state, shop))
+            cards_to_select = self._get_pack_cards_to_select(state, shop)
+
+            if len(selected_indexes) < cards_to_select:
+                for i in range(min(Action.SELECT_FROM_PACK_COUNT, len(pack_contents))):
+                    if i not in selected_indexes:
+                        mask[Action.SELECT_FROM_PACK_BASE + i] = 1
+
+            if pack_contents:
+                mask[Action.SKIP_PACK] = 1
 
         elif state.phase == Phase.BLIND_SELECT:
             for i in range(Action.SELECT_BLIND_COUNT):
@@ -173,6 +186,89 @@ class ObservationBuilder:
             mask[Action.SKIP_BLIND] = 1
 
         return mask
+
+    def _get_shop_arrays(self, state: UnifiedGameState, shop=None) -> tuple[np.ndarray, np.ndarray]:
+        inventory = self._get_shop_inventory(state, shop)
+        if inventory:
+            item_types = []
+            costs = []
+            for item in inventory[:10]:
+                item_types.append(self._get_shop_item_type_value(item))
+                costs.append(self._get_shop_item_cost(item) or 0)
+            return np.array(item_types, dtype=np.int16), np.array(costs, dtype=np.int16)
+
+        if shop and hasattr(shop, 'get_observation'):
+            shop_obs = shop.get_observation()
+            item_types = np.array(shop_obs.get('shop_item_type', [])[:10], dtype=np.int16)
+            costs = np.array(shop_obs.get('shop_cost', [])[:10], dtype=np.int16)
+            return item_types, costs
+
+        return np.zeros(0, dtype=np.int16), np.zeros(0, dtype=np.int16)
+
+    def _get_shop_inventory(self, state: UnifiedGameState, shop=None) -> list:
+        if state.shop_inventory:
+            return list(state.shop_inventory)
+        if shop and hasattr(shop, 'inventory'):
+            return list(shop.inventory)
+        return []
+
+    def _get_shop_item_type_value(self, item: Any) -> int:
+        item_type = getattr(item, 'item_type', 0)
+        if hasattr(item_type, 'value'):
+            return int(item_type.value)
+        return int(item_type)
+
+    def _get_shop_item_cost(self, item: Any) -> Optional[int]:
+        cost = getattr(item, 'cost', None)
+        if cost is None and isinstance(item, dict):
+            cost = item.get('cost')
+        if cost is None:
+            return None
+        return int(cost)
+
+    def _get_pack_contents(self, state: UnifiedGameState, shop=None) -> list:
+        for owner in (state, shop):
+            if owner is None:
+                continue
+            for attr in (
+                'pack_contents',
+                'current_pack_contents',
+                'pack_items',
+                'pack_cards',
+                'pack_choices',
+            ):
+                value = getattr(owner, attr, None)
+                if value is not None:
+                    return list(value)
+        return []
+
+    def _get_pack_selected_indexes(self, state: UnifiedGameState, shop=None) -> list:
+        for owner in (state, shop):
+            if owner is None:
+                continue
+            for attr in (
+                'selected_indexes',
+                'pack_selected_indexes',
+                'selected_pack_indexes',
+            ):
+                value = getattr(owner, attr, None)
+                if value is not None:
+                    return list(value)
+        return []
+
+    def _get_pack_cards_to_select(self, state: UnifiedGameState, shop=None) -> int:
+        for owner in (state, shop):
+            if owner is None:
+                continue
+            for attr in (
+                'cards_to_select',
+                'pack_cards_to_select',
+                'pack_selection_limit',
+            ):
+                value = getattr(owner, attr, None)
+                if value is not None:
+                    return max(0, int(value))
+        return 1
 
     def _calculate_hand_features(self, hand_cards: list) -> Dict[str, Any]:
         """Calculate advanced hand features for better decision making"""

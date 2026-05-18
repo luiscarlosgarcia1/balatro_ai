@@ -3,6 +3,13 @@ import numpy as np
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Any
 import json
+from types import SimpleNamespace
+
+from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.shop import ItemType, ShopItem
+from balatro_gym.core_utils.action_handler import ActionHandler
+from balatro_gym.core_utils.observation_builder import ObservationBuilder
+from balatro_gym.core_utils.state import UnifiedGameState
 
 @dataclass
 class Card:
@@ -482,3 +489,66 @@ if __name__ == "__main__":
         json.dump(trajectories, f, indent=2, default=str)
     
     print("Trajectories saved to balatro_trajectories.json")
+
+
+def test_action_handler_pack_open_mask_respects_selected_indexes_and_limit():
+    state = UnifiedGameState(phase=Phase.PACK_OPEN)
+    state.pack_contents = ["a", "b", "c"]
+    state.selected_indexes = [1]
+    state.cards_to_select = 2
+
+    mask = ActionHandler(state, rng=SimpleNamespace())._get_action_mask()
+
+    assert mask[Action.SELECT_FROM_PACK_BASE + 0] == 1
+    assert mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert mask[Action.SELECT_FROM_PACK_BASE + 2] == 1
+    assert mask[Action.SKIP_PACK] == 1
+
+
+def test_observation_builder_pack_open_mask_stops_new_selections_at_limit():
+    state = UnifiedGameState(phase=Phase.PACK_OPEN)
+    state.pack_contents = ["a", "b", "c", "d"]
+    state.selected_indexes = [0, 2]
+    state.cards_to_select = 2
+
+    obs = ObservationBuilder().build_observation(state)
+    mask = obs["action_mask"]
+
+    for i in range(Action.SELECT_FROM_PACK_COUNT):
+        assert mask[Action.SELECT_FROM_PACK_BASE + i] == 0
+    assert mask[Action.SKIP_PACK] == 1
+
+
+def test_observation_builder_shop_observation_and_mask_use_state_inventory():
+    state = UnifiedGameState(phase=Phase.SHOP, money=450, shop_reroll_cost=50)
+    state.shop_inventory = [
+        ShopItem(ItemType.PACK, "Pack", 100, {}),
+        ShopItem(ItemType.JOKER, "Joker", 450, {}),
+        ShopItem(ItemType.CARD, "Card", 451, {}),
+    ] + [
+        ShopItem(ItemType.VOUCHER, f"Voucher {i}", 10 + i, {})
+        for i in range(8)
+    ]
+
+    obs = ObservationBuilder().build_observation(state)
+    mask = obs["action_mask"]
+
+    assert obs["shop_items"][:10].tolist() == [
+        ItemType.PACK,
+        ItemType.JOKER,
+        ItemType.CARD,
+        ItemType.VOUCHER,
+        ItemType.VOUCHER,
+        ItemType.VOUCHER,
+        ItemType.VOUCHER,
+        ItemType.VOUCHER,
+        ItemType.VOUCHER,
+        ItemType.VOUCHER,
+    ]
+    assert obs["shop_costs"][:10].tolist() == [100, 450, 451, 10, 11, 12, 13, 14, 15, 16]
+
+    assert mask[Action.SHOP_BUY_BASE + 0] == 1
+    assert mask[Action.SHOP_BUY_BASE + 1] == 1
+    assert mask[Action.SHOP_BUY_BASE + 2] == 0
+    assert mask[Action.SHOP_BUY_BASE + 9] == 1
+    assert mask[Action.SHOP_REROLL] == 1
