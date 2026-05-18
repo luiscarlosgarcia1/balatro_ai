@@ -4,11 +4,12 @@ This module handles the pack opening phase where players select
 cards from booster packs.
 """
 
-from typing import Tuple, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.constants import Action, Phase
-from balatro_gym.core.cards import Card, Enhancement, Edition, Seal
+from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
+from balatro_gym.core.jokers import JOKER_LIBRARY
 
 
 class PackOpenHandler:
@@ -23,6 +24,7 @@ class PackOpenHandler:
         """
         self.state = state
         self.shop_handler = shop_handler
+        self.shop_handler.pack_open_handler = self
         self.pack_contents: List[Dict] = []
         self.pack_type: str = ""
         self.cards_to_select: int = 1
@@ -37,9 +39,9 @@ class PackOpenHandler:
         Returns:
             Tuple of (reward, terminated, info)
         """
-        if Action.PACK_SELECT_BASE <= action < Action.PACK_SELECT_BASE + Action.PACK_SELECT_COUNT:
+        if Action.SELECT_FROM_PACK_BASE <= action < Action.SELECT_FROM_PACK_BASE + Action.SELECT_FROM_PACK_COUNT:
             return self._handle_select_card(action)
-        elif action == Action.PACK_SKIP:
+        elif action == Action.SKIP_PACK:
             return self._handle_skip_pack()
         else:
             return -1.0, False, {'error': 'Invalid pack open action'}
@@ -55,7 +57,7 @@ class PackOpenHandler:
             Info dictionary about the pack
         """
         self.pack_type = pack_type
-        self.pack_contents = pack_contents
+        self.pack_contents = self._normalize_pack_contents(pack_type, pack_contents)
         self.selected_indexes = []
         
         # Determine how many cards can be selected
@@ -63,17 +65,18 @@ class PackOpenHandler:
         
         # Transition to pack open phase
         self.state.phase = Phase.PACK_OPEN
+        self._sync_pack_state_to_unified_state()
         
         return {
             'pack_type': pack_type,
-            'pack_size': len(pack_contents),
+            'pack_size': len(self.pack_contents),
             'cards_to_select': self.cards_to_select,
             'pack_contents': self._format_pack_contents()
         }
     
     def _handle_select_card(self, action: int) -> Tuple[float, bool, Dict]:
         """Handle selecting a card from the pack."""
-        card_idx = action - Action.PACK_SELECT_BASE
+        card_idx = action - Action.SELECT_FROM_PACK_BASE
         
         if card_idx >= len(self.pack_contents):
             return -1.0, False, {'error': 'Invalid card index'}
@@ -86,6 +89,7 @@ class PackOpenHandler:
         
         # Select the card
         self.selected_indexes.append(card_idx)
+        self._sync_pack_state_to_unified_state()
         selected_item = self.pack_contents[card_idx]
         
         # Apply the selected item
@@ -115,6 +119,8 @@ class PackOpenHandler:
             'action': 'skipped_pack',
             'cards_skipped': cards_skipped
         }
+
+        self._sync_pack_state_to_unified_state()
         
         return self._complete_pack_opening(reward, info)
     
@@ -123,7 +129,9 @@ class PackOpenHandler:
         # Clear pack state
         self.pack_contents = []
         self.pack_type = ""
+        self.cards_to_select = 1
         self.selected_indexes = []
+        self._clear_pack_state_from_unified_state()
         
         # Return to shop phase
         self.state.phase = Phase.SHOP
@@ -142,20 +150,136 @@ class PackOpenHandler:
     
     def _get_cards_to_select(self, pack_type: str) -> int:
         """Get number of cards that can be selected from pack type."""
-        pack_selections = {
-            'Arcana Pack': 1,      # Choose 1 of 5 Tarot cards
-            'Celestial Pack': 1,   # Choose 1 of 5 Planet cards
-            'Spectral Pack': 1,    # Choose 1 of 5 Spectral cards
-            'Standard Pack': 1,    # Choose 1 of 5 playing cards
-            'Buffoon Pack': 1,     # Choose 1 of 5 Jokers
-            'Mega Arcana Pack': 2, # Choose 2 of 5 Tarot cards
-            'Mega Celestial Pack': 2,  # Choose 2 of 5 Planet cards
-            'Mega Spectral Pack': 2,   # Choose 2 of 5 Spectral cards
-            'Mega Standard Pack': 2,   # Choose 2 of 5 playing cards
-            'Mega Buffoon Pack': 2,    # Choose 2 of 5 Jokers
-        }
-        
-        return pack_selections.get(pack_type, 1)
+        normalized = pack_type.lower()
+        if normalized.startswith('mega '):
+            return 2
+        return 1
+
+    def _sync_pack_state_to_unified_state(self) -> None:
+        """Mirror pack-open state onto UnifiedGameState for masks/observations."""
+        mirrored_contents = list(self.pack_contents)
+        mirrored_selected_indexes = list(self.selected_indexes)
+
+        self.state.pack_contents = mirrored_contents
+        self.state.current_pack_contents = mirrored_contents
+        self.state.pack_choices = mirrored_contents
+        self.state.selected_indexes = mirrored_selected_indexes
+        self.state.pack_selected_indexes = mirrored_selected_indexes
+        self.state.selected_pack_indexes = mirrored_selected_indexes
+        self.state.cards_to_select = self.cards_to_select
+        self.state.pack_cards_to_select = self.cards_to_select
+        self.state.pack_selection_limit = self.cards_to_select
+        self.state.pack_type = self.pack_type
+
+    def _clear_pack_state_from_unified_state(self) -> None:
+        """Clear pack-open mirror state once pack resolution is complete."""
+        self.state.pack_contents = []
+        self.state.current_pack_contents = []
+        self.state.pack_choices = []
+        self.state.selected_indexes = []
+        self.state.pack_selected_indexes = []
+        self.state.selected_pack_indexes = []
+        self.state.cards_to_select = 0
+        self.state.pack_cards_to_select = 0
+        self.state.pack_selection_limit = 0
+        self.state.pack_type = ""
+
+    def _normalize_pack_contents(self, pack_type: str, pack_contents: List[Any]) -> List[Dict]:
+        """Normalize shop pack payloads into a single pack-item structure."""
+        normalized_contents: List[Dict] = []
+
+        for item in pack_contents:
+            normalized_item = self._normalize_pack_item(pack_type, item)
+            if normalized_item is not None:
+                normalized_contents.append(normalized_item)
+
+        return normalized_contents
+
+    def _normalize_pack_item(self, pack_type: str, item: Any) -> Optional[Dict]:
+        """Normalize a single pack choice from raw shop output."""
+        if isinstance(item, dict):
+            if 'card' in item:
+                normalized = dict(item)
+                normalized['card'] = self._coerce_card(normalized['card'])
+                return normalized if normalized['card'] is not None else None
+
+            if 'joker' in item:
+                normalized = dict(item)
+                normalized['joker'] = self._coerce_joker(normalized['joker'])
+                return normalized if normalized['joker'] is not None else None
+
+            if 'joker_id' in item:
+                joker = self._coerce_joker(item['joker_id'])
+                return {'joker': joker} if joker is not None else None
+
+            if 'consumable' in item:
+                normalized = dict(item)
+                normalized['consumable'] = self._coerce_consumable_name(normalized['consumable'])
+                return normalized
+
+            if 'card_id' in item:
+                card = self._coerce_card(item['card_id'])
+                return {'card': card} if card is not None else None
+
+        if isinstance(item, Card):
+            return {'card': item}
+
+        if isinstance(item, int):
+            card = self._coerce_card(item)
+            return {'card': card} if card is not None else None
+
+        if isinstance(item, str):
+            if 'joker' in pack_type.lower():
+                joker = self._coerce_joker(item)
+                return {'joker': joker} if joker is not None else None
+            return {'consumable': self._coerce_consumable_name(item)}
+
+        if hasattr(item, 'rank') and hasattr(item, 'suit'):
+            card = self._coerce_card(item)
+            return {'card': card} if card is not None else None
+
+        return None
+
+    def _coerce_card(self, card_value: Any) -> Optional[Card]:
+        """Convert raw card identifiers or card-like objects to core Card."""
+        if isinstance(card_value, Card):
+            return card_value
+
+        if isinstance(card_value, int):
+            if not (0 <= card_value < 52):
+                return None
+            rank = Rank((card_value // 4) + 2)
+            suit = Suit(card_value % 4)
+            return Card(rank=rank, suit=suit)
+
+        if hasattr(card_value, 'rank') and hasattr(card_value, 'suit'):
+            rank_value = getattr(card_value.rank, 'value', card_value.rank)
+            suit_value = getattr(card_value.suit, 'value', card_value.suit)
+            try:
+                return Card(rank=Rank(int(rank_value)), suit=Suit(int(suit_value)))
+            except (TypeError, ValueError):
+                return None
+
+        return None
+
+    def _coerce_joker(self, joker_value: Any):
+        """Convert a joker id/name/object into the shared JokerInfo object."""
+        if hasattr(joker_value, 'id') and hasattr(joker_value, 'name'):
+            return joker_value
+
+        for joker in JOKER_LIBRARY:
+            if joker_value == joker.id or joker_value == joker.name:
+                return joker
+
+        return None
+
+    def _coerce_consumable_name(self, consumable_value: Any) -> str:
+        """Normalize consumables to the string form used in UnifiedGameState."""
+        if isinstance(consumable_value, str):
+            return consumable_value
+        if hasattr(consumable_value, 'name'):
+            return consumable_value.name.replace('_', ' ').title()
+        return str(consumable_value)
     
     def _format_pack_contents(self) -> List[str]:
         """Format pack contents for display."""
@@ -238,12 +362,6 @@ class PackOpenHandler:
             if self.state.add_joker(item['joker']):
                 info['joker_added'] = item['joker'].name
                 reward = 15.0  # Jokers are very valuable
-                
-                # Extra reward for rare jokers
-                if item['joker'].rarity == 'Legendary':
-                    reward += 10.0
-                elif item['joker'].rarity == 'Rare':
-                    reward += 5.0
             else:
                 info['error'] = 'No joker slots available'
                 reward = -1.0

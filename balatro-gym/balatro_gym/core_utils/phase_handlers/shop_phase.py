@@ -7,7 +7,7 @@ This module handles all actions during the SHOP phase including:
 - Ending shopping
 """
 
-from typing import Tuple, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from balatro_gym.core.constants import Action, Phase
@@ -15,6 +15,7 @@ from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.shop import Shop, ShopAction, PlayerState, ItemType
 from balatro_gym.core.jokers import JOKER_LIBRARY
+from balatro_gym.scoring.scoring_engine import HandType
 
 
 class ShopPhaseHandler:
@@ -30,6 +31,7 @@ class ShopPhaseHandler:
         self.state = state
         self.rng = rng
         self.shop: Optional[Shop] = None
+        self.pack_open_handler = None
     
     def step(self, action: int) -> Tuple[float, bool, Dict]:
         """Process an action during shop phase.
@@ -139,7 +141,10 @@ class ShopPhaseHandler:
         # Handle errors from shop
         if 'error' in shop_info:
             return -1.0, False, shop_info
-        
+
+        if item.item_type == ItemType.PACK:
+            return self._handle_pack_purchase(item, shop_info)
+
         # Update state based on purchase type
         info = self._process_purchase(item, shop_info)
         
@@ -205,9 +210,21 @@ class ShopPhaseHandler:
     
     def _create_player_state(self) -> PlayerState:
         """Create player state from unified state."""
-        player = PlayerState(chips=self.state.money)
+        existing_player = self.shop.player if self.shop and self.shop.player else None
+        player = PlayerState(
+            chips=self.state.money,
+            consumables=self.state.consumables.copy(),
+            first_shop_buffoon_seen=getattr(existing_player, 'first_shop_buffoon_seen', False),
+            shop_visits=max(
+                int(getattr(existing_player, 'shop_visits', 0) or 0),
+                int(getattr(self.state, 'shop_visits', 0) or 0),
+            ),
+            spectral_rate=int(getattr(existing_player, 'spectral_rate', 0) or 0),
+            most_played_hand=self._derive_most_played_hand(existing_player),
+        )
         player.jokers = [j.id for j in self.state.jokers]
         player.vouchers = self.state.vouchers.copy()
+        player.deck = [int(card) for card in self.state.deck]
         return player
     
     def _sync_player_state(self):
@@ -216,6 +233,17 @@ class ShopPhaseHandler:
             self.shop.player.chips = self.state.money
             self.shop.player.jokers = [j.id for j in self.state.jokers]
             self.shop.player.vouchers = self.state.vouchers.copy()
+            self.shop.player.deck = [int(card) for card in self.state.deck]
+            self.shop.player.consumables = self.state.consumables.copy()
+            self.shop.player.first_shop_buffoon_seen = bool(
+                getattr(self.shop.player, 'first_shop_buffoon_seen', False)
+            )
+            self.shop.player.shop_visits = max(
+                int(getattr(self.shop.player, 'shop_visits', 0) or 0),
+                int(getattr(self.state, 'shop_visits', 0) or 0),
+            )
+            self.shop.player.spectral_rate = int(getattr(self.shop.player, 'spectral_rate', 0) or 0)
+            self.shop.player.most_played_hand = self._derive_most_played_hand(self.shop.player)
     
     def _sync_jokers_from_player(self):
         """Sync jokers from player state back to unified state."""
@@ -240,10 +268,7 @@ class ShopPhaseHandler:
         }
         
         if item.item_type == ItemType.PACK:
-            # Pack will transition to pack opening phase
-            if 'new_cards' in shop_info:
-                info['pack_contents'] = shop_info['new_cards']
-                info['transition_to'] = 'pack_open'
+            info['transition_to'] = 'pack_open'
         
         elif item.item_type == ItemType.JOKER:
             # Sync joker from player state
@@ -265,6 +290,97 @@ class ShopPhaseHandler:
                 info['voucher_effect'] = self._get_voucher_effect(self.state.vouchers[-1])
         
         return info
+
+    def _handle_pack_purchase(self, item, shop_info: Dict) -> Tuple[float, bool, Dict]:
+        """Transition a purchased pack into the pack opening phase."""
+        self.state.money = self.shop.player.chips
+        self.state.shop_inventory = self.shop.inventory.copy()
+
+        info = self._process_purchase(item, shop_info)
+        pack_type = self._extract_pack_type(item, shop_info)
+        pack_contents = self._extract_pack_contents(item, shop_info)
+
+        info['pack_type'] = pack_type
+        info['pack_contents_raw'] = pack_contents
+
+        if self.pack_open_handler is None:
+            info['warning'] = 'Pack purchased without pack handler attached'
+            return 5.0, False, info
+
+        pack_info = self.pack_open_handler.open_pack(pack_type, pack_contents)
+        info.update(pack_info)
+
+        return 5.0, False, info
+
+    def _extract_pack_type(self, item, shop_info: Dict[str, Any]) -> str:
+        """Get the best available pack type label from item/shop payloads."""
+        for source in (shop_info, getattr(item, 'payload', None) or {}):
+            if not isinstance(source, dict):
+                continue
+            for key in ('pack_type', 'pack_name', 'name'):
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return item.name
+
+    def _extract_pack_contents(self, item, shop_info: Dict[str, Any]) -> List[Any]:
+        """Get pack contents from the current shop interface."""
+        candidate_keys = (
+            'pack_contents',
+            'contents',
+            'choices',
+            'cards',
+            'new_cards',
+        )
+
+        for source in (shop_info, getattr(item, 'payload', None) or {}):
+            if not isinstance(source, dict):
+                continue
+            for key in candidate_keys:
+                value = source.get(key)
+                if isinstance(value, list):
+                    return value
+
+        return []
+
+    def _derive_most_played_hand(self, player: Optional[PlayerState]) -> Optional[str]:
+        """Return the best available shop hand hint from state or prior player data."""
+        hand_levels = getattr(self.state, 'hand_levels', {}) or {}
+        best_hand: Optional[HandType] = None
+        best_level = 0
+
+        for hand_type, level in hand_levels.items():
+            try:
+                normalized_level = int(level)
+            except (TypeError, ValueError):
+                continue
+
+            if normalized_level > best_level and isinstance(hand_type, HandType):
+                best_hand = hand_type
+                best_level = normalized_level
+
+        if best_hand is not None and best_level > 1:
+            return self._format_hand_type(best_hand)
+
+        return getattr(player, 'most_played_hand', None)
+
+    def _format_hand_type(self, hand_type: HandType) -> str:
+        """Convert HandType enum names to the shop's display strings."""
+        hand_name_map = {
+            HandType.HIGH_CARD: 'High Card',
+            HandType.ONE_PAIR: 'Pair',
+            HandType.TWO_PAIR: 'Two Pair',
+            HandType.THREE_KIND: 'Three of a Kind',
+            HandType.STRAIGHT: 'Straight',
+            HandType.FLUSH: 'Flush',
+            HandType.FULL_HOUSE: 'Full House',
+            HandType.FOUR_KIND: 'Four of a Kind',
+            HandType.STRAIGHT_FLUSH: 'Straight Flush',
+            HandType.FIVE_KIND: 'Five of a Kind',
+            HandType.FLUSH_HOUSE: 'Flush House',
+            HandType.FLUSH_FIVE: 'Flush Five',
+        }
+        return hand_name_map.get(hand_type, hand_type.name.replace('_', ' ').title())
     
     def _calculate_sell_value(self, joker) -> int:
         """Calculate the sell value of a joker."""
