@@ -1,4 +1,4 @@
-from balatro_gym.balatro_game import BalatroGame, Card
+from balatro_gym.core.balatro_game import BalatroGame, Card
 
 def test_flush_five():
     hand = [Card(Card.Ranks.ACE, Card.Suits.SPADES) for _ in range(5)]

@@ -12,7 +12,7 @@
 /headless/*.pyc
 
 # Balatro game folder.
-/Balatro/
+/balatro_unpacked/
 
 # DS Store thingy
 .DS_store

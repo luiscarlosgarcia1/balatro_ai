@@ -5,8 +5,12 @@ JSON-RPC 2.0 API for controlling Balatro programmatically.
 ## Overview
 
 - **Protocol**: JSON-RPC 2.0 over HTTP/1.1
-- **Endpoint**: `http://127.0.0.1:12346` (default)
-- **Content-Type**: `application/json`
+- **Endpoint**: `http://127.0.0.1:12346/` (default)
+- **HTTP Routing**: `POST /` only
+- **Content-Type**: `application/json` is recommended, but the server does not currently enforce the request header
+- **Request ID**: `id` is required and must be a non-null integer or string
+- **Params**: `params` is optional for methods that take no arguments
+- **Indexing**: All card, hand, joker, consumable, shop, and pack indices in API payloads are 0-based
 
 ### Request Format
 
@@ -44,6 +48,12 @@ JSON-RPC 2.0 API for controlling Balatro programmatically.
   "id": 1
 }
 ```
+
+Endpoint and protocol errors are returned as JSON-RPC error payloads, usually with HTTP `200 OK`. Transport/routing errors use HTTP status codes:
+
+- `400` for malformed HTTP requests
+- `404` for paths other than `/`
+- `405` for methods other than `POST`
 
 ## Quickstart
 
@@ -87,15 +97,13 @@ curl -X POST http://127.0.0.1:12346 \
 
 ## Game States
 
-The game progresses through these states:
+These are the stable bot-facing states the API waits for before returning. Internal engine states such as `HAND_PLAYED`, `DRAW_TO_HAND`, and `NEW_ROUND` exist, but the RPC methods are designed to resolve back to stable states before responding.
 
 ```
-MENU ──► BLIND_SELECT ──► SELECTING_HAND ──► ROUND_EVAL ──► SHOP ─┐
-                ▲                │                                │
-                │                ▼                                │
-                │            GAME_OVER                            │
-                │                                                 │
-                └─────────────────────────────────────────────────┘
+MENU ──► BLIND_SELECT ──► SELECTING_HAND ──► ROUND_EVAL ──► SHOP ──► BLIND_SELECT
+            │                  │                                  │
+            │                  └──────────────► GAME_OVER         ├──► SMODS_BOOSTER_OPENED ──► SHOP
+            └──────────────────────► BLIND_SELECT
 ```
 
 | State                  | Description                                     |
@@ -175,6 +183,8 @@ Returns the OpenRPC specification for this API.
 
 **Returns:** OpenRPC schema document
 
+If the OpenRPC spec file is missing at startup, this method still returns a successful JSON-RPC response, but the `result` will contain the server's fallback error object instead of a full spec.
+
 **Example:**
 
 ```bash
@@ -241,7 +251,9 @@ Save the current run to a file.
 
 **Returns:** `{ "success": true, "path": "..." }`
 
-**Errors:** `INVALID_STATE`, `INTERNAL_ERROR`
+**Errors:** `BAD_REQUEST`, `INVALID_STATE`, `INTERNAL_ERROR`
+
+**Required State:** Any active run state. In practice this is used from stable run states such as `BLIND_SELECT`, `SELECTING_HAND`, `ROUND_EVAL`, `SHOP`, `SMODS_BOOSTER_OPENED`, or `GAME_OVER`.
 
 **Example:**
 
@@ -265,7 +277,11 @@ Load a saved run from a file.
 
 **Returns:** `{ "success": true, "path": "..." }`
 
-**Errors:** `INTERNAL_ERROR`
+**Errors:** `BAD_REQUEST`, `INTERNAL_ERROR`
+
+**Required State:** None
+
+`load` waits until the restored run is ready, but it does not return the full restored `GameState`. Call [`gamestate`](#gamestate) after `load` if you need the full observation immediately.
 
 **Example:**
 
@@ -299,7 +315,7 @@ curl -X POST http://127.0.0.1:12346 \
 
 ### `skip`
 
-Skip the current blind (Small or Big only).
+Skip the current blind (Small or Big only). On success, the API returns to `BLIND_SELECT` with that blind marked as skipped and the next blind on deck.
 
 **Returns:** [GameState](#gamestate-schema)
 
@@ -321,7 +337,7 @@ curl -X POST http://127.0.0.1:12346 \
 
 Buy a card, voucher, or pack from the shop.
 
-**Parameters:** (exactly one required)
+**Parameters:** (exactly one of `card`, `voucher`, or `pack` is required)
 
 | Name      | Type    | Required | Description                     |
 | --------- | ------- | -------- | ------------------------------- |
@@ -331,7 +347,9 @@ Buy a card, voucher, or pack from the shop.
 
 **Returns:** [GameState](#gamestate-schema)
 
-**Errors:** `BAD_REQUEST`, `NOT_ALLOWED`
+If you buy a normal shop card or voucher, the returned `state` remains `SHOP`. If you buy a pack, the returned `state` is `SMODS_BOOSTER_OPENED`.
+
+**Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
 
 **Required State:** `SHOP`
 
@@ -356,17 +374,19 @@ After buying a pack with [`buy`](#buy), this method allows you to select a card 
 - **Standard packs**: Selected playing cards are added to your deck
 - **Arcana/Celestial/Spectral packs**: Selected consumables are **used immediately**
 
-Some Tarot and Spectral cards require you to select target cards from your hand (e.g., The Magician enhances 1-2 cards to Lucky).
+Some Tarot and Spectral cards require you to select target cards from your hand, and some pack cards also have non-target prerequisites such as requiring at least one Joker.
 
-**Parameters:** (exactly one required)
+**Parameters:** (exactly one of `card` or `skip` is required)
 
 | Name      | Type      | Required | Description                                                              |
 | --------- | --------- | -------- | ------------------------------------------------------------------------ |
 | `card`    | integer   | No       | 0-based index of card to select from pack                                |
-| `targets` | integer[] | No       | 0-based indices of hand cards to target (for consumables that need them) |
+| `targets` | integer[] | No       | 0-based indices of hand cards to target (only relevant when `card` selects a pack card that needs targets) |
 | `skip`    | boolean   | No       | Skip pack selection without choosing a card                              |
 
 **Returns:** [GameState](#gamestate-schema)
+
+If the pack still has remaining choices after the selection, the returned `state` remains `SMODS_BOOSTER_OPENED`. Otherwise the pack closes and the returned `state` is `SHOP`.
 
 **Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
 
@@ -406,7 +426,9 @@ Sell a joker or consumable.
 
 **Returns:** [GameState](#gamestate-schema)
 
-**Errors:** `BAD_REQUEST`, `NOT_ALLOWED`
+**Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
+
+**Required State:** `SELECTING_HAND` or `SHOP`
 
 **Example:**
 
@@ -421,7 +443,7 @@ curl -X POST http://127.0.0.1:12346 \
 
 ### `reroll`
 
-Reroll the shop items (costs money).
+Reroll the shop items (costs money). On success, the returned `state` remains `SHOP`.
 
 **Returns:** [GameState](#gamestate-schema)
 
@@ -491,7 +513,13 @@ Play cards from hand.
 
 **Returns:** [GameState](#gamestate-schema)
 
-**Errors:** `BAD_REQUEST`
+The returned `state` depends on the outcome:
+
+- `SELECTING_HAND` if the round continues
+- `ROUND_EVAL` if the blind is cleared
+- `GAME_OVER` if the run is lost
+
+**Errors:** `BAD_REQUEST`, `INVALID_STATE`
 
 **Required State:** `SELECTING_HAND`
 
@@ -516,9 +544,9 @@ Discard cards from hand.
 | ------- | --------- | -------- | ----------------------------------- |
 | `cards` | integer[] | Yes      | 0-based indices of cards to discard |
 
-**Returns:** [GameState](#gamestate-schema)
+**Returns:** [GameState](#gamestate-schema) (state returns to `SELECTING_HAND` after redraw)
 
-**Errors:** `BAD_REQUEST`
+**Errors:** `BAD_REQUEST`, `INVALID_STATE`
 
 **Required State:** `SELECTING_HAND`
 
@@ -549,7 +577,7 @@ Rearrange cards in hand, jokers, or consumables.
 
 **Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
 
-**Required State:** Hand cards can be rearranged in `SELECTING_HAND` or `SMODS_BOOSTER_OPENED`. Jokers and consumables can be rearranged in `SHOP`, `SELECTING_HAND`, or `SMODS_BOOSTER_OPENED`.
+**Required State:** The endpoint is available in `SELECTING_HAND`, `SHOP`, and `SMODS_BOOSTER_OPENED`. `hand` rearrangement only works when a hand is actually available, which in booster state means Arcana/Spectral-style pack flows that expose hand cards.
 
 **Example:**
 
@@ -564,7 +592,7 @@ curl -X POST http://127.0.0.1:12346 \
 
 ### `use`
 
-Use a consumable card.
+Use a consumable card. Card-targeting consumables can only be used in `SELECTING_HAND`; non-targeted consumables can be used from `SELECTING_HAND` or `SHOP`.
 
 **Parameters:**
 
@@ -576,6 +604,8 @@ Use a consumable card.
 **Returns:** [GameState](#gamestate-schema)
 
 **Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
+
+**Required State:** `SELECTING_HAND` or `SHOP`
 
 **Example:**
 
@@ -608,7 +638,11 @@ Add a card to the game (debug/testing). Supports jokers, consumables, vouchers, 
 
 **Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
 
-**Required State:** Vouchers and packs require `SHOP` state. Packs also require available booster slots.
+**Required State:** The endpoint itself is only available in `SELECTING_HAND`, `SHOP`, or `ROUND_EVAL`. Within that:
+
+- playing cards require `SELECTING_HAND`
+- vouchers require `SHOP`
+- packs require `SHOP` and an open booster slot
 
 **Examples:**
 
@@ -638,7 +672,7 @@ Take a screenshot of the game.
 
 **Returns:** `{ "success": true, "path": "..." }`
 
-**Errors:** `INTERNAL_ERROR`
+**Errors:** `BAD_REQUEST`, `INTERNAL_ERROR`
 
 **Example:**
 
@@ -669,6 +703,8 @@ Set in-game values (debug/testing).
 **Returns:** [GameState](#gamestate-schema)
 
 **Errors:** `BAD_REQUEST`, `INVALID_STATE`, `NOT_ALLOWED`
+
+**Required State:** Any active run state. `shop: true` is only valid in `SHOP`.
 
 **Example:**
 
