@@ -5,3 +5,12 @@ gymnasium>=1.1.1      # fixes "ModuleNotFoundError: gymnasium"
 numpy>=1.26
 pandas>=2.2
 matplotlib>=3.9
+
+# MVP recurrent PPO training stack
+torch>=2.3
+stable-baselines3>=2.5
+sb3-contrib>=2.5
+tensorboard>=2.16
+
+# Optional but referenced by the training CLI
+optuna>=3.6

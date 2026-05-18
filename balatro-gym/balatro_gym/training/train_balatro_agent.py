@@ -1,12 +1,12 @@
-"""Train RL agents on the Balatro environment.
+"""Train recurrent PPO agents on the Balatro environment.
 
-This script provides a complete training pipeline including:
-- PPO training
-- Curriculum learning
-- Behavioral cloning warm-start
+This script provides the maintained MVP training pipeline including:
+- recurrent PPO training
+- curriculum learning
+- behavioral cloning warm-start stubs
 - TensorBoard logging
-- Model checkpointing
-- Hyperparameter tuning
+- model checkpointing
+- lightweight evaluation/testing helpers
 """
 
 import sys
@@ -26,12 +26,13 @@ from stable_baselines3.common.callbacks import (
     BaseCallback, CheckpointCallback, CallbackList
 )
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from sb3_contrib import RecurrentPPO
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from balatro_gym.environments.balatro_env_small import BalatroEnv, make_balatro_env
 from balatro_gym.core.constants import Action, ActionCounts
@@ -310,7 +311,7 @@ def train_balatro_agent(
     n_envs: int = 8,
     seed: int = 42,
     use_curriculum: bool = True,
-    save_dir: str = str(PROJECT_ROOT / "artifacts" / "models"),
+    save_dir: str = str(REPO_ROOT / "artifacts" / "models"),
     checkpoint_freq: int = 10_000,
     expert_trajectories: Optional[str] = None,
     hyperparams: Optional[Dict[str, Any]] = None,
@@ -461,7 +462,6 @@ def tune_hyperparameters(
     seed: int = 42
 ):
     """Use Optuna for hyperparameter tuning"""
-    #---- START STUB
     import optuna
     
     def objective(trial):
@@ -489,11 +489,10 @@ def tune_hyperparameters(
             hyperparams=hyperparams
         )
         
-        # TODO: flagged - `make_vec_env` was removed from imports as requested, but it is still used here.
-        # Evaluate
-        eval_env = make_vec_env(lambda: Monitor(MaskableBalatroEnv(BalatroEnv())), n_envs=1)
+        # Evaluate against the maintained sim env path.
+        eval_env = DummyVecEnv([lambda: Monitor(BalatroEnv(seed=seed))])
         mean_reward, _ = evaluate_policy(model, eval_env, n_eval_episodes=10)
-        
+
         return mean_reward
     
     # Create study
@@ -502,9 +501,8 @@ def tune_hyperparameters(
     
     print("\nBest hyperparameters:")
     print(study.best_params)
-    
+
     return study.best_params
-    #---- END STUB
 
 
 # ---------------------------------------------------------------------------
@@ -518,23 +516,13 @@ def test_trained_agent(
     record_video: bool = False
 ):
     """Test a trained agent"""
-    #---- START STUB
-    from stable_baselines3.common.vec_env import VecVideoRecorder
-    
-    # Load model
-    model = PPO.load(model_path)
-    
-    # Create environment
-    env = MaskableBalatroEnv(BalatroEnv())
-    env = Monitor(env)
-    
     if record_video:
-        env = VecVideoRecorder(
-            DummyVecEnv([lambda: env]),
-            f"videos/{Path(model_path).stem}",
-            record_video_trigger=lambda x: x % 1 == 0,
-            video_length=10000
+        raise NotImplementedError(
+            "record_video is not maintained for the MVP recurrent PPO path"
         )
+
+    model = RecurrentPPO.load(model_path)
+    env = Monitor(BalatroEnv())
     
     # Run episodes
     episode_rewards = []
@@ -576,7 +564,6 @@ def test_trained_agent(
     
     if record_video:
         env.close()
-    #---- END STUB
 
 
 # ---------------------------------------------------------------------------
@@ -640,12 +627,10 @@ if __name__ == "__main__":
         model, save_path = train_balatro_agent(
             algorithm=args.algorithm,
             total_timesteps=10_000,
-            n_envs=2,
+            n_envs=args.n_envs,
             seed=args.seed,
             use_curriculum=not args.no_curriculum,
-            checkpoint_freq=5_000,
-            # TODO2: quick_test still passes eval_freq, but train_balatro_agent has no eval_freq parameter; left unchanged because it is outside this refactor scope.
-            eval_freq=5_000
+            checkpoint_freq=5_000
         )
         print(f"\nQuick test complete! Model saved to {save_path}")
         
@@ -664,7 +649,7 @@ if __name__ == "__main__":
         print("\nTraining complete!")
         print(f"Model saved to: {save_path}")
         print(f"\nTo test the trained agent, run:")
-        print(f"python train_balatro_rl.py --test {save_path}/PPO_final.zip")
+        print(f"python balatro_gym/training/train_balatro_agent.py --test {save_path}/PPO_final.zip")
 
 
 # ---------------------------------------------------------------------------
@@ -672,23 +657,23 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 
 """
-# Basic training with PPO:
-python train_balatro_rl.py --algorithm PPO --timesteps 1000000
+# Basic training with recurrent PPO:
+python balatro_gym/training/train_balatro_agent.py --algorithm PPO --timesteps 1000000
 
 # Quick test to verify setup:
-python train_balatro_rl.py --quick-test
+python balatro_gym/training/train_balatro_agent.py --quick-test
 
 # Train with behavioral cloning warm-start:
-python train_balatro_rl.py --algorithm PPO --expert-trajectories trajectories/trajectories_20241210_153045.pkl
+python balatro_gym/training/train_balatro_agent.py --algorithm PPO --expert-trajectories trajectories/trajectories_20241210_153045.pkl
 
 # Hyperparameter tuning:
-python train_balatro_rl.py --tune --algorithm PPO
+python balatro_gym/training/train_balatro_agent.py --tune --algorithm PPO
 
 # Test a trained model:
-python train_balatro_rl.py --test models/PPO_20241210_160000/PPO_final.zip
+python balatro_gym/training/train_balatro_agent.py --test models/PPO_20241210_160000/PPO_final.zip
 
 # Disable curriculum learning:
-python train_balatro_rl.py --no-curriculum
+python balatro_gym/training/train_balatro_agent.py --no-curriculum
 
 # Train with custom hyperparameters (modify the script or use config file)
 """
