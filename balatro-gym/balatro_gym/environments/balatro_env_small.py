@@ -142,6 +142,7 @@ class BalatroEnv(gym.Env):
         )
         
         self.pack_open_handler = PackOpenHandler(self.state, self.shop_handler)
+        self.shop_handler.pack_open_handler = self.pack_open_handler
         
         # Sync initial state
         self._sync_state_from_game()
@@ -178,6 +179,8 @@ class BalatroEnv(gym.Env):
                 'error': 'Invalid action'
             }
         
+        previous_phase = self.state.phase
+        
         # Route to appropriate phase handler
         if self.state.phase == Phase.PLAY:
             reward, terminated, info = self.play_handler.step(action)
@@ -189,6 +192,8 @@ class BalatroEnv(gym.Env):
             reward, terminated, info = self.pack_open_handler.step(action)
         else:
             raise ValueError(f"Unknown phase: {self.state.phase}")
+        
+        self._handle_phase_transition(previous_phase)
         
         # Build observation
         observation = self.obs_builder.build_observation(self.state)
@@ -324,6 +329,33 @@ class BalatroEnv(gym.Env):
             self.blind_select_handler.state = self.state
         if self.pack_open_handler:
             self.pack_open_handler.state = self.state
+
+    def _handle_phase_transition(self, previous_phase: Phase) -> None:
+        """Apply required side effects when a handler changes phases."""
+        if self.state.phase == previous_phase:
+            return
+
+        if self.state.phase == Phase.PLAY:
+            self._start_play_phase()
+        elif self.state.phase == Phase.SHOP and self.shop_handler:
+            self.shop_handler.invalidate_shop()
+            self.shop_handler.generate_shop()
+
+    def _start_play_phase(self) -> None:
+        """Enter PLAY with a fresh hand and synced round counters."""
+        if not self.game or not self.play_handler:
+            return
+
+        self.state.selected_cards = []
+        self.state.face_down_cards = []
+        self.game.highlighted_indexes = []
+        self.game.hand_indexes = []
+        self.game.hand_size = self.state.hand_size
+        self.game.round_hands = self.state.hands_left
+        self.game.round_discards = self.state.discards_left
+
+        self.play_handler._draw_new_hand()
+        self.play_handler._sync_state_to_game()
 
 
 # Factory function for creating environments

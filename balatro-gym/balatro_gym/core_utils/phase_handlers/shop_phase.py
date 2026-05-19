@@ -69,11 +69,20 @@ class ShopPhaseHandler:
         self.state.shop_inventory = self.shop.inventory.copy()
         self.state.shop_reroll_cost = int(self.shop.reroll_cost * self.shop._cost_mult())
         self.state.shop_visits += 1
+
+    def invalidate_shop(self):
+        """Clear cached shop state so the next shop entry regenerates inventory."""
+        self.shop = None
+        self.state.shop_inventory = []
     
     def _handle_end_shop(self) -> Tuple[float, bool, Dict]:
         """Handle ending the shopping phase."""
         # Transition to play phase
         self.state.phase = Phase.PLAY
+        self.state.selected_cards = []
+        self.state.face_down_cards = []
+        self.state.shop_inventory = []
+        self.shop = None
         
         # Draw initial hand for next round
         # This should be handled by the main environment

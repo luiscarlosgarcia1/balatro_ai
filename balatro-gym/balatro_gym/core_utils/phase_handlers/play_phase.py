@@ -92,9 +92,7 @@ class PlayPhaseHandler:
         self._sync_and_highlight_cards()
         
         # Classify the hand
-        hand_type, _ = self.game._classify_hand(
-            [self.game.deck[i] for i in self.game.highlighted_indexes]
-        )
+        hand_type, _ = self.game._classify_hand(selected_game_cards)
         hand_type_name = hand_type.name.replace('_', ' ').title()
         
         # Check boss blind restrictions
@@ -113,6 +111,7 @@ class PlayPhaseHandler:
         
         # Update game state
         self._update_state_after_play(final_score, extra_money, cards_to_destroy, consumables_created)
+        self._consume_played_hand()
         
         # Track hand usage
         self.engine.hand_play_counts[hand_type] += 1
@@ -163,15 +162,13 @@ class PlayPhaseHandler:
             )
             round_manager.advance_round()
             info['beat_blind'] = True
-        elif self.state.hands_left <= 1:
+        elif self.state.hands_left <= 0:
             # Failed the blind
             terminated = True
             info['failed'] = True
         else:
             # Continue playing
-            self.state.hands_left -= 1
-            self.game.round_hands = self.state.hands_left
-            self._draw_new_hand()
+            self._prepare_next_hand()
         
         return reward, terminated, info
     
@@ -345,9 +342,25 @@ class PlayPhaseHandler:
     def _sync_and_highlight_cards(self):
         """Sync state to game and highlight selected cards."""
         self._sync_state_to_game()
+        self.game.highlighted_indexes = []
         for idx in self.state.selected_cards:
             if idx < len(self.game.hand_indexes):
                 self.game.highlight_card(idx)
+
+    def _consume_played_hand(self):
+        """Advance hand state by consuming the selected cards and drawing replacements."""
+        self.game.play_hand()
+        self._sync_state_from_game()
+
+    def _prepare_next_hand(self):
+        """Apply post-draw effects to the hand already drawn by the game engine."""
+        if self.state.boss_blind_active:
+            self.apply_boss_blind_to_hand()
+
+        if self.state.force_draw_count is not None:
+            self._apply_forced_draw_count()
+
+        self._sync_state_to_game()
     
     def _check_boss_blind_can_play(self, cards: List[Card], hand_type: str) -> bool:
         """Check if boss blind allows playing this hand."""
