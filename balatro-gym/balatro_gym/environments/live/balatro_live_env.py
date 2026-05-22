@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import time
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import numpy as np
@@ -33,6 +34,19 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from balatro_gym.core.constants import Phase, Action, ActionCounts
+from balatro_gym.core.consumables import is_planet_consumable_name, is_tarot_consumable_name
+from balatro_gym.core_utils.mvp_contract import (
+    build_action_mask,
+    create_mvp_observation_space,
+    encode_consumables,
+    encode_fool_replayable_consumable,
+    encode_joker_tokens,
+    encode_pack_item_ids,
+    encode_pack_item_types,
+    get_shop_item_type_id,
+    is_pack_item_selectable,
+    ordered_hand_levels,
+)
 
 # ---------------------------------------------------------------------------
 # Load BalatroClient directly from vendored source to avoid importing the
@@ -41,7 +55,7 @@ from balatro_gym.core.constants import Phase, Action, ActionCounts
 import importlib.util as _ilu
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _CLIENT_PY = _REPO_ROOT / "balatrobot" / "src" / "balatrobot" / "cli" / "client.py"
 _spec = _ilu.spec_from_file_location("balatrobot_client", _CLIENT_PY)
 _client_mod = _ilu.module_from_spec(_spec)
@@ -75,64 +89,6 @@ STATE_TO_PHASE = {
 
 # States that require polling until they settle into a stable state
 _TRANSITIONAL = {"HAND_PLAYED", "DRAW_TO_HAND", "NEW_ROUND"}
-
-# Poker hand names in the order we expose them (index 0-11)
-HAND_NAME_ORDER = [
-    "High Card", "Pair", "Two Pair", "Three of a Kind",
-    "Straight", "Flush", "Full House", "Four of a Kind",
-    "Straight Flush", "Five of a Kind", "Flush House", "Flush Five",
-]
-
-# Consumable label → integer ID (matches balatro_env_2.py)
-_CONSUMABLE_ID_MAP: dict[str, int] = {
-    "The Fool": 1, "The Magician": 2, "The High Priestess": 3,
-    "The Empress": 4, "The Emperor": 5, "The Hierophant": 6,
-    "The Lovers": 7, "The Chariot": 8, "Strength": 9,
-    "The Hermit": 10, "Wheel of Fortune": 11, "Justice": 12,
-    "The Hanged Man": 13, "Death": 14, "Temperance": 15,
-    "The Devil": 16, "The Tower": 17, "The Star": 18,
-    "The Moon": 19, "The Sun": 20, "Judgement": 21, "The World": 22,
-    "Mercury": 30, "Venus": 31, "Earth": 32, "Mars": 33,
-    "Jupiter": 34, "Saturn": 35, "Uranus": 36, "Neptune": 37,
-    "Pluto": 38, "Planet X": 39, "Ceres": 40, "Eris": 41,
-    "Familiar": 50, "Grim": 51, "Incantation": 52, "Talisman": 53,
-    "Aura": 54, "Wraith": 55, "Sigil": 56, "Ouija": 57,
-    "Ectoplasm": 58, "Immolate": 59, "Ankh": 60, "Deja Vu": 61,
-    "Hex": 62, "Trance": 63, "Medium": 64, "Cryptid": 65,
-    "The Soul": 66, "Black Hole": 67,
-}
-
-# Joker label sets for type-flag observations
-_MULT_JOKERS = {
-    "Crazy Joker", "Jolly Joker", "Zany Joker", "Mad Joker", "Devious Joker",
-    "Crafty Joker", "Half Joker", "Joker Stencil", "Four Fingers", "Mime",
-    "Ceremonial Dagger", "Banner", "Mystic Summit", "Marble Joker", "Loyalty Card",
-    "Misprint", "Dusk", "Raised Fist", "Chaos the Clown", "Fibonacci",
-    "Steel Joker", "Scary Face", "Abstract Joker", "Delayed Gratification",
-    "Pareidolia", "Even Steven", "Odd Todd", "Scholar", "Business Card",
-    "Supernova", "Ride the Bus", "Space Joker",
-}
-_CHIP_JOKERS = {
-    "Joker", "Greedy Joker", "Lusty Joker", "Wrathful Joker", "Gluttonous Joker",
-    "Fibonacci", "Scary Face", "Scholar", "Business Card", "Bootstraps",
-}
-_XMULT_JOKERS = {
-    "Baron", "Baseball Card", "Ancient Joker", "Campfire", "Blueprint", "Brainstorm",
-}
-_ECONOMY_JOKERS = {
-    "To Do List", "Credit Card", "Delayed Gratification", "Bootstraps",
-    "Mr. Bones", "Acrobat", "Sock and Buskin", "Swashbuckler", "Egg",
-    "Burglar", "Blackboard", "Reserved Parking", "Mail-In Rebate",
-    "To the Moon", "Gift Card", "Turtle Bean", "Erosion", "Flash Card",
-    "Popcorn", "Ramen", "Satellite", "Shoot the Moon", "Castle",
-    "Wee Joker", "Hologram",
-}
-
-
-def _joker_key_to_id(key: str) -> int:
-    """Stable hash of a joker key to an integer in [1, 200]. 0 = empty slot."""
-    return (hash(key) % 199) + 1
-
 
 # ---------------------------------------------------------------------------
 # BalatroLiveEnv
@@ -174,79 +130,16 @@ class BalatroLiveEnv(gym.Env):
         self._prev_round_chips: int = 0    # round chips before last action (for delta)
         self._prev_progress: float = 0.0
         self._step_count: int = 0
+        self._pack_selected_indexes: list[int] = []
+        self._pack_cards_to_select: int = 0
+        self._last_tarot_planet_consumable: str | None = None
 
     # ------------------------------------------------------------------
     # Observation space — must match balatro_env_2.py exactly
     # ------------------------------------------------------------------
 
-    def _create_observation_space(self) -> spaces.Dict:
-        S = ActionCounts.ACTION_SPACE_SIZE
-        return spaces.Dict({
-            "hand": spaces.Box(-1, 51, (8,), dtype=np.int8),
-            "hand_size": spaces.Box(0, 12, (), dtype=np.int8),
-            "deck_size": spaces.Box(0, 52, (), dtype=np.int8),
-            "selected_cards": spaces.MultiBinary(8),
-
-            "chips_scored": spaces.Box(0, 10_000_000_000, (), dtype=np.int64),
-            "round_chips_scored": spaces.Box(0, 10_000_000, (), dtype=np.int32),
-            "progress_ratio": spaces.Box(0.0, 2.0, (), dtype=np.float32),
-            "mult": spaces.Box(0, 10_000, (), dtype=np.int32),
-            "chips_needed": spaces.Box(0, 10_000_000, (), dtype=np.int32),
-            "money": spaces.Box(-20, 999, (), dtype=np.int32),
-
-            "ante": spaces.Box(1, 1000, (), dtype=np.int16),
-            "round": spaces.Box(1, 3, (), dtype=np.int8),
-            "hands_left": spaces.Box(0, 12, (), dtype=np.int8),
-            "discards_left": spaces.Box(0, 10, (), dtype=np.int8),
-
-            "joker_count": spaces.Box(0, 10, (), dtype=np.int8),
-            "joker_ids": spaces.Box(0, 200, (10,), dtype=np.int16),
-            "joker_slots": spaces.Box(0, 10, (), dtype=np.int8),
-
-            "consumable_count": spaces.Box(0, 5, (), dtype=np.int8),
-            "consumables": spaces.Box(0, 100, (5,), dtype=np.int16),
-            "consumable_slots": spaces.Box(0, 5, (), dtype=np.int8),
-
-            "shop_items": spaces.Box(0, 300, (10,), dtype=np.int16),
-            "shop_costs": spaces.Box(0, 5000, (10,), dtype=np.int16),
-            "shop_rerolls": spaces.Box(0, 999, (), dtype=np.int16),
-
-            "hand_levels": spaces.Box(0, 15, (12,), dtype=np.int8),
-            "phase": spaces.Box(0, 3, (), dtype=np.int8),
-            "action_mask": spaces.MultiBinary(S),
-
-            "hands_played": spaces.Box(0, 10000, (), dtype=np.int32),
-            "best_hand_this_ante": spaces.Box(0, 10_000_000, (), dtype=np.int32),
-
-            "boss_blind_active": spaces.Box(0, 1, (), dtype=np.int8),
-            "boss_blind_type": spaces.Box(0, 30, (), dtype=np.int8),
-            "face_down_cards": spaces.MultiBinary(8),
-
-            "hand_one_hot": spaces.Box(0, 1, (8, 52), dtype=np.float32),
-            "hand_suits": spaces.Box(0, 4, (8,), dtype=np.int8),
-            "hand_ranks": spaces.Box(0, 13, (8,), dtype=np.int8),
-
-            "rank_counts": spaces.Box(0, 4, (13,), dtype=np.int8),
-            "suit_counts": spaces.Box(0, 8, (4,), dtype=np.int8),
-            "straight_potential": spaces.Box(0, 1, (), dtype=np.float32),
-            "flush_potential": spaces.Box(0, 1, (), dtype=np.float32),
-
-            "avg_score_per_hand": spaces.Box(0, 10000, (), dtype=np.float32),
-            "hands_until_shop": spaces.Box(0, 20, (), dtype=np.int8),
-            "rounds_until_boss": spaces.Box(0, 3, (), dtype=np.int8),
-
-            "has_mult_jokers": spaces.Box(0, 1, (), dtype=np.int8),
-            "has_chip_jokers": spaces.Box(0, 1, (), dtype=np.int8),
-            "has_xmult_jokers": spaces.Box(0, 1, (), dtype=np.int8),
-            "has_economy_jokers": spaces.Box(0, 1, (), dtype=np.int8),
-            "hand_potential_scores": spaces.Box(0, 10000, (12,), dtype=np.int32),
-            "joker_synergy_score": spaces.Box(0, 10, (), dtype=np.float32),
-            "risk_level": spaces.Box(0, 1, (), dtype=np.float32),
-            "economy_health": spaces.Box(0, 1, (), dtype=np.float32),
-
-            "blind_difficulty": spaces.Box(0, 1, (), dtype=np.float32),
-            "win_probability": spaces.Box(0, 1, (), dtype=np.float32),
-        })
+    def _create_observation_space(self):
+        return create_mvp_observation_space()
 
     # ------------------------------------------------------------------
     # Reset
@@ -262,6 +155,9 @@ class BalatroLiveEnv(gym.Env):
         self._prev_round_chips = 0
         self._prev_progress = 0.0
         self._step_count = 0
+        self._pack_selected_indexes = []
+        self._pack_cards_to_select = 0
+        self._last_tarot_planet_consumable = None
 
         # Attempt to return to the main menu (may already be there)
         try:
@@ -287,7 +183,10 @@ class BalatroLiveEnv(gym.Env):
         if state_str in _TRANSITIONAL or state_str == "ROUND_EVAL":
             self._gs = self._advance_to_stable(self._gs)
 
-        phase = STATE_TO_PHASE.get(self._gs.get("state", ""), Phase.PLAY)
+        phase = self._phase_from_gs(self._gs)
+        action_mask = self._build_action_mask(self._gs, phase)
+        if action < 0 or action >= ActionCounts.ACTION_SPACE_SIZE or not action_mask[action]:
+            return self._build_obs(), -1.0, False, False, {"error": "invalid action"}
 
         try:
             if phase == Phase.PLAY:
@@ -317,6 +216,7 @@ class BalatroLiveEnv(gym.Env):
         gs = self._gs
         round_info = gs.get("round") or {}
         hand_cards = (gs.get("hand") or {}).get("cards") or []
+        consumable_cards = (gs.get("consumables") or {}).get("cards") or []
         chips_needed = self._get_chips_needed(gs)
         round_chips = round_info.get("chips", 0)
         old_progress = min(1.0, round_chips / max(1, chips_needed))
@@ -350,7 +250,9 @@ class BalatroLiveEnv(gym.Env):
 
         elif Action.USE_CONSUMABLE_BASE <= action < Action.USE_CONSUMABLE_BASE + ActionCounts.USE_CONSUMABLE_COUNT:
             i = action - Action.USE_CONSUMABLE_BASE
+            consumable_name = (consumable_cards[i].get("label", "") if i < len(consumable_cards) else "")
             self._gs = self.client.call("use", {"consumable": i})
+            self._remember_last_tarot_planet_consumable(consumable_name)
             return self._build_obs(), 0.5, False, False, {"action": "use_consumable"}
 
         return self._build_obs(), -1.0, False, False, {"error": "invalid play action"}
@@ -367,6 +269,8 @@ class BalatroLiveEnv(gym.Env):
             else:
                 pack_i = i - len(shop_cards)
                 self._gs = self.client.call("buy", {"pack": pack_i})
+                self._pack_selected_indexes = []
+                self._pack_cards_to_select = 0
             return self._build_obs(), 0.5, False, False, {"action": "buy"}
 
         elif action == Action.SHOP_REROLL:
@@ -407,11 +311,22 @@ class BalatroLiveEnv(gym.Env):
     def _step_pack(self, action: int):
         if Action.SELECT_FROM_PACK_BASE <= action < Action.SELECT_FROM_PACK_BASE + ActionCounts.SELECT_FROM_PACK_COUNT:
             i = action - Action.SELECT_FROM_PACK_BASE
+            pack_cards = ((self._gs.get("pack") or {}).get("cards") or [])
+            selected_item = pack_cards[i] if i < len(pack_cards) else None
             self._gs = self.client.call("pack", {"card": i})
+            if selected_item is not None:
+                self._remember_last_tarot_planet_consumable(selected_item.get("label", ""))
+            if self._phase_from_gs(self._gs) == Phase.PACK_OPEN:
+                if i not in self._pack_selected_indexes:
+                    self._pack_selected_indexes.append(i)
+                self._sync_pack_tracking(self._gs)
+            else:
+                self._clear_pack_tracking()
             return self._build_obs(), 0.5, False, False, {"action": "select_pack"}
 
         elif action == Action.SKIP_PACK:
             self._gs = self.client.call("pack", {"skip": True})
+            self._clear_pack_tracking()
             return self._build_obs(), 0.0, False, False, {"action": "skip_pack"}
 
         return self._build_obs(), -1.0, False, False, {"error": "invalid pack action"}
@@ -540,8 +455,10 @@ class BalatroLiveEnv(gym.Env):
         if not gs:
             return {k: sp.sample() * 0 for k, sp in self.observation_space.spaces.items()}
 
+        self._ensure_tracking_attrs()
         state_str = gs.get("state", "UNKNOWN")
-        phase = STATE_TO_PHASE.get(state_str, Phase.PLAY)
+        phase = self._phase_from_gs(gs)
+        self._sync_pack_tracking(gs)
 
         round_info = gs.get("round") or {}
         blinds = gs.get("blinds") or {}
@@ -583,28 +500,25 @@ class BalatroLiveEnv(gym.Env):
                 suit_counts[s] = min(8, suit_counts[s] + 1)
 
         # --- Jokers ---
-        joker_ids = np.zeros(10, dtype=np.int16)
-        joker_labels: list[str] = []
-        for i, jk in enumerate(joker_cards[:10]):
-            joker_ids[i] = _joker_key_to_id(jk.get("key", ""))
-            joker_labels.append(jk.get("label", ""))
+        joker_ids = encode_joker_tokens((jk.get("label", "") for jk in joker_cards[:10]))
 
         # --- Consumables ---
-        cons_ids = np.zeros(5, dtype=np.int16)
-        for i, c in enumerate(consumable_cards[:5]):
-            cons_ids[i] = _CONSUMABLE_ID_MAP.get(c.get("label", ""), 0)
+        cons_ids = encode_consumables(c.get("label", "") for c in consumable_cards[:5])
 
         # --- Shop (cards + packs merged into 10 slots) ---
         shop_items = np.zeros(10, dtype=np.int16)
         shop_costs = np.zeros(10, dtype=np.int16)
-        _SET_TO_INT = {
-            "JOKER": 1, "TAROT": 2, "PLANET": 3,
-            "SPECTRAL": 4, "VOUCHER": 5, "BOOSTER": 6,
-        }
         pack_cards_shop = (packs_area.get("cards") or [])
         all_shop = list(shop_cards) + list(pack_cards_shop)
         for i, item in enumerate(all_shop[:10]):
-            shop_items[i] = _SET_TO_INT.get(item.get("set", ""), 0)
+            shop_items[i] = get_shop_item_type_id(
+                {
+                    "item_type": item.get("set"),
+                    "payload": {
+                        "offer_set": item.get("set", "").title() if item.get("set") else None,
+                    },
+                }
+            )
             shop_costs[i] = (item.get("cost") or {}).get("buy", 0)
 
         # --- Score / progress ---
@@ -613,11 +527,11 @@ class BalatroLiveEnv(gym.Env):
         progress_ratio = min(2.0, round_chips / max(1, chips_needed))
 
         # --- Hand levels ---
-        hand_levels_arr = np.zeros(12, dtype=np.int8)
         hands_data = gs.get("hands") or {}
-        for i, hname in enumerate(HAND_NAME_ORDER):
-            info = hands_data.get(hname) or {}
-            hand_levels_arr[i] = min(15, info.get("level", 1))
+        hand_levels_arr = ordered_hand_levels(
+            {name: info.get("level", 1) for name, info in hands_data.items()},
+            default_level=1,
+        )
 
         # --- Derived features ---
         straight_pot = self._straight_potential(hand_ranks_arr, len(hand_cards))
@@ -634,15 +548,7 @@ class BalatroLiveEnv(gym.Env):
         # Boss blind: round 3 with CURRENT status
         boss_info = blinds.get("boss") or {}
         is_boss = int(round_num == 3 and boss_info.get("status") == "CURRENT")
-
-        # Joker type flags
-        has_mult = int(any(lbl in _MULT_JOKERS for lbl in joker_labels))
-        has_chip = int(any(lbl in _CHIP_JOKERS for lbl in joker_labels))
-        has_xmult = int(any(lbl in _XMULT_JOKERS for lbl in joker_labels))
-        has_econ = int(any(lbl in _ECONOMY_JOKERS for lbl in joker_labels))
-
-        risk_level = float(max(0.0, 1.0 - min(1.0, progress_ratio)))
-        economy_health = float(min(1.0, money / 20.0))
+        pack_features = self._build_pack_features(gs)
 
         return {
             "hand": hand_array,
@@ -675,6 +581,12 @@ class BalatroLiveEnv(gym.Env):
             "shop_items": shop_items,
             "shop_costs": shop_costs,
             "shop_rerolls": np.int16(reroll_cost),
+            "pack_item_types": pack_features["pack_item_types"],
+            "pack_item_ids": pack_features["pack_item_ids"],
+            "pack_item_selectable": pack_features["pack_item_selectable"],
+            "pack_cards_to_select": pack_features["pack_cards_to_select"],
+            "pack_choices_remaining": pack_features["pack_choices_remaining"],
+            "fool_replayable_consumable": pack_features["fool_replayable_consumable"],
 
             "hand_levels": hand_levels_arr,
             "phase": np.int8(int(phase)),
@@ -687,32 +599,10 @@ class BalatroLiveEnv(gym.Env):
             "boss_blind_type": np.int8(0),
             "face_down_cards": np.zeros(8, dtype=np.int8),
 
-            "hand_one_hot": hand_one_hot,
-            "hand_suits": hand_suits_arr,
-            "hand_ranks": hand_ranks_arr,
-
             "rank_counts": rank_counts,
             "suit_counts": suit_counts,
             "straight_potential": np.float32(straight_pot),
             "flush_potential": np.float32(flush_pot),
-
-            "avg_score_per_hand": np.float32(
-                self._total_chips / max(1, self._hands_played)
-            ),
-            "hands_until_shop": np.int8(max(0, hands_left)),
-            "rounds_until_boss": np.int8(max(0, 3 - round_num)),
-
-            "has_mult_jokers": np.int8(has_mult),
-            "has_chip_jokers": np.int8(has_chip),
-            "has_xmult_jokers": np.int8(has_xmult),
-            "has_economy_jokers": np.int8(has_econ),
-            "hand_potential_scores": np.zeros(12, dtype=np.int32),
-            "joker_synergy_score": np.float32(0.0),
-            "risk_level": np.float32(risk_level),
-            "economy_health": np.float32(economy_health),
-
-            "blind_difficulty": np.float32(min(1.0, chips_needed / 100_000.0)),
-            "win_probability": np.float32(min(1.0, progress_ratio)),
         }
 
     # ------------------------------------------------------------------
@@ -720,7 +610,7 @@ class BalatroLiveEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _build_action_mask(self, gs: dict, phase: Phase) -> np.ndarray:
-        mask = np.zeros(ActionCounts.ACTION_SPACE_SIZE, dtype=np.int8)
+        self._ensure_tracking_attrs()
         round_info = gs.get("round") or {}
         money = gs.get("money", 0)
 
@@ -730,43 +620,31 @@ class BalatroLiveEnv(gym.Env):
         shop_cards = (gs.get("shop") or {}).get("cards") or []
         pack_cards_shop = (gs.get("packs") or {}).get("cards") or []
         pack_cards = (gs.get("pack") or {}).get("cards") or []
-
-        if phase == Phase.PLAY:
-            for i in range(min(8, len(hand_cards))):
-                mask[Action.SELECT_CARD_BASE + i] = 1
-            if self._selected:
-                mask[Action.PLAY_HAND] = 1
-                if round_info.get("discards_left", 0) > 0:
-                    mask[Action.DISCARD] = 1
-            for i in range(min(5, len(consumable_cards))):
-                mask[Action.USE_CONSUMABLE_BASE + i] = 1
-
-        elif phase == Phase.SHOP:
-            all_shop = list(shop_cards) + list(pack_cards_shop)
-            for i, item in enumerate(all_shop[:10]):
-                cost = (item.get("cost") or {}).get("buy", 0)
-                if money >= cost:
-                    mask[Action.SHOP_BUY_BASE + i] = 1
-            reroll_cost = round_info.get("reroll_cost", 5)
-            if money >= reroll_cost:
-                mask[Action.SHOP_REROLL] = 1
-            mask[Action.SHOP_END] = 1
-            for i in range(min(5, len(joker_cards))):
-                mask[Action.SELL_JOKER_BASE + i] = 1
-            for i in range(min(5, len(consumable_cards))):
-                mask[Action.SELL_CONSUMABLE_BASE + i] = 1
-
-        elif phase == Phase.BLIND_SELECT:
-            for i in range(ActionCounts.SELECT_BLIND_COUNT):
-                mask[Action.SELECT_BLIND_BASE + i] = 1
-            mask[Action.SKIP_BLIND] = 1
-
-        elif phase == Phase.PACK_OPEN:
-            for i in range(min(ActionCounts.SELECT_FROM_PACK_COUNT, len(pack_cards))):
-                mask[Action.SELECT_FROM_PACK_BASE + i] = 1
-            mask[Action.SKIP_PACK] = 1
-
-        return mask
+        all_shop = list(shop_cards) + list(pack_cards_shop)
+        current_blind_slot = self._current_blind_slot(gs)
+        live_state = self._build_live_contract_state(gs)
+        pack_item_selectable = [
+            i not in self._pack_selected_indexes and is_pack_item_selectable(live_state, item)
+            for i, item in enumerate(pack_cards[: ActionCounts.SELECT_FROM_PACK_COUNT])
+        ]
+        return build_action_mask(
+            phase=phase,
+            hand_size=len(hand_cards),
+            selected_cards=self._selected,
+            discards_left=round_info.get("discards_left", 0),
+            consumable_count=len(consumable_cards),
+            shop_items=[((item.get("cost") or {}).get("buy", 0), True) for item in all_shop[:10]],
+            money=money,
+            shop_reroll_cost=round_info.get("reroll_cost", 5),
+            joker_count=len(joker_cards),
+            sellable_consumable_count=len(consumable_cards),
+            blind_selectable_slots=[] if current_blind_slot is None else [current_blind_slot],
+            can_skip_blind=current_blind_slot in (0, 1),
+            pack_size=len(pack_cards),
+            pack_selected_indexes=self._pack_selected_indexes,
+            pack_cards_to_select=self._pack_cards_to_select,
+            pack_item_selectable=pack_item_selectable,
+        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -777,7 +655,7 @@ class BalatroLiveEnv(gym.Env):
         return self._build_action_mask(self._gs, self._current_phase())
 
     def _current_phase(self) -> Phase:
-        return STATE_TO_PHASE.get(self._gs.get("state", ""), Phase.PLAY)
+        return self._phase_from_gs(self._gs)
 
     def _get_chips_needed(self, gs: dict) -> int:
         """Return chip requirement for the current blind."""
@@ -798,6 +676,122 @@ class BalatroLiveEnv(gym.Env):
             run = (run + 1) if unique[i] == unique[i - 1] + 1 else 1
             max_run = max(max_run, run)
         return min(1.0, max_run / 5.0)
+
+    def _current_blind_slot(self, gs: dict) -> int | None:
+        blinds = gs.get("blinds") or {}
+        status_to_slot = {
+            "small": 0,
+            "big": 1,
+            "boss": 2,
+        }
+        for blind_name, slot in status_to_slot.items():
+            if (blinds.get(blind_name) or {}).get("status") == "SELECT":
+                return slot
+        return None
+
+    def _build_pack_features(self, gs: dict) -> dict[str, Any]:
+        self._ensure_tracking_attrs()
+        self._sync_pack_tracking(gs)
+        pack_cards = ((gs.get("pack") or {}).get("cards") or [])
+        live_state = self._build_live_contract_state(gs)
+        pack_item_selectable = np.zeros(ActionCounts.SELECT_FROM_PACK_COUNT, dtype=np.int8)
+
+        for i, item in enumerate(pack_cards[: ActionCounts.SELECT_FROM_PACK_COUNT]):
+            pack_item_selectable[i] = np.int8(
+                i not in self._pack_selected_indexes and is_pack_item_selectable(live_state, item)
+            )
+
+        return {
+            "pack_item_types": encode_pack_item_types(pack_cards),
+            "pack_item_ids": encode_pack_item_ids(pack_cards),
+            "pack_item_selectable": pack_item_selectable,
+            "pack_cards_to_select": np.int8(max(0, min(ActionCounts.SELECT_FROM_PACK_COUNT, self._pack_cards_to_select))),
+            "pack_choices_remaining": np.int8(
+                max(0, min(ActionCounts.SELECT_FROM_PACK_COUNT, self._pack_cards_to_select - len(self._pack_selected_indexes)))
+            ),
+            "fool_replayable_consumable": encode_fool_replayable_consumable(live_state),
+        }
+
+    def _build_live_contract_state(self, gs: dict) -> SimpleNamespace:
+        self._ensure_tracking_attrs()
+        hand_cards = ((gs.get("hand") or {}).get("cards") or [])
+        consumable_cards = ((gs.get("consumables") or {}).get("cards") or [])
+        joker_cards = ((gs.get("jokers") or {}).get("cards") or [])
+        remembered = gs.get("last_tarot_planet_consumable", self._last_tarot_planet_consumable)
+        if remembered is not None:
+            self._last_tarot_planet_consumable = remembered
+        return SimpleNamespace(
+            jokers=[card.get("label", "") for card in joker_cards],
+            joker_slots=int((gs.get("jokers") or {}).get("limit", len(joker_cards))),
+            consumables=[card.get("label", "") for card in consumable_cards],
+            consumable_slots=int((gs.get("consumables") or {}).get("limit", len(consumable_cards))),
+            last_tarot_planet_consumable=remembered,
+            hand_indexes=list(range(len(hand_cards))),
+            deck=[object()] * len(hand_cards),
+            hand_size=len(hand_cards),
+            selected_cards=list(self._selected),
+        )
+
+    def _sync_pack_tracking(self, gs: dict) -> None:
+        self._ensure_tracking_attrs()
+        phase = self._phase_from_gs(gs)
+        if phase != Phase.PACK_OPEN:
+            self._clear_pack_tracking()
+            return
+        pack_area = gs.get("pack") or {}
+        pack_count = len(pack_area.get("cards") or [])
+        selected_indexes = pack_area.get("selected_indexes")
+        if selected_indexes is None:
+            selected_indexes = pack_area.get("pack_selected_indexes")
+        if selected_indexes is None:
+            selected_indexes = self._pack_selected_indexes
+        self._pack_selected_indexes = [
+            int(idx) for idx in selected_indexes
+            if isinstance(idx, (int, np.integer)) and 0 <= int(idx) < pack_count
+        ]
+
+        cards_to_select = pack_area.get("choices")
+        if cards_to_select is None:
+            cards_to_select = pack_area.get("highlighted_limit")
+        if cards_to_select is None:
+            cards_to_select = pack_area.get("cards_to_select")
+        if cards_to_select is None:
+            cards_to_select = self._pack_cards_to_select if self._pack_cards_to_select > 0 else 1
+        self._pack_cards_to_select = max(
+            0,
+            min(ActionCounts.SELECT_FROM_PACK_COUNT, int(cards_to_select)),
+        )
+
+    def _clear_pack_tracking(self) -> None:
+        self._pack_selected_indexes = []
+        self._pack_cards_to_select = 0
+
+    def _remember_last_tarot_planet_consumable(self, consumable_name: str) -> None:
+        self._ensure_tracking_attrs()
+        if consumable_name and (
+            is_tarot_consumable_name(consumable_name) or is_planet_consumable_name(consumable_name)
+        ):
+            self._last_tarot_planet_consumable = consumable_name
+
+    def _ensure_tracking_attrs(self) -> None:
+        if not hasattr(self, "_pack_selected_indexes"):
+            self._pack_selected_indexes = []
+        if not hasattr(self, "_pack_cards_to_select"):
+            self._pack_cards_to_select = 0
+        if not hasattr(self, "_last_tarot_planet_consumable"):
+            self._last_tarot_planet_consumable = None
+
+    def _phase_from_gs(self, gs: dict) -> Phase:
+        state_str = gs.get("state", "")
+        phase = STATE_TO_PHASE.get(state_str)
+        if phase is not None:
+            return phase
+
+        pack_area = gs.get("pack") or {}
+        if pack_area.get("cards") or pack_area.get("selected_indexes") or pack_area.get("choices") is not None:
+            return Phase.PACK_OPEN
+
+        return Phase.PLAY
 
     # ------------------------------------------------------------------
     # Render
