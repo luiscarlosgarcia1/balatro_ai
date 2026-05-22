@@ -4,12 +4,21 @@ This module handles the pack opening phase where players select
 cards from booster packs.
 """
 
+from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
+from balatro_gym.core.consumables import (
+    ConsumableManager,
+    is_planet_consumable_name,
+    is_tarot_consumable_name,
+)
 from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
 from balatro_gym.core.jokers import JOKER_LIBRARY
+from balatro_gym.core_utils.card_adapter import CardAdapter
+from balatro_gym.core_utils.mvp_contract import can_use_consumable_from_pack, get_pack_consumable_target_count
+from balatro_gym.scoring.scoring_engine import HandType
 
 
 class PackOpenHandler:
@@ -29,6 +38,7 @@ class PackOpenHandler:
         self.pack_type: str = ""
         self.cards_to_select: int = 1
         self.selected_indexes: List[int] = []
+        self.consumable_manager = ConsumableManager()
     
     def step(self, action: int) -> Tuple[float, bool, Dict]:
         """Process an action during pack open phase.
@@ -46,12 +56,18 @@ class PackOpenHandler:
         else:
             return -1.0, False, {'error': 'Invalid pack open action'}
     
-    def open_pack(self, pack_type: str, pack_contents: List[Dict]) -> Dict:
+    def open_pack(
+        self,
+        pack_type: str,
+        pack_contents: List[Dict],
+        cards_to_select: int | None = None,
+    ) -> Dict:
         """Initialize pack opening with contents.
         
         Args:
             pack_type: Type of pack being opened
             pack_contents: List of card/item dictionaries in the pack
+            cards_to_select: Explicit choice count from shop/game data when available
             
         Returns:
             Info dictionary about the pack
@@ -61,7 +77,11 @@ class PackOpenHandler:
         self.selected_indexes = []
         
         # Determine how many cards can be selected
-        self.cards_to_select = self._get_cards_to_select(pack_type)
+        self.cards_to_select = (
+            self._get_cards_to_select(pack_type)
+            if cards_to_select is None
+            else max(1, int(cards_to_select))
+        )
         
         # Transition to pack open phase
         self.state.phase = Phase.PACK_OPEN
@@ -86,11 +106,14 @@ class PackOpenHandler:
         
         if len(self.selected_indexes) >= self.cards_to_select:
             return -1.0, False, {'error': 'Already selected maximum cards'}
-        
+
+        selected_item = self.pack_contents[card_idx]
+        if not self._can_take_pack_item(selected_item):
+            return -1.0, False, {'error': 'Cannot take selected pack item'}
+
         # Select the card
         self.selected_indexes.append(card_idx)
         self._sync_pack_state_to_unified_state()
-        selected_item = self.pack_contents[card_idx]
         
         # Apply the selected item
         reward, apply_info = self._apply_pack_item(selected_item)
@@ -183,6 +206,14 @@ class PackOpenHandler:
         self.state.pack_cards_to_select = 0
         self.state.pack_selection_limit = 0
         self.state.pack_type = ""
+
+    def _can_take_pack_item(self, item: Dict) -> bool:
+        """Check inventory capacity for the normalized pack item."""
+        if 'consumable' in item:
+            return can_use_consumable_from_pack(self.state, item['consumable'])
+        if 'joker' in item:
+            return len(self.state.jokers) < self.state.joker_slots
+        return True
 
     def _normalize_pack_contents(self, pack_type: str, pack_contents: List[Any]) -> List[Dict]:
         """Normalize shop pack payloads into a single pack-item structure."""
@@ -341,21 +372,8 @@ class PackOpenHandler:
                 reward += 2.0
         
         elif 'consumable' in item:
-            # Add consumable to inventory
-            if len(self.state.consumables) < self.state.consumable_slots:
-                self.state.consumables.append(item['consumable'])
-                info['consumable_added'] = item['consumable']
-                
-                # Value based on consumable type
-                if 'Planet' in item['consumable'] or item['consumable'].startswith(('Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto')):
-                    reward = 8.0  # Planets are very valuable
-                elif 'The' in item['consumable']:  # Tarot cards
-                    reward = 5.0
-                else:  # Spectral cards
-                    reward = 10.0  # Spectral cards are rare and powerful
-            else:
-                info['error'] = 'No consumable slots available'
-                reward = -1.0
+            reward, consumable_info = self._apply_pack_consumable(item['consumable'])
+            info.update(consumable_info)
         
         elif 'joker' in item:
             # Add joker to collection
@@ -367,3 +385,150 @@ class PackOpenHandler:
                 reward = -1.0
         
         return reward, info
+
+    def _apply_pack_consumable(self, consumable_name: str) -> Tuple[float, Dict]:
+        """Resolve supported pack consumables immediately instead of storing them."""
+        target_cards = self._get_pack_consumable_targets(consumable_name)
+        game_state = self.state.to_dict()
+        game_state['deck'] = self.state.deck.copy()
+        game_state['hand'] = [self.state.deck[idx] for idx in self.state.hand_indexes if 0 <= idx < len(self.state.deck)]
+        game_state['consumables'] = self.state.consumables.copy()
+
+        result = self.consumable_manager.use_consumable(consumable_name, game_state, target_cards)
+        if not result.get('success'):
+            return -1.0, {'error': f'Pack consumable not currently supported: {consumable_name}'}
+
+        reward = 0.0
+        info: Dict[str, Any] = {
+            'consumable_used': consumable_name,
+            'consumable_result': result.get('message', ''),
+        }
+
+        money_gained = int(result.get('money_gained', 0) or 0)
+        if money_gained:
+            self.state.money += money_gained
+            reward += money_gained / 2.0
+            info['money_gained'] = money_gained
+
+        hand_size_change = int(result.get('hand_size_change', 0) or 0)
+        if hand_size_change:
+            self.state.hand_size = max(1, self.state.hand_size + hand_size_change)
+            reward += abs(hand_size_change) * 2.0
+            info['hand_size'] = self.state.hand_size
+
+        if result.get('cards_affected'):
+            reward += self._apply_card_modifications(result['cards_affected'])
+
+        for created_item in result.get('items_created', []):
+            if len(self.state.consumables) < self.state.consumable_slots:
+                self.state.consumables.append(str(created_item))
+                reward += 3.0
+
+        for created_joker in result.get('jokers_created', []):
+            joker_info = self._lookup_joker(created_joker)
+            if joker_info is not None and self.state.add_joker(joker_info):
+                reward += 8.0
+
+        destroyed_cards = result.get('cards_destroyed', [])
+        if destroyed_cards:
+            self.state.deck = [card for card in self.state.deck if card not in destroyed_cards]
+            reward += float(len(destroyed_cards))
+            info['cards_destroyed'] = len(destroyed_cards)
+
+        created_cards = result.get('cards_created', [])
+        if created_cards:
+            self.state.deck.extend(created_cards)
+            reward += float(len(created_cards))
+            info['cards_created'] = len(created_cards)
+
+        planet_used = result.get('planet_used')
+        if planet_used:
+            self._apply_planet_level(planet_used)
+            reward += 8.0
+
+        if consumable_name == 'Black Hole':
+            self._apply_black_hole_levels()
+            reward += 10.0
+
+        if result.get('success') and (is_tarot_consumable_name(consumable_name) or is_planet_consumable_name(consumable_name)):
+            self.state.last_tarot_planet_consumable = consumable_name
+
+        return reward, info
+
+    def _get_pack_consumable_targets(self, consumable_name: str) -> List[Any]:
+        """Use a stable prefix of the current hand as the MVP pack target pool."""
+        target_count = get_pack_consumable_target_count(consumable_name)
+        if target_count <= 0:
+            return []
+
+        targets: List[Any] = []
+        for card_idx in self.state.hand_indexes:
+            if 0 <= card_idx < len(self.state.deck):
+                targets.append(CardAdapter.to_consumable_format(self.state.deck[card_idx], card_idx, self.state))
+                if len(targets) >= target_count:
+                    break
+        return targets
+
+    def _apply_card_modifications(self, affected_cards: List[Any]) -> float:
+        """Persist card mutations from immediate consumable resolution."""
+        for affected in affected_cards:
+            card_idx = getattr(affected, 'card_idx', None)
+            if card_idx is None or not (0 <= card_idx < len(self.state.deck)):
+                continue
+
+            original = self.state.deck[card_idx]
+            updated_rank = getattr(affected, 'rank', original.rank)
+            updated_suit = getattr(affected, 'suit', original.suit)
+            self.state.deck[card_idx] = replace(original, rank=updated_rank, suit=updated_suit)
+
+            card_state = self.state.get_card_state(card_idx)
+            if hasattr(affected, 'enhancement'):
+                card_state.enhancement = affected.enhancement
+            if hasattr(affected, 'edition'):
+                card_state.edition = affected.edition
+            if hasattr(affected, 'seal'):
+                card_state.seal = affected.seal
+
+        return len(affected_cards) * 2.0
+
+    def _lookup_joker(self, joker_value: Any):
+        """Resolve a created joker name/object into shared JokerInfo."""
+        if hasattr(joker_value, 'id') and hasattr(joker_value, 'name'):
+            return joker_value
+
+        joker_name = None
+        if isinstance(joker_value, str):
+            joker_name = joker_value
+        elif isinstance(joker_value, dict):
+            joker_name = joker_value.get('name')
+
+        if joker_name:
+            for joker_info in JOKER_LIBRARY:
+                if joker_info.name == joker_name:
+                    return joker_info
+        return None
+
+    def _apply_planet_level(self, planet_name: str) -> None:
+        """Apply the hand-level upgrade from a planet card."""
+        planet_map = {
+            'Mercury': HandType.ONE_PAIR,
+            'Venus': HandType.TWO_PAIR,
+            'Earth': HandType.THREE_KIND,
+            'Mars': HandType.STRAIGHT,
+            'Jupiter': HandType.FLUSH,
+            'Saturn': HandType.FULL_HOUSE,
+            'Uranus': HandType.FOUR_KIND,
+            'Neptune': HandType.STRAIGHT_FLUSH,
+            'Pluto': HandType.HIGH_CARD,
+            'Planet X': HandType.FIVE_KIND,
+            'Ceres': HandType.FLUSH_HOUSE,
+            'Eris': HandType.FLUSH_FIVE,
+        }
+        hand_type = planet_map.get(planet_name)
+        if hand_type is not None:
+            self.state.hand_levels[hand_type] = self.state.hand_levels.get(hand_type, 1) + 1
+
+    def _apply_black_hole_levels(self) -> None:
+        """Upgrade every tracked hand level by one."""
+        for hand_type in HandType:
+            self.state.hand_levels[hand_type] = self.state.hand_levels.get(hand_type, 1) + 1
