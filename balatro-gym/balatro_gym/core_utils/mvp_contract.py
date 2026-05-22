@@ -290,10 +290,22 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
         pack_contents = get_pack_contents(state, shop)
         selected_indexes = set(get_pack_selected_indexes(state, shop))
         cards_to_select = get_pack_cards_to_select(state, shop)
+        pending_pack_index = get_pending_pack_index(state, shop)
+        pending_target_count = get_pending_pack_target_count(state, shop)
+        pending_target_valid = has_valid_pending_pack_targets(state, shop)
 
-        if len(selected_indexes) < cards_to_select:
+        if pending_pack_index is not None:
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
+                mask[Action.SELECT_CARD_BASE + i] = 1
+            if (
+                0 <= pending_pack_index < min(ActionCounts.SELECT_FROM_PACK_COUNT, len(pack_contents))
+                and pending_target_count > 0
+                and pending_target_valid
+            ):
+                mask[Action.SELECT_FROM_PACK_BASE + pending_pack_index] = 1
+        elif len(selected_indexes) < cards_to_select:
             for i in range(min(ActionCounts.SELECT_FROM_PACK_COUNT, len(pack_contents))):
-                if i not in selected_indexes and is_pack_item_selectable(state, pack_contents[i]):
+                if i not in selected_indexes and is_pack_item_selectable(state, pack_contents[i], item_index=i):
                     mask[Action.SELECT_FROM_PACK_BASE + i] = 1
 
         if pack_contents:
@@ -482,7 +494,21 @@ def build_action_mask(
         selected_indexes = {int(idx) for idx in kwargs["pack_selected_indexes"]}
         cards_to_select = int(kwargs["pack_cards_to_select"])
         item_selectable = list(kwargs.get("pack_item_selectable", [True] * pack_size))
-        if len(selected_indexes) < cards_to_select:
+        pending_pack_index = kwargs.get("pending_pack_index")
+        pending_target_count = int(kwargs.get("pending_target_count", 0) or 0)
+        pending_target_valid = bool(kwargs.get("pending_target_valid", False))
+        if pending_pack_index is not None:
+            hand_size = int(kwargs.get("hand_size", 0))
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
+                mask[Action.SELECT_CARD_BASE + i] = 1
+            pending_pack_index = int(pending_pack_index)
+            if (
+                0 <= pending_pack_index < min(ActionCounts.SELECT_FROM_PACK_COUNT, pack_size)
+                and pending_target_count > 0
+                and pending_target_valid
+            ):
+                mask[Action.SELECT_FROM_PACK_BASE + pending_pack_index] = 1
+        elif len(selected_indexes) < cards_to_select:
             for i in range(min(ActionCounts.SELECT_FROM_PACK_COUNT, pack_size)):
                 if i not in selected_indexes and (i >= len(item_selectable) or bool(item_selectable[i])):
                     mask[Action.SELECT_FROM_PACK_BASE + i] = 1
@@ -651,7 +677,11 @@ def encode_pack_item_id(item: Any) -> int:
     return 0
 
 
-def is_pack_item_selectable(state: UnifiedGameState, item: Any) -> bool:
+def is_pack_item_selectable(state: UnifiedGameState, item: Any, item_index: int | None = None) -> bool:
+    pending_pack_index = get_pending_pack_index(state)
+    if pending_pack_index is not None:
+        return item_index is not None and item_index == pending_pack_index
+
     normalized_type, primary_value, _ = _normalize_pack_item(item)
     if normalized_type == "consumable" and primary_value:
         return can_use_consumable_from_pack(state, str(primary_value))
@@ -704,6 +734,47 @@ def can_use_consumable_in_play(state: UnifiedGameState, consumable_name: str) ->
 
 def get_pack_consumable_target_count(consumable_name: str) -> int:
     return PACK_TARGETED_DEFAULT_TARGET_COUNT.get(consumable_name, 0)
+
+
+def get_pending_pack_consumable(state: Any, shop: Any = None) -> str | None:
+    for owner in (state, shop):
+        if owner is None:
+            continue
+        value = getattr(owner, "pending_pack_consumable", None)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def get_pending_pack_index(state: Any, shop: Any = None) -> int | None:
+    for owner in (state, shop):
+        if owner is None:
+            continue
+        value = getattr(owner, "pending_pack_index", None)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def get_pending_pack_target_count(state: Any, shop: Any = None) -> int:
+    pending_pack_consumable = get_pending_pack_consumable(state, shop)
+    if not pending_pack_consumable:
+        return 0
+    return get_pack_consumable_target_count(pending_pack_consumable)
+
+
+def has_valid_pending_pack_targets(state: Any, shop: Any = None) -> bool:
+    target_count = get_pending_pack_target_count(state, shop)
+    if target_count <= 0:
+        return False
+    selected_cards = getattr(state, "selected_cards", None)
+    if selected_cards is None and shop is not None:
+        selected_cards = getattr(shop, "selected_cards", None)
+    return len(selected_cards or []) == target_count
 
 
 def _count_current_hand_cards(state: UnifiedGameState) -> int:
