@@ -1,0 +1,406 @@
+from __future__ import annotations
+
+import numpy as np
+from types import SimpleNamespace
+
+from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.jokers import JokerInfo
+from balatro_gym.core_utils.blind_scaling import get_blind_chips
+from balatro_gym.core_utils.mvp_contract import (
+    build_mvp_action_mask,
+    encode_consumable_id,
+    encode_pack_item_types,
+)
+from balatro_gym.core_utils.action_handler import ActionHandler
+from balatro_gym.core_utils.observation_builder import ObservationBuilder
+from balatro_gym.core_utils.phase_handlers.blind_select import BlindSelectHandler
+from balatro_gym.core_utils.phase_handlers.pack_open import PackOpenHandler
+from balatro_gym.core_utils.phase_handlers.play_phase import PlayPhaseHandler
+from balatro_gym.core_utils.phase_handlers.shop_phase import ShopPhaseHandler
+from balatro_gym.core_utils.rng import DeterministicRNG
+from balatro_gym.core_utils.state import UnifiedGameState
+from balatro_gym.environments.live.balatro_live_env import BalatroLiveEnv
+from balatro_gym.scoring.scoring_engine import HandType
+
+
+def _make_live_env_stub() -> BalatroLiveEnv:
+    env = BalatroLiveEnv.__new__(BalatroLiveEnv)
+    env._selected = []
+    env._gs = {}
+    env._total_chips = 0
+    env._best_hand_score = 0
+    env._hands_played = 0
+    env._prev_round_chips = 0
+    env._prev_progress = 0.0
+    env._step_count = 0
+    env.max_episode_steps = 1000
+    env.render_mode = None
+    env.observation_space = env._create_observation_space()
+    return env
+
+
+def test_reduced_obs_keyset_matches_live_contract():
+    sim_space = ObservationBuilder().create_observation_space()
+    live_space = _make_live_env_stub()._create_observation_space()
+
+    assert tuple(sim_space.spaces.keys()) == tuple(live_space.spaces.keys())
+
+
+def test_hand_levels_follow_canonical_order_in_sim_observation():
+    builder = ObservationBuilder()
+    state = UnifiedGameState()
+    insertion_order = [
+        HandType.FLUSH,
+        HandType.HIGH_CARD,
+        HandType.FLUSH_FIVE,
+        HandType.ONE_PAIR,
+        HandType.STRAIGHT,
+        HandType.THREE_KIND,
+        HandType.TWO_PAIR,
+        HandType.FULL_HOUSE,
+        HandType.FOUR_KIND,
+        HandType.STRAIGHT_FLUSH,
+        HandType.FIVE_KIND,
+        HandType.FLUSH_HOUSE,
+    ]
+    expected = []
+    assigned = {}
+    for index, hand_type in enumerate(HandType):
+        assigned[hand_type] = index + 2
+        expected.append(index + 2)
+
+    state.hand_levels = {hand_type: assigned[hand_type] for hand_type in insertion_order}
+    obs = builder.build_observation(state)
+
+    assert obs["hand_levels"].tolist() == expected
+
+
+def test_joker_ids_match_between_sim_and_live_contract():
+    builder = ObservationBuilder()
+    state = UnifiedGameState(
+        jokers=[
+            JokerInfo(1, "Joker", 2, "+4 Mult"),
+            JokerInfo(109, "Sock & Buskin", 6, "Retrigger face cards"),
+        ]
+    )
+    sim_obs = builder.build_observation(state)
+
+    live_env = _make_live_env_stub()
+    live_env._gs = {
+        "state": "SHOP",
+        "round": {"chips": 0, "hands_left": 4, "discards_left": 3, "reroll_cost": 5},
+        "blinds": {"small": {"score": 300, "status": "DEFEATED"}, "big": {"score": 450, "status": "CURRENT"}, "boss": {"score": 600, "status": "UPCOMING"}},
+        "hand": {"cards": []},
+        "jokers": {"cards": [{"label": "Joker"}, {"label": "Sock & Buskin"}], "limit": 5},
+        "consumables": {"cards": [], "limit": 2},
+        "shop": {"cards": []},
+        "packs": {"cards": []},
+        "pack": {"cards": []},
+        "cards": {"count": 52},
+        "hands": {},
+        "money": 0,
+        "ante_num": 1,
+        "round_num": 2,
+    }
+    live_obs = live_env._build_obs()
+
+    assert sim_obs["joker_ids"][:2].tolist() == live_obs["joker_ids"][:2].tolist()
+
+
+def test_pack_observation_keys_and_values_match_between_sim_and_stub_live_contract():
+    required_pack_keys = (
+        "pack_item_types",
+        "pack_item_ids",
+        "pack_item_selectable",
+        "pack_cards_to_select",
+        "pack_choices_remaining",
+        "fool_replayable_consumable",
+    )
+
+    sim_state = UnifiedGameState(
+        phase=Phase.PACK_OPEN,
+        consumables=[],
+        consumable_slots=1,
+        last_tarot_planet_consumable="Mars",
+    )
+    sim_state.pack_contents = [
+        {"consumable": "The Fool"},
+        {"consumable": "The Lovers"},
+        {"consumable": "Jupiter"},
+    ]
+    sim_state.pack_selected_indexes = [2]
+    sim_state.pack_cards_to_select = 2
+    sim_obs = ObservationBuilder().build_observation(sim_state)
+
+    live_env = _make_live_env_stub()
+    live_env._gs = {
+        "state": "PACK_OPEN",
+        "round": {"chips": 0, "hands_left": 4, "discards_left": 3, "reroll_cost": 5},
+        "blinds": {
+            "small": {"score": 300, "status": "DEFEATED"},
+            "big": {"score": 450, "status": "CURRENT"},
+            "boss": {"score": 600, "status": "UPCOMING"},
+        },
+        "hand": {"cards": []},
+        "jokers": {"cards": [], "limit": 5},
+        "consumables": {"cards": [], "limit": 1},
+        "shop": {"cards": []},
+        "packs": {"cards": []},
+        "pack": {
+            "cards": [
+                {"label": "The Fool", "selectable": True},
+                {"label": "The Lovers", "selectable": False},
+                {"label": "Jupiter", "selectable": True},
+            ],
+            "choices": 2,
+            "selected_indexes": [2],
+        },
+        "cards": {"count": 52},
+        "hands": {},
+        "money": 0,
+        "ante_num": 1,
+        "round_num": 2,
+        "last_tarot_planet_consumable": "Mars",
+    }
+    live_obs = live_env._build_obs()
+
+    assert tuple(ObservationBuilder().create_observation_space().spaces.keys()) == tuple(
+        live_env._create_observation_space().spaces.keys()
+    )
+    for key in required_pack_keys:
+        assert key in sim_obs
+        assert key in live_obs
+
+    assert sim_obs["pack_item_types"][:3].tolist() == live_obs["pack_item_types"][:3].tolist() == (
+        encode_pack_item_types(sim_state.pack_contents, slots=5)[:3].tolist()
+    )
+    assert sim_obs["pack_item_ids"][:3].tolist() == live_obs["pack_item_ids"][:3].tolist() == [
+        encode_consumable_id("The Fool"),
+        encode_consumable_id("The Lovers"),
+        encode_consumable_id("Jupiter"),
+    ]
+    assert sim_obs["pack_item_selectable"][:3].tolist() == live_obs["pack_item_selectable"][:3].tolist() == [1, 0, 0]
+    assert sim_obs["pack_cards_to_select"] == live_obs["pack_cards_to_select"] == 2
+    assert sim_obs["pack_choices_remaining"] == live_obs["pack_choices_remaining"] == 1
+    assert sim_obs["fool_replayable_consumable"] == live_obs["fool_replayable_consumable"] == encode_consumable_id("Mars")
+
+
+def test_sell_consumable_is_legal_in_shop_masks_and_handler():
+    state = UnifiedGameState(
+        phase=Phase.SHOP,
+        money=4,
+        consumables=["The Fool", "Hex"],
+    )
+    action_handler = ActionHandler(state, DeterministicRNG(123))
+    obs = ObservationBuilder().build_observation(state)
+
+    assert action_handler.is_valid_action(Action.SELL_CONSUMABLE_BASE)
+    assert obs["action_mask"][Action.SELL_CONSUMABLE_BASE] == 1
+
+    shop_handler = ShopPhaseHandler(state, DeterministicRNG(123))
+    reward, terminated, info = shop_handler.step(Action.SELL_CONSUMABLE_BASE)
+
+    assert reward > 0.0
+    assert terminated is False
+    assert info["action"] == "sold_consumable"
+    assert state.money == 5
+    assert state.consumables == ["Hex"]
+
+
+def test_live_blind_mask_exposes_only_current_selectable_slot_and_skip_legality():
+    env = _make_live_env_stub()
+    gs = {
+        "state": "BLIND_SELECT",
+        "round": {},
+        "hand": {"cards": []},
+        "jokers": {"cards": []},
+        "consumables": {"cards": []},
+        "shop": {"cards": []},
+        "packs": {"cards": []},
+        "pack": {"cards": []},
+        "money": 0,
+        "blinds": {
+            "small": {"status": "SKIPPED", "score": 300},
+            "big": {"status": "SELECT", "score": 450},
+            "boss": {"status": "UPCOMING", "score": 600},
+        },
+    }
+
+    mask = env._build_action_mask(gs, Phase.BLIND_SELECT)
+
+    assert mask[Action.SELECT_BLIND_BASE + 0] == 0
+    assert mask[Action.SELECT_BLIND_BASE + 1] == 1
+    assert mask[Action.SELECT_BLIND_BASE + 2] == 0
+    assert mask[Action.SKIP_BLIND] == 1
+
+    gs["blinds"]["big"]["status"] = "SKIPPED"
+    gs["blinds"]["boss"]["status"] = "SELECT"
+    mask = env._build_action_mask(gs, Phase.BLIND_SELECT)
+
+    assert mask[Action.SELECT_BLIND_BASE + 2] == 1
+    assert mask[Action.SKIP_BLIND] == 0
+
+
+def test_play_mask_disallows_playing_more_than_five_selected_cards_and_keeps_hardened_fool_illegal():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        hand_indexes=[0, 1, 2, 3, 4, 5],
+        selected_cards=[0, 1, 2, 3, 4, 5],
+        discards_left=1,
+        consumables=["The Fool"],
+    )
+
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.PLAY_HAND] == 0
+    assert mask[Action.DISCARD] == 1
+    assert mask[Action.USE_CONSUMABLE_BASE] == 0
+
+
+def test_face_down_cards_remain_selectable_in_play_handler():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        hand_indexes=[0, 1],
+        face_down_cards=[1],
+    )
+    handler = PlayPhaseHandler(
+        state,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        DeterministicRNG(123),
+    )
+
+    reward, terminated, info = handler.step(Action.SELECT_CARD_BASE + 1)
+
+    assert reward == -0.05
+    assert terminated is False
+    assert info["selected_cards"] == [1]
+    assert state.selected_cards == [1]
+
+
+def test_shop_mask_blocks_affordable_buys_when_joker_or_consumable_slots_are_full():
+    state = UnifiedGameState(
+        phase=Phase.SHOP,
+        money=10,
+        jokers=[JokerInfo(1, "Joker", 2, "+4 Mult")],
+        joker_slots=1,
+        consumables=["The Fool", "Hex"],
+        consumable_slots=2,
+        shop_inventory=[
+            {"item_type": "JOKER", "cost": 3},
+            {"item_type": "CARD", "cost": 3, "payload": {"consumable": True}},
+        ],
+    )
+
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.SHOP_BUY_BASE + 0] == 0
+    assert mask[Action.SHOP_BUY_BASE + 1] == 0
+    assert mask[Action.SHOP_END] == 1
+
+
+def test_mega_pack_selection_updates_mask_until_pack_completes():
+    state = UnifiedGameState(hand_levels={HandType.ONE_PAIR: 1})
+    shop_handler = SimpleNamespace(shop=None, pack_open_handler=None)
+    handler = PackOpenHandler(state, shop_handler)
+
+    open_info = handler.open_pack("Mega Arcana Pack", ["Mercury", "The Lovers", "The Hermit"])
+
+    assert open_info["cards_to_select"] == 2
+    assert state.phase == Phase.PACK_OPEN
+    assert state.pack_selected_indexes == []
+
+    mask = build_mvp_action_mask(state)
+    assert mask[Action.SELECT_FROM_PACK_BASE + 0] == 1
+    assert mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert mask[Action.SELECT_FROM_PACK_BASE + 2] == 1
+    assert mask[Action.SKIP_PACK] == 1
+
+    reward, terminated, info = handler.step(Action.SELECT_FROM_PACK_BASE + 0)
+
+    assert reward > 0.0
+    assert terminated is False
+    assert info["cards_selected"] == 1
+    assert info["cards_remaining"] == 1
+    assert info["consumable_used"] == "Mercury"
+    assert state.phase == Phase.PACK_OPEN
+    assert state.pack_selected_indexes == [0]
+    assert state.hand_levels[HandType.ONE_PAIR] == 2
+
+    mask = build_mvp_action_mask(state)
+    assert mask[Action.SELECT_FROM_PACK_BASE + 0] == 0
+    assert mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert mask[Action.SELECT_FROM_PACK_BASE + 2] == 1
+    assert mask[Action.SKIP_PACK] == 1
+
+
+def test_selecting_big_blind_resets_round_state_and_transitions_to_play():
+    state = UnifiedGameState(
+        ante=2,
+        round=2,
+        phase=Phase.BLIND_SELECT,
+        round_chips_scored=125,
+        face_down_cards=[0, 2],
+    )
+    game = SimpleNamespace(blinds=[0, 0, 0], blind_index=1)
+    joker_effects = SimpleNamespace(apply_joker_effect=lambda *_args, **_kwargs: None)
+    handler = BlindSelectHandler(
+        state,
+        game,
+        SimpleNamespace(),
+        joker_effects,
+        DeterministicRNG(123),
+    )
+
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.SELECT_BLIND_BASE + 0] == 0
+    assert mask[Action.SELECT_BLIND_BASE + 1] == 1
+    assert mask[Action.SELECT_BLIND_BASE + 2] == 0
+
+    reward, terminated, info = handler.step(Action.SELECT_BLIND_BASE + 1)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert info["blind_type"] == "big"
+    assert info["chips_needed"] == get_blind_chips(2, "big")
+    assert info["transition_to"] == "play"
+    assert state.round == 2
+    assert state.chips_needed == get_blind_chips(2, "big")
+    assert state.round_chips_scored == 0
+    assert state.face_down_cards == []
+    assert state.phase == Phase.PLAY
+    assert game.blinds[1] == state.chips_needed
+
+
+def test_shop_end_returns_to_blind_select_contract_for_next_round():
+    state = UnifiedGameState(
+        phase=Phase.SHOP,
+        round=2,
+        selected_cards=[0],
+        face_down_cards=[1, 3],
+        shop_inventory=[{"item_type": "JOKER", "cost": 3}],
+    )
+    handler = ShopPhaseHandler(state, DeterministicRNG(123))
+
+    reward, terminated, info = handler.step(Action.SHOP_END)
+
+    assert reward == -0.05
+    assert terminated is False
+    assert info["action"] == "shop_ended"
+    assert state.round == 2
+    assert state.phase == Phase.BLIND_SELECT
+    assert state.selected_cards == []
+    assert state.face_down_cards == []
+    assert state.shop_inventory == []
+
+    obs = ObservationBuilder().build_observation(state)
+    assert obs["action_mask"][Action.SELECT_BLIND_BASE + 0] == 0
+    assert obs["action_mask"][Action.SELECT_BLIND_BASE + 1] == 1
+    assert obs["action_mask"][Action.SELECT_BLIND_BASE + 2] == 0
+    assert obs["action_mask"][Action.PLAY_HAND] == 0
+    assert obs["action_mask"][Action.SKIP_BLIND] == 1
