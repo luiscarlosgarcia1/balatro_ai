@@ -8,8 +8,9 @@ This module handles all actions during the SHOP phase including:
 """
 
 from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
 
+from balatro_gym.core.cards import Card, Rank, Suit
+from balatro_gym.core.boss_blinds import select_boss_blind
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
@@ -53,6 +54,8 @@ class ShopPhaseHandler:
             return self._handle_buy_item(action)
         elif Action.SELL_JOKER_BASE <= action < Action.SELL_JOKER_BASE + Action.SELL_JOKER_COUNT:
             return self._handle_sell_joker(action)
+        elif Action.SELL_CONSUMABLE_BASE <= action < Action.SELL_CONSUMABLE_BASE + Action.SELL_CONSUMABLE_COUNT:
+            return self._handle_sell_consumable(action)
         else:
             return -1.0, False, {'error': 'Invalid shop action'}
     
@@ -77,8 +80,10 @@ class ShopPhaseHandler:
     
     def _handle_end_shop(self) -> Tuple[float, bool, Dict]:
         """Handle ending the shopping phase."""
-        # Transition to play phase
-        self.state.phase = Phase.PLAY
+        # Return to blind select so the next pending blind is chosen explicitly.
+        if int(self.state.round) == 3 and self.state.pending_boss_blind is None:
+            self.state.pending_boss_blind = select_boss_blind(self.state.ante)
+        self.state.phase = Phase.BLIND_SELECT
         self.state.selected_cards = []
         self.state.face_down_cards = []
         self.state.shop_inventory = []
@@ -87,12 +92,18 @@ class ShopPhaseHandler:
         # Draw initial hand for next round
         # This should be handled by the main environment
         
-        return -0.05, False, {'action': 'shop_ended'}  # time pressure: each shop visit must pay off
+        return -0.05, False, {
+            'action': 'shop_ended',
+            'transition_to': 'blind_select',
+            'current_round': self.state.round,
+        }  # time pressure: each shop visit must pay off
     
     def _handle_reroll(self) -> Tuple[float, bool, Dict]:
         """Handle rerolling the shop."""
         if self.state.money < self.state.shop_reroll_cost:
             return -1.0, False, {'error': 'Cannot afford reroll'}
+
+        previous_reroll_cost = self.state.shop_reroll_cost
         
         # Execute reroll
         self._sync_player_state()
@@ -109,7 +120,7 @@ class ShopPhaseHandler:
         info = {
             'action': 'rerolled',
             'new_reroll_cost': self.state.shop_reroll_cost,
-            'money_spent': self.state.shop_reroll_cost
+            'money_spent': previous_reroll_cost
         }
         info.update(shop_info)
         
@@ -151,15 +162,18 @@ class ShopPhaseHandler:
         if 'error' in shop_info:
             return -1.0, False, shop_info
 
+        # Sync post-purchase state before purchase-specific processing.
+        self.state.money = self.shop.player.chips
+        self.state.shop_inventory = self.shop.inventory.copy()
+        cost_mult = self.shop._cost_mult() if hasattr(self.shop, '_cost_mult') else 1.0
+        self.state.shop_reroll_cost = int(self.shop.reroll_cost * cost_mult)
+        self._sync_inventory_from_player()
+
         if item.item_type == ItemType.PACK:
             return self._handle_pack_purchase(item, shop_info)
 
         # Update state based on purchase type
         info = self._process_purchase(item, shop_info)
-        
-        # Update money and inventory
-        self.state.money = self.shop.player.chips
-        self.state.shop_inventory = self.shop.inventory.copy()
         
         # Calculate reward based on item type
         if item.item_type == ItemType.PACK:
@@ -212,6 +226,27 @@ class ShopPhaseHandler:
         info.update(sale_effects)
         
         return reward, False, info
+
+    def _handle_sell_consumable(self, action: int) -> Tuple[float, bool, Dict]:
+        """Handle selling a consumable with minimal MVP economics."""
+        consumable_idx = action - Action.SELL_CONSUMABLE_BASE
+
+        if not (0 <= consumable_idx < len(self.state.consumables)):
+            return -1.0, False, {'error': 'Invalid consumable index'}
+
+        consumable_name = self.state.consumables.pop(consumable_idx)
+        sell_value = self._calculate_consumable_sell_value(consumable_name)
+        self.state.money += sell_value
+        self._sync_player_state()
+
+        info = {
+            'action': 'sold_consumable',
+            'consumable_sold': consumable_name,
+            'money_gained': sell_value,
+            'consumables_remaining': len(self.state.consumables),
+        }
+
+        return sell_value / 10.0, False, info
     
     # -------------------------------------------------------------------------
     # Helper methods
@@ -266,6 +301,25 @@ class ShopPhaseHandler:
                         if joker_info.id == joker_id:
                             self.state.add_joker(joker_info)
                             break
+
+    def _sync_inventory_from_player(self) -> None:
+        """Sync deck and consumables after shop purchases mutate the player state."""
+        if not self.shop or not self.shop.player:
+            return
+
+        player_deck = list(self.shop.player.deck)
+        if len(player_deck) > len(self.state.deck):
+            for encoded_card in player_deck[len(self.state.deck):]:
+                self.state.deck.append(self._decode_shop_card(encoded_card))
+
+        self.state.consumables = self.shop.player.consumables.copy()
+
+    def _decode_shop_card(self, card_index: int) -> Card:
+        """Convert the shop's integer card encoding back into a core Card."""
+        normalized = int(card_index)
+        rank = Rank((normalized // 4) + 2)
+        suit = Suit(normalized % 4)
+        return Card(rank=rank, suit=suit)
     
     def _process_purchase(self, item, shop_info: Dict) -> Dict:
         """Process purchase results based on item type."""
@@ -295,8 +349,10 @@ class ShopPhaseHandler:
             # Sync vouchers
             self.state.vouchers = self.shop.player.vouchers.copy()
             if self.state.vouchers:
-                info['voucher_acquired'] = self.state.vouchers[-1]
-                info['voucher_effect'] = self._get_voucher_effect(self.state.vouchers[-1])
+                acquired_voucher = self.state.vouchers[-1]
+                info['voucher_acquired'] = acquired_voucher
+                info['voucher_effect'] = self._get_voucher_effect(acquired_voucher)
+                info.update(self._apply_voucher_effects(acquired_voucher))
         
         return info
 
@@ -316,7 +372,15 @@ class ShopPhaseHandler:
             info['warning'] = 'Pack purchased without pack handler attached'
             return 5.0, False, info
 
-        pack_info = self.pack_open_handler.open_pack(pack_type, pack_contents)
+        cards_to_select = shop_info.get('pack_choose')
+        if cards_to_select is None:
+            cards_to_select = getattr(item, 'payload', {}).get('choose')
+
+        pack_info = self.pack_open_handler.open_pack(
+            pack_type,
+            pack_contents,
+            cards_to_select=cards_to_select,
+        )
         info.update(pack_info)
 
         return 5.0, False, info
@@ -405,7 +469,7 @@ class ShopPhaseHandler:
             return special_sell_values[joker.name]
         
         return base_value
-    
+
     def _apply_joker_sale_effects(self, joker) -> Dict:
         """Apply any special effects from selling specific jokers."""
         effects = {}
@@ -433,7 +497,8 @@ class ShopPhaseHandler:
             'Telescope': 'Celestial Packs always contain your most used poker hand\'s Planet card',
             'Grabber': '+1 hand per round',
             'Dusk': 'Tarot and Planet cards appear 2X more often in the shop',
-            'Retcon': 'Rerolls cost $2 less (again)',
+            "Director's Cut": 'Pay $10 to reroll the boss blind once per ante',
+            'Retcon': 'Pay $10 to reroll the boss blind repeatedly each ante',
             'Paint Brush': '+1 hand size',
             'Overstock Plus': '+1 card slot in shop (again)',
             'Liquidation': 'All items in shop are 50% off',
@@ -444,3 +509,44 @@ class ShopPhaseHandler:
         }
         
         return voucher_effects.get(voucher_name, 'Unknown voucher effect')
+
+    def _apply_voucher_effects(self, voucher_name: str) -> Dict[str, Any]:
+        """Apply the persistent voucher effects that materially affect sim state."""
+        effects: Dict[str, Any] = {}
+
+        if voucher_name == 'Crystal Ball':
+            self.state.consumable_slots += 1
+            effects['consumable_slots'] = self.state.consumable_slots
+        elif voucher_name == 'Antimatter':
+            self.state.joker_slots += 1
+            effects['joker_slots'] = self.state.joker_slots
+        elif voucher_name == 'Grabber':
+            self.state.hands_left += 1
+            effects['hands_left'] = self.state.hands_left
+        elif voucher_name == 'Nacho Tong':
+            self.state.hands_left += 1
+            effects['hands_left'] = self.state.hands_left
+        elif voucher_name == 'Wasteful':
+            self.state.discards_left += 1
+            effects['discards_left'] = self.state.discards_left
+        elif voucher_name == 'Recyclomancy':
+            self.state.discards_left += 1
+            effects['discards_left'] = self.state.discards_left
+        elif voucher_name == 'Paint Brush':
+            self.state.hand_size += 1
+            effects['hand_size'] = self.state.hand_size
+        elif voucher_name == 'Palette':
+            self.state.hand_size += 1
+            effects['hand_size'] = self.state.hand_size
+
+        effects['shop_reroll_cost'] = self.state.shop_reroll_cost
+        return effects
+
+    def _calculate_consumable_sell_value(self, consumable_name: str) -> int:
+        """Approximate live sell_cost semantics for MVP contract parity."""
+        spectral_names = {
+            'Familiar', 'Grim', 'Incantation', 'Talisman', 'Aura', 'Wraith',
+            'Sigil', 'Ouija', 'Ectoplasm', 'Immolate', 'Ankh', 'Deja Vu',
+            'Hex', 'Trance', 'Medium', 'Cryptid', 'The Soul', 'Black Hole',
+        }
+        return 2 if consumable_name in spectral_names else 1

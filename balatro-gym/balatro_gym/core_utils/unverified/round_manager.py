@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from balatro_gym.core.boss_blinds import select_boss_blind
 from balatro_gym.core.boss_blinds import BossBlindManager
 from balatro_gym.core.cards import Enhancement, EnhancementEffects
 from balatro_gym.core.constants import Phase
@@ -51,6 +52,7 @@ class RoundManager:
         self.state.best_hand_this_ante = 0
         self.state.hands_played_ante = 0
         self.state.selected_cards = []
+        self.state.face_down_cards = []
 
         if self.state.round == 3:
             self.state.ante += 1
@@ -59,11 +61,29 @@ class RoundManager:
         else:
             self.state.round += 1
             self.state.reset_round_state()
+            if self.state.round == 3:
+                self.state.pending_boss_blind = select_boss_blind(self.state.ante)
 
         self.state.money += 25 * self.state.round + (10 if self.state.round == 3 else 0)
-        self.state.hands_left = 4
-        self.state.discards_left = 3
+        self.state.hands_left = self._base_round_hands()
+        self.state.discards_left = self._base_round_discards()
         self.state.phase = Phase.SHOP
 
         self.game.round_hands = self.state.hands_left
         self.game.round_discards = self.state.discards_left
+
+    def _base_round_hands(self) -> int:
+        """Return the persistent hands-per-round baseline after voucher effects."""
+        bonus = 0
+        for voucher_name in self.state.vouchers:
+            if voucher_name in {"Grabber", "Nacho Tong"}:
+                bonus += 1
+        return 4 + bonus
+
+    def _base_round_discards(self) -> int:
+        """Return the persistent discards-per-round baseline after voucher effects."""
+        bonus = 0
+        for voucher_name in self.state.vouchers:
+            if voucher_name in {"Wasteful", "Recyclomancy"}:
+                bonus += 1
+        return 3 + bonus
