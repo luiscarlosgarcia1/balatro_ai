@@ -708,7 +708,122 @@ def test_pack_planet_consumable_resolves_immediately_instead_of_entering_invento
     assert state.hand_levels[HandType.FLUSH] == 2
 
 
-def test_targeted_pack_consumable_is_selectable_and_resolves_from_current_hand():
+def test_targeted_pack_consumable_enters_pending_subflow_and_resolves_with_explicit_targets():
+    state = UnifiedGameState(
+        phase=Phase.PACK_OPEN,
+        deck=[
+            Card(Rank.FIVE, Suit.CLUBS),
+            Card(Rank.KING, Suit.HEARTS),
+            Card(Rank.ACE, Suit.SPADES),
+        ],
+        hand_indexes=[0, 1, 2],
+        consumables=[],
+        consumable_slots=2,
+    )
+    shop_handler = SimpleNamespace(shop=None, pack_open_handler=None)
+    handler = PackOpenHandler(state, shop_handler)
+    handler.open_pack(
+        "Arcana Pack",
+        [{"consumable": "The Lovers"}, {"consumable": "Mercury"}],
+        cards_to_select=1,
+    )
+
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.SELECT_FROM_PACK_BASE] == 1
+    assert mask[Action.SELECT_FROM_PACK_BASE + 1] == 1
+    assert mask[Action.SKIP_PACK] == 1
+
+    reward, terminated, info = handler.step(Action.SELECT_FROM_PACK_BASE)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert info["action"] == "pending_pack_target_selection"
+    assert info["consumable"] == "The Lovers"
+    assert info["required_targets"] == 1
+    assert state.phase == Phase.PACK_OPEN
+    assert state.pending_pack_consumable == "The Lovers"
+    assert state.pending_pack_index == 0
+    assert state.selected_cards == []
+    assert state.pack_selected_indexes == []
+
+    pending_mask = build_mvp_action_mask(state)
+    assert pending_mask[Action.SELECT_FROM_PACK_BASE] == 0
+    assert pending_mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert pending_mask[Action.SELECT_CARD_BASE + 0] == 1
+    assert pending_mask[Action.SELECT_CARD_BASE + 1] == 1
+    assert pending_mask[Action.SELECT_CARD_BASE + 2] == 1
+    assert pending_mask[Action.SKIP_PACK] == 1
+
+    pending_obs = ObservationBuilder().build_observation(state)
+    assert pending_obs["pack_item_ids"][:2].tolist() == [
+        encode_consumable_id("The Lovers"),
+        encode_consumable_id("Mercury"),
+    ]
+    assert pending_obs["pack_choices_remaining"] == 1
+    assert pending_obs["action_mask"][Action.SELECT_CARD_BASE + 0] == 1
+    assert pending_obs["action_mask"][Action.SKIP_PACK] == 1
+
+    reward, terminated, info = handler.step(Action.SELECT_CARD_BASE + 1)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert info["action"] == "toggled_pack_target"
+    assert info["selected_targets"] == [1]
+    assert state.selected_cards == [1]
+
+    exact_mask = build_mvp_action_mask(state)
+    assert exact_mask[Action.SELECT_FROM_PACK_BASE] == 1
+    assert exact_mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert exact_mask[Action.SKIP_PACK] == 1
+
+    reward, terminated, info = handler.step(Action.SELECT_CARD_BASE + 0)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert info["selected_targets"] == [0, 1]
+    assert state.selected_cards == [0, 1]
+
+    over_targeted_mask = build_mvp_action_mask(state)
+    assert over_targeted_mask[Action.SELECT_FROM_PACK_BASE] == 0
+    assert over_targeted_mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert over_targeted_mask[Action.SKIP_PACK] == 1
+
+    reward, terminated, info = handler.step(Action.SELECT_FROM_PACK_BASE)
+
+    assert reward == -1.0
+    assert terminated is False
+    assert info["error"] == "Invalid target count for pending pack consumable"
+    assert info["required_targets"] == 1
+    assert info["selected_targets"] == 2
+
+    reward, terminated, info = handler.step(Action.SELECT_CARD_BASE + 0)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert info["selected_targets"] == [1]
+    assert state.selected_cards == [1]
+
+    confirm_obs = ObservationBuilder().build_observation(state)
+    assert confirm_obs["pack_choices_remaining"] == 0
+    assert confirm_obs["action_mask"][Action.SELECT_FROM_PACK_BASE] == 1
+    assert confirm_obs["action_mask"][Action.SKIP_PACK] == 1
+
+    reward, terminated, info = handler.step(Action.SELECT_FROM_PACK_BASE)
+
+    assert reward > 0.0
+    assert terminated is False
+    assert info["consumable_used"] == "The Lovers"
+    assert state.phase == Phase.SHOP
+    assert state.pending_pack_consumable is None
+    assert state.pending_pack_index is None
+    assert state.selected_cards == []
+    assert state.get_card_state(0).enhancement.name != "WILD"
+    assert state.get_card_state(1).enhancement.name == "WILD"
+    assert state.get_card_state(2).enhancement.name != "WILD"
+
+
+def test_skip_pack_abandons_pending_targeted_consumable_and_closes_pack():
     state = UnifiedGameState(
         phase=Phase.PACK_OPEN,
         deck=[Card(Rank.FIVE, Suit.CLUBS)],
@@ -718,20 +833,28 @@ def test_targeted_pack_consumable_is_selectable_and_resolves_from_current_hand()
     )
     shop_handler = SimpleNamespace(shop=None, pack_open_handler=None)
     handler = PackOpenHandler(state, shop_handler)
-    handler.open_pack("Arcana Pack", [{"consumable": "The Magician"}], cards_to_select=1)
-
-    mask = build_mvp_action_mask(state)
-
-    assert mask[Action.SELECT_FROM_PACK_BASE] == 1
-    assert mask[Action.SKIP_PACK] == 1
+    handler.open_pack("Arcana Pack", [{"consumable": "The Lovers"}], cards_to_select=1)
 
     reward, terminated, info = handler.step(Action.SELECT_FROM_PACK_BASE)
 
-    assert reward > 0.0
+    assert reward == 0.0
     assert terminated is False
-    assert info["consumable_used"] == "The Magician"
+    assert info["action"] == "pending_pack_target_selection"
+    assert state.pending_pack_consumable == "The Lovers"
+
+    reward, terminated, info = handler.step(Action.SKIP_PACK)
+
+    assert reward == -1.0
+    assert terminated is False
+    assert info["action"] == "skipped_pack"
+    assert info["cards_skipped"] == 1
+    assert info["abandoned_pending_consumable"] == "The Lovers"
+    assert info["transition_to"] == "shop"
     assert state.phase == Phase.SHOP
-    assert state.get_card_state(0).enhancement.name == "LUCKY"
+    assert state.pending_pack_consumable is None
+    assert state.pending_pack_index is None
+    assert state.selected_cards == []
+    assert state.pack_contents == []
 
 
 def test_pack_fool_uses_last_tarot_or_planet_memory_instead_of_inventory_contents():
