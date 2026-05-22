@@ -43,6 +43,7 @@ from balatro_gym.core_utils.mvp_contract import (
     encode_joker_tokens,
     encode_pack_item_ids,
     encode_pack_item_types,
+    get_pack_consumable_target_count,
     get_shop_item_type_id,
     is_pack_item_selectable,
     ordered_hand_levels,
@@ -133,6 +134,8 @@ class BalatroLiveEnv(gym.Env):
         self._pack_selected_indexes: list[int] = []
         self._pack_cards_to_select: int = 0
         self._last_tarot_planet_consumable: str | None = None
+        self._pending_pack_consumable: str | None = None
+        self._pending_pack_index: int | None = None
 
     # ------------------------------------------------------------------
     # Observation space — must match balatro_env_2.py exactly
@@ -158,6 +161,8 @@ class BalatroLiveEnv(gym.Env):
         self._pack_selected_indexes = []
         self._pack_cards_to_select = 0
         self._last_tarot_planet_consumable = None
+        self._pending_pack_consumable = None
+        self._pending_pack_index = None
 
         # Attempt to return to the main menu (may already be there)
         try:
@@ -271,6 +276,9 @@ class BalatroLiveEnv(gym.Env):
                 self._gs = self.client.call("buy", {"pack": pack_i})
                 self._pack_selected_indexes = []
                 self._pack_cards_to_select = 0
+                self._pending_pack_consumable = None
+                self._pending_pack_index = None
+                self._selected = []
             return self._build_obs(), 0.5, False, False, {"action": "buy"}
 
         elif action == Action.SHOP_REROLL:
@@ -309,13 +317,62 @@ class BalatroLiveEnv(gym.Env):
         return self._build_obs(), -1.0, False, False, {"error": "invalid blind action"}
 
     def _step_pack(self, action: int):
+        if Action.SELECT_CARD_BASE <= action < Action.SELECT_CARD_BASE + ActionCounts.SELECT_CARD_COUNT:
+            if self._pending_pack_index is None or not self._pending_pack_consumable:
+                return self._build_obs(), -1.0, False, False, {"error": "no pending pack target selection"}
+            i = action - Action.SELECT_CARD_BASE
+            hand_cards = ((self._gs.get("hand") or {}).get("cards") or [])
+            if i >= len(hand_cards):
+                return self._build_obs(), -1.0, False, False, {"error": "card idx out of range"}
+            if i in self._selected:
+                self._selected.remove(i)
+            else:
+                self._selected.append(i)
+                self._selected.sort()
+            return self._build_obs(), 0.0, False, False, {
+                "action": "toggle_pack_target",
+                "selected": self._selected[:],
+                "required_targets": get_pack_consumable_target_count(self._pending_pack_consumable),
+            }
+
         if Action.SELECT_FROM_PACK_BASE <= action < Action.SELECT_FROM_PACK_BASE + ActionCounts.SELECT_FROM_PACK_COUNT:
             i = action - Action.SELECT_FROM_PACK_BASE
             pack_cards = ((self._gs.get("pack") or {}).get("cards") or [])
             selected_item = pack_cards[i] if i < len(pack_cards) else None
-            self._gs = self.client.call("pack", {"card": i})
+            if selected_item is None:
+                return self._build_obs(), -1.0, False, False, {"error": "invalid pack card index"}
+
+            if self._pending_pack_index is not None and i != self._pending_pack_index:
+                return self._build_obs(), -1.0, False, False, {"error": "different pack item pending target confirmation"}
+
+            selected_label = selected_item.get("label", "")
+            target_count = get_pack_consumable_target_count(selected_label)
+            if self._pending_pack_index is None and target_count > 0:
+                self._pending_pack_consumable = selected_label
+                self._pending_pack_index = i
+                self._selected = []
+                return self._build_obs(), 0.0, False, False, {
+                    "action": "pending_pack_target_selection",
+                    "card": i,
+                    "targets_required": target_count,
+                }
+
+            if self._pending_pack_index is not None:
+                if len(self._selected) != get_pack_consumable_target_count(self._pending_pack_consumable or ""):
+                    return self._build_obs(), -1.0, False, False, {
+                        "error": "invalid target count for pending pack consumable",
+                        "selected_targets": len(self._selected),
+                        "required_targets": get_pack_consumable_target_count(self._pending_pack_consumable or ""),
+                    }
+                self._gs = self.client.call("pack", {"card": i, "targets": sorted(self._selected)})
+            else:
+                self._gs = self.client.call("pack", {"card": i})
+
             if selected_item is not None:
                 self._remember_last_tarot_planet_consumable(selected_item.get("label", ""))
+            self._selected = []
+            self._pending_pack_consumable = None
+            self._pending_pack_index = None
             if self._phase_from_gs(self._gs) == Phase.PACK_OPEN:
                 if i not in self._pack_selected_indexes:
                     self._pack_selected_indexes.append(i)
@@ -327,6 +384,7 @@ class BalatroLiveEnv(gym.Env):
         elif action == Action.SKIP_PACK:
             self._gs = self.client.call("pack", {"skip": True})
             self._clear_pack_tracking()
+            self._selected = []
             return self._build_obs(), 0.0, False, False, {"action": "skip_pack"}
 
         return self._build_obs(), -1.0, False, False, {"error": "invalid pack action"}
@@ -624,7 +682,7 @@ class BalatroLiveEnv(gym.Env):
         current_blind_slot = self._current_blind_slot(gs)
         live_state = self._build_live_contract_state(gs)
         pack_item_selectable = [
-            i not in self._pack_selected_indexes and is_pack_item_selectable(live_state, item)
+            i not in self._pack_selected_indexes and is_pack_item_selectable(live_state, item, item_index=i)
             for i, item in enumerate(pack_cards[: ActionCounts.SELECT_FROM_PACK_COUNT])
         ]
         return build_action_mask(
@@ -644,6 +702,9 @@ class BalatroLiveEnv(gym.Env):
             pack_selected_indexes=self._pack_selected_indexes,
             pack_cards_to_select=self._pack_cards_to_select,
             pack_item_selectable=pack_item_selectable,
+            pending_pack_index=self._pending_pack_index,
+            pending_target_count=get_pack_consumable_target_count(self._pending_pack_consumable or ""),
+            pending_target_valid=len(self._selected) == get_pack_consumable_target_count(self._pending_pack_consumable or ""),
         )
 
     # ------------------------------------------------------------------
@@ -698,7 +759,16 @@ class BalatroLiveEnv(gym.Env):
 
         for i, item in enumerate(pack_cards[: ActionCounts.SELECT_FROM_PACK_COUNT]):
             pack_item_selectable[i] = np.int8(
-                i not in self._pack_selected_indexes and is_pack_item_selectable(live_state, item)
+                i not in self._pack_selected_indexes and is_pack_item_selectable(live_state, item, item_index=i)
+            )
+
+        pending_target_count = get_pack_consumable_target_count(self._pending_pack_consumable or "")
+        if pending_target_count > 0:
+            pack_choices_remaining = max(0, min(ActionCounts.SELECT_FROM_PACK_COUNT, pending_target_count - len(self._selected)))
+        else:
+            pack_choices_remaining = max(
+                0,
+                min(ActionCounts.SELECT_FROM_PACK_COUNT, self._pack_cards_to_select - len(self._pack_selected_indexes)),
             )
 
         return {
@@ -706,9 +776,7 @@ class BalatroLiveEnv(gym.Env):
             "pack_item_ids": encode_pack_item_ids(pack_cards),
             "pack_item_selectable": pack_item_selectable,
             "pack_cards_to_select": np.int8(max(0, min(ActionCounts.SELECT_FROM_PACK_COUNT, self._pack_cards_to_select))),
-            "pack_choices_remaining": np.int8(
-                max(0, min(ActionCounts.SELECT_FROM_PACK_COUNT, self._pack_cards_to_select - len(self._pack_selected_indexes)))
-            ),
+            "pack_choices_remaining": np.int8(pack_choices_remaining),
             "fool_replayable_consumable": encode_fool_replayable_consumable(live_state),
         }
 
@@ -730,6 +798,8 @@ class BalatroLiveEnv(gym.Env):
             deck=[object()] * len(hand_cards),
             hand_size=len(hand_cards),
             selected_cards=list(self._selected),
+            pending_pack_consumable=self._pending_pack_consumable,
+            pending_pack_index=self._pending_pack_index,
         )
 
     def _sync_pack_tracking(self, gs: dict) -> None:
@@ -765,6 +835,8 @@ class BalatroLiveEnv(gym.Env):
     def _clear_pack_tracking(self) -> None:
         self._pack_selected_indexes = []
         self._pack_cards_to_select = 0
+        self._pending_pack_consumable = None
+        self._pending_pack_index = None
 
     def _remember_last_tarot_planet_consumable(self, consumable_name: str) -> None:
         self._ensure_tracking_attrs()
@@ -780,6 +852,10 @@ class BalatroLiveEnv(gym.Env):
             self._pack_cards_to_select = 0
         if not hasattr(self, "_last_tarot_planet_consumable"):
             self._last_tarot_planet_consumable = None
+        if not hasattr(self, "_pending_pack_consumable"):
+            self._pending_pack_consumable = None
+        if not hasattr(self, "_pending_pack_index"):
+            self._pending_pack_index = None
 
     def _phase_from_gs(self, gs: dict) -> Phase:
         state_str = gs.get("state", "")

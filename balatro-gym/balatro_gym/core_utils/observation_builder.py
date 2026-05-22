@@ -17,6 +17,7 @@ from balatro_gym.core_utils.mvp_contract import (
     encode_pack_item_types,
     get_pack_cards_to_select,
     get_pack_contents,
+    get_pending_pack_target_count,
     get_pack_selected_indexes,
     get_shop_inventory,
     get_shop_item_cost,
@@ -103,15 +104,18 @@ class ObservationBuilder:
             pack_selectable = np.zeros(5, dtype=np.int8)
             for i, item in enumerate(pack_contents[:5]):
                 pack_selectable[i] = np.int8(
-                    i not in selected_indexes and is_pack_item_selectable(state, item)
+                    i not in selected_indexes and is_pack_item_selectable(state, item, item_index=i)
                 )
 
             obs["pack_item_types"] = encode_pack_item_types(pack_contents, slots=5)
             obs["pack_item_ids"] = encode_pack_item_ids(pack_contents, slots=5)
             obs["pack_item_selectable"] = pack_selectable
             obs["pack_cards_to_select"] = np.int8(min(5, cards_to_select))
+            pending_target_count = get_pending_pack_target_count(state, shop)
             obs["pack_choices_remaining"] = np.int8(
-                max(0, min(5, cards_to_select - len(selected_indexes)))
+                max(0, min(5, pending_target_count - len(state.selected_cards)))
+                if pending_target_count > 0
+                else max(0, min(5, cards_to_select - len(selected_indexes)))
             )
 
         return obs
