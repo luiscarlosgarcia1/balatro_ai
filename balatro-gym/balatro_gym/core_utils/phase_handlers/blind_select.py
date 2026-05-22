@@ -11,6 +11,7 @@ from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.boss_blinds import BossBlindManager, select_boss_blind
+from balatro_gym.core_utils.mvp_contract import can_reroll_pending_boss_blind
 from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
 from balatro_gym.core.balatro_game import BalatroGame
 
@@ -48,8 +49,12 @@ class BlindSelectHandler:
         Returns:
             Tuple of (reward, terminated, info)
         """
+        self._ensure_pending_boss_blind()
+
         if Action.SELECT_BLIND_BASE <= action < Action.SELECT_BLIND_BASE + Action.SELECT_BLIND_COUNT:
             return self._handle_select_blind(action)
+        elif action == Action.REROLL_BOSS_BLIND:
+            return self._handle_boss_reroll()
         elif action == Action.SKIP_BLIND:
             return self._handle_skip_blind()
         else:
@@ -58,11 +63,16 @@ class BlindSelectHandler:
     def _handle_select_blind(self, action: int) -> Tuple[float, bool, Dict]:
         """Handle selecting a specific blind."""
         blind_type = action - Action.SELECT_BLIND_BASE  # 0=small, 1=big, 2=boss
+        expected_blind_type = max(0, min(2, int(self.state.round) - 1))
+        if blind_type != expected_blind_type:
+            return -1.0, False, {
+                'error': 'Selected blind does not match current progression',
+                'current_round': self.state.round,
+                'expected_blind': ['small', 'big', 'boss'][expected_blind_type],
+            }
+
         blind_names = ['small', 'big', 'boss']
-        blind_name = blind_names[blind_type]
-        
-        # Set round
-        self.state.round = blind_type + 1
+        blind_name = blind_names[expected_blind_type]
         
         # Calculate chip requirement
         base_chips = get_blind_chips(self.state.ante, blind_name)
@@ -105,6 +115,9 @@ class BlindSelectHandler:
     
     def _handle_skip_blind(self) -> Tuple[float, bool, Dict]:
         """Handle skipping the current blind."""
+        if self.state.round >= 3:
+            return -1.0, False, {'error': 'Cannot skip boss blind'}
+
         # Get skip reward/penalty based on blind type
         skip_penalty = -5.0
         skip_tag_reward = 0
@@ -145,6 +158,7 @@ class BlindSelectHandler:
         
         info = {
             'action': 'skipped_blind',
+            'skipped_blind': ['small', 'big', 'boss'][max(0, min(2, int(self.state.round) - 1))],
             'money_gained': total_money_gained,
             'tags_gained': tags_gained,
             'new_ante': self.state.ante,
@@ -152,6 +166,25 @@ class BlindSelectHandler:
         }
         
         return reward, False, info
+
+    def _handle_boss_reroll(self) -> Tuple[float, bool, Dict]:
+        """Handle paid boss blind rerolls from Director's Cut / Retcon."""
+        if not can_reroll_pending_boss_blind(self.state):
+            return -1.0, False, {'error': 'Boss blind reroll unavailable'}
+
+        previous_boss = self.state.pending_boss_blind
+        self.state.money -= 10
+        self.state.boss_blind_rerolls_used_ante += 1
+        self.state.pending_boss_blind = self._roll_pending_boss_blind(exclude_current=True)
+
+        info = {
+            'action': 'rerolled_boss_blind',
+            'money_spent': 10,
+            'boss_blind_previous': previous_boss.name if previous_boss else None,
+            'boss_blind': self.state.pending_boss_blind.name if self.state.pending_boss_blind else None,
+            'boss_rerolls_used_ante': self.state.boss_blind_rerolls_used_ante,
+        }
+        return 0.0, False, info
     
     # -------------------------------------------------------------------------
     # Helper methods
@@ -159,9 +192,11 @@ class BlindSelectHandler:
     
     def _activate_boss_blind(self, base_chips: int) -> Tuple[float, Dict]:
         """Activate a boss blind and apply its effects."""
-        # Select boss blind based on ante
-        boss_type = select_boss_blind(self.state.ante)
-        
+        self._ensure_pending_boss_blind()
+        boss_type = self.state.pending_boss_blind
+        if boss_type is None:
+            return 0.0, {'error': 'No pending boss blind available'}
+
         # Activate the boss blind
         effects = self.boss_blind_manager.activate_boss_blind(boss_type, self.state.to_dict())
         
@@ -192,6 +227,7 @@ class BlindSelectHandler:
         
         # Set boss blind state
         self.state.active_boss_blind = boss_type
+        self.state.pending_boss_blind = None
         self.state.boss_blind_active = True
         
         # Boss blind selection gives bonus reward
@@ -229,19 +265,20 @@ class BlindSelectHandler:
     
     def _advance_round_after_skip(self):
         """Advance to the next round after skipping."""
-        # Progress round/ante
-        if self.state.round == 3:
-            # Move to next ante
-            self.state.ante += 1
-            self.state.round = 1
-            self.state.reset_ante_state()
-        else:
-            # Move to next round in same ante
+        if self.state.round < 3:
             self.state.round += 1
-        
-        # Award skip money (less than playing)
-        skip_money = 15  # Base skip reward
-        self.state.money += skip_money
-        
-        # Transition to shop
-        self.state.phase = Phase.SHOP
+        self._ensure_pending_boss_blind()
+        self.state.phase = Phase.BLIND_SELECT
+
+    def _ensure_pending_boss_blind(self) -> None:
+        """Seed the visible boss offer when entering a boss round."""
+        if int(self.state.round) != 3:
+            self.state.pending_boss_blind = None
+            return
+        if self.state.pending_boss_blind is None and not self.state.boss_blind_active:
+            self.state.pending_boss_blind = self._roll_pending_boss_blind()
+
+    def _roll_pending_boss_blind(self, exclude_current: bool = False):
+        """Roll a boss blind, avoiding the current offer when possible."""
+        exclude = [self.state.pending_boss_blind] if exclude_current and self.state.pending_boss_blind else None
+        return select_boss_blind(self.state.ante, exclude=exclude)

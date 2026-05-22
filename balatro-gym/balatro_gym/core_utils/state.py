@@ -107,6 +107,7 @@ class UnifiedGameState:
     vouchers: List[str] = field(default_factory=list)  # Voucher names
     joker_slots: int = 5
     consumable_slots: int = 2
+    last_tarot_planet_consumable: Optional[str] = None
     
     # Shop state
     shop_inventory: List[Any] = field(default_factory=list)
@@ -129,7 +130,9 @@ class UnifiedGameState:
     
     # Boss blind state
     active_boss_blind: Optional[BossBlindType] = None
+    pending_boss_blind: Optional[BossBlindType] = None
     boss_blind_active: bool = False
+    boss_blind_rerolls_used_ante: int = 0
     face_down_cards: List[int] = field(default_factory=list)  # Indexes into hand_indexes
     force_draw_count: Optional[int] = None  # For The Serpent boss
     disabled_joker_slots: int = 0  # For The Plant boss
@@ -168,6 +171,7 @@ class UnifiedGameState:
             'hand_size': self.hand_size,
             'joker_slots': self.joker_slots,
             'consumable_slots': self.consumable_slots,
+            'last_tarot_planet_consumable': self.last_tarot_planet_consumable,
             
             # Statistics
             'hands_played': self.hands_played_total,
@@ -179,6 +183,7 @@ class UnifiedGameState:
             # Special states
             'boss_blind_active': self.boss_blind_active,
             'active_boss_blind': self.active_boss_blind.name if self.active_boss_blind else None,
+            'pending_boss_blind': self.pending_boss_blind.name if self.pending_boss_blind else None,
             'face_down_cards': self.face_down_cards,
             
             # Collections info
@@ -219,6 +224,7 @@ class UnifiedGameState:
             vouchers=self.vouchers.copy(),
             joker_slots=self.joker_slots,
             consumable_slots=self.consumable_slots,
+            last_tarot_planet_consumable=self.last_tarot_planet_consumable,
             
             # Shop
             shop_inventory=self.shop_inventory.copy(),
@@ -239,7 +245,9 @@ class UnifiedGameState:
             
             # Boss blind
             active_boss_blind=self.active_boss_blind,
+            pending_boss_blind=self.pending_boss_blind,
             boss_blind_active=self.boss_blind_active,
+            boss_blind_rerolls_used_ante=self.boss_blind_rerolls_used_ante,
             face_down_cards=self.face_down_cards.copy(),
             force_draw_count=self.force_draw_count,
             disabled_joker_slots=self.disabled_joker_slots,
@@ -267,6 +275,8 @@ class UnifiedGameState:
         self.best_hand_this_ante = 0
         self.boss_blind_active = False
         self.active_boss_blind = None
+        self.pending_boss_blind = None
+        self.boss_blind_rerolls_used_ante = 0
         self.disabled_joker_slots = 0
         
         # Update perishable counters
