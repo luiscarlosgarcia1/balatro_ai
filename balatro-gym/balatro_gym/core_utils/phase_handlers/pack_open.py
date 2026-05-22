@@ -50,7 +50,9 @@ class PackOpenHandler:
             Tuple of (reward, terminated, info)
         """
         if Action.SELECT_FROM_PACK_BASE <= action < Action.SELECT_FROM_PACK_BASE + Action.SELECT_FROM_PACK_COUNT:
-            return self._handle_select_card(action)
+            return self._handle_select_pack_item(action)
+        elif Action.SELECT_CARD_BASE <= action < Action.SELECT_CARD_BASE + Action.SELECT_CARD_COUNT:
+            return self._handle_toggle_pack_target(action)
         elif action == Action.SKIP_PACK:
             return self._handle_skip_pack()
         else:
@@ -75,6 +77,8 @@ class PackOpenHandler:
         self.pack_type = pack_type
         self.pack_contents = self._normalize_pack_contents(pack_type, pack_contents)
         self.selected_indexes = []
+        self.state.selected_cards = []
+        self._clear_pending_pack_consumable()
         
         # Determine how many cards can be selected
         self.cards_to_select = (
@@ -94,29 +98,57 @@ class PackOpenHandler:
             'pack_contents': self._format_pack_contents()
         }
     
-    def _handle_select_card(self, action: int) -> Tuple[float, bool, Dict]:
-        """Handle selecting a card from the pack."""
+    def _handle_select_pack_item(self, action: int) -> Tuple[float, bool, Dict]:
+        """Handle selecting or confirming a card from the pack."""
         card_idx = action - Action.SELECT_FROM_PACK_BASE
         
         if card_idx >= len(self.pack_contents):
             return -1.0, False, {'error': 'Invalid card index'}
         
+        pending_pack_index = self.state.pending_pack_index
+        if pending_pack_index is not None and card_idx != pending_pack_index:
+            return -1.0, False, {'error': 'Different pack item pending target confirmation'}
+
         if card_idx in self.selected_indexes:
             return -1.0, False, {'error': 'Card already selected'}
         
-        if len(self.selected_indexes) >= self.cards_to_select:
+        if pending_pack_index is None and len(self.selected_indexes) >= self.cards_to_select:
             return -1.0, False, {'error': 'Already selected maximum cards'}
 
         selected_item = self.pack_contents[card_idx]
-        if not self._can_take_pack_item(selected_item):
+        if pending_pack_index is None and not self._can_take_pack_item(selected_item):
             return -1.0, False, {'error': 'Cannot take selected pack item'}
+
+        pending_consumable = self._get_targeted_pack_consumable_name(selected_item)
+        if pending_pack_index is None and pending_consumable is not None:
+            self.state.pending_pack_consumable = pending_consumable
+            self.state.pending_pack_index = card_idx
+            self.state.selected_cards = []
+            self._sync_pack_state_to_unified_state()
+            return 0.0, False, {
+                'action': 'pending_pack_target_selection',
+                'card_index': card_idx,
+                'consumable': pending_consumable,
+                'required_targets': get_pack_consumable_target_count(pending_consumable),
+            }
+
+        if pending_pack_index is not None:
+            required_targets = get_pack_consumable_target_count(self.state.pending_pack_consumable or "")
+            if len(self.state.selected_cards) != required_targets:
+                return -1.0, False, {
+                    'error': 'Invalid target count for pending pack consumable',
+                    'required_targets': required_targets,
+                    'selected_targets': len(self.state.selected_cards),
+                }
 
         # Select the card
         self.selected_indexes.append(card_idx)
-        self._sync_pack_state_to_unified_state()
         
         # Apply the selected item
-        reward, apply_info = self._apply_pack_item(selected_item)
+        reward, apply_info = self._apply_pack_item(selected_item, target_indexes=self.state.selected_cards.copy())
+        self.state.selected_cards = []
+        self._clear_pending_pack_consumable()
+        self._sync_pack_state_to_unified_state()
         
         info = {
             'action': 'selected_card',
@@ -137,15 +169,44 @@ class PackOpenHandler:
         # Small penalty for not using full pack value
         cards_skipped = self.cards_to_select - len(self.selected_indexes)
         reward = -1.0 * cards_skipped
+        abandoned_consumable = self.state.pending_pack_consumable
+        self.state.selected_cards = []
+        self._clear_pending_pack_consumable()
         
         info = {
             'action': 'skipped_pack',
             'cards_skipped': cards_skipped
         }
+        if abandoned_consumable:
+            info['abandoned_pending_consumable'] = abandoned_consumable
 
         self._sync_pack_state_to_unified_state()
         
         return self._complete_pack_opening(reward, info)
+
+    def _handle_toggle_pack_target(self, action: int) -> Tuple[float, bool, Dict]:
+        """Toggle a hand-card target while a targeted pack consumable is pending."""
+        if self.state.pending_pack_index is None or not self.state.pending_pack_consumable:
+            return -1.0, False, {'error': 'No pending targeted pack consumable'}
+
+        card_idx = action - Action.SELECT_CARD_BASE
+        if card_idx >= len(self.state.hand_indexes):
+            return -1.0, False, {'error': 'Invalid hand card index'}
+
+        if card_idx in self.state.selected_cards:
+            self.state.selected_cards.remove(card_idx)
+        else:
+            self.state.selected_cards.append(card_idx)
+            self.state.selected_cards.sort()
+
+        self._sync_pack_state_to_unified_state()
+        return 0.0, False, {
+            'action': 'toggled_pack_target',
+            'consumable': self.state.pending_pack_consumable,
+            'card_index': card_idx,
+            'selected_targets': self.state.selected_cards.copy(),
+            'required_targets': get_pack_consumable_target_count(self.state.pending_pack_consumable),
+        }
     
     def _complete_pack_opening(self, base_reward: float, info: Dict) -> Tuple[float, bool, Dict]:
         """Complete pack opening and return to shop."""
@@ -206,6 +267,8 @@ class PackOpenHandler:
         self.state.pack_cards_to_select = 0
         self.state.pack_selection_limit = 0
         self.state.pack_type = ""
+        self._clear_pending_pack_consumable()
+        self.state.selected_cards = []
 
     def _can_take_pack_item(self, item: Dict) -> bool:
         """Check inventory capacity for the normalized pack item."""
@@ -342,7 +405,7 @@ class PackOpenHandler:
         
         return formatted
     
-    def _apply_pack_item(self, item: Dict) -> Tuple[float, Dict]:
+    def _apply_pack_item(self, item: Dict, target_indexes: Optional[List[int]] = None) -> Tuple[float, Dict]:
         """Apply the selected pack item to game state."""
         info = {}
         reward = 0.0
@@ -372,7 +435,7 @@ class PackOpenHandler:
                 reward += 2.0
         
         elif 'consumable' in item:
-            reward, consumable_info = self._apply_pack_consumable(item['consumable'])
+            reward, consumable_info = self._apply_pack_consumable(item['consumable'], target_indexes=target_indexes)
             info.update(consumable_info)
         
         elif 'joker' in item:
@@ -386,9 +449,9 @@ class PackOpenHandler:
         
         return reward, info
 
-    def _apply_pack_consumable(self, consumable_name: str) -> Tuple[float, Dict]:
+    def _apply_pack_consumable(self, consumable_name: str, target_indexes: Optional[List[int]] = None) -> Tuple[float, Dict]:
         """Resolve supported pack consumables immediately instead of storing them."""
-        target_cards = self._get_pack_consumable_targets(consumable_name)
+        target_cards = self._get_pack_consumable_targets(consumable_name, target_indexes=target_indexes)
         game_state = self.state.to_dict()
         game_state['deck'] = self.state.deck.copy()
         game_state['hand'] = [self.state.deck[idx] for idx in self.state.hand_indexes if 0 <= idx < len(self.state.deck)]
@@ -455,19 +518,30 @@ class PackOpenHandler:
 
         return reward, info
 
-    def _get_pack_consumable_targets(self, consumable_name: str) -> List[Any]:
-        """Use a stable prefix of the current hand as the MVP pack target pool."""
+    def _get_pack_consumable_targets(self, consumable_name: str, target_indexes: Optional[List[int]] = None) -> List[Any]:
+        """Resolve explicit hand targets for supported targeted pack consumables."""
         target_count = get_pack_consumable_target_count(consumable_name)
         if target_count <= 0:
             return []
 
         targets: List[Any] = []
-        for card_idx in self.state.hand_indexes:
+        for hand_idx in target_indexes or []:
+            if not (0 <= hand_idx < len(self.state.hand_indexes)):
+                continue
+            card_idx = self.state.hand_indexes[hand_idx]
             if 0 <= card_idx < len(self.state.deck):
                 targets.append(CardAdapter.to_consumable_format(self.state.deck[card_idx], card_idx, self.state))
-                if len(targets) >= target_count:
-                    break
         return targets
+
+    def _get_targeted_pack_consumable_name(self, item: Dict) -> Optional[str]:
+        consumable_name = item.get('consumable')
+        if not consumable_name:
+            return None
+        return consumable_name if get_pack_consumable_target_count(consumable_name) > 0 else None
+
+    def _clear_pending_pack_consumable(self) -> None:
+        self.state.pending_pack_consumable = None
+        self.state.pending_pack_index = None
 
     def _apply_card_modifications(self, affected_cards: List[Any]) -> float:
         """Persist card mutations from immediate consumable resolution."""

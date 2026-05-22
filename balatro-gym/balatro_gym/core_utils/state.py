@@ -112,6 +112,8 @@ class UnifiedGameState:
     # Shop state
     shop_inventory: List[Any] = field(default_factory=list)
     shop_reroll_cost: int = 5
+    pending_pack_consumable: Optional[str] = None
+    pending_pack_index: Optional[int] = None
     
     # Statistics
     hands_played_total: int = 0
@@ -179,6 +181,8 @@ class UnifiedGameState:
             'round_chips_scored': self.round_chips_scored,
             'chips_scored': self.chips_scored,
             'chips_needed': self.chips_needed,
+            'pending_pack_consumable': self.pending_pack_consumable,
+            'pending_pack_index': self.pending_pack_index,
             
             # Special states
             'boss_blind_active': self.boss_blind_active,
@@ -229,6 +233,8 @@ class UnifiedGameState:
             # Shop
             shop_inventory=self.shop_inventory.copy(),
             shop_reroll_cost=self.shop_reroll_cost,
+            pending_pack_consumable=self.pending_pack_consumable,
+            pending_pack_index=self.pending_pack_index,
             
             # Statistics
             hands_played_total=self.hands_played_total,
