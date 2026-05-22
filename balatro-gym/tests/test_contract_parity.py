@@ -1,7 +1,22 @@
 from __future__ import annotations
 
 import numpy as np
+import sys
+import types
 from types import SimpleNamespace
+
+try:
+    import httpx  # noqa: F401
+except ModuleNotFoundError:
+    httpx = types.ModuleType("httpx")
+
+    class _StubHTTPXError(Exception):
+        pass
+
+    httpx.ConnectError = _StubHTTPXError
+    httpx.TimeoutException = _StubHTTPXError
+    httpx.post = lambda *args, **kwargs: None
+    sys.modules["httpx"] = httpx
 
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.jokers import JokerInfo
@@ -336,6 +351,134 @@ def test_mega_pack_selection_updates_mask_until_pack_completes():
     assert mask[Action.SELECT_FROM_PACK_BASE + 1] == 0
     assert mask[Action.SELECT_FROM_PACK_BASE + 2] == 1
     assert mask[Action.SKIP_PACK] == 1
+
+
+def test_live_targeted_pack_subflow_requires_exact_targets_and_confirms_with_targets():
+    env = _make_live_env_stub()
+    calls: list[tuple[str, dict | None]] = []
+    shop_gs = {
+        "state": "SHOP",
+        "round": {"chips": 0, "hands_left": 4, "discards_left": 3, "reroll_cost": 5},
+        "blinds": {
+            "small": {"score": 300, "status": "DEFEATED"},
+            "big": {"score": 450, "status": "CURRENT"},
+            "boss": {"score": 600, "status": "UPCOMING"},
+        },
+        "hand": {"cards": []},
+        "jokers": {"cards": [], "limit": 5},
+        "consumables": {"cards": [], "limit": 2},
+        "shop": {"cards": []},
+        "packs": {"cards": []},
+        "pack": {"cards": []},
+        "cards": {"count": 52},
+        "hands": {},
+        "money": 0,
+        "ante_num": 1,
+        "round_num": 2,
+    }
+
+    class StubClient:
+        def call(self, action: str, payload: dict | None = None):
+            calls.append((action, payload))
+            if action == "pack":
+                assert payload == {"card": 0, "targets": [1]}
+                return shop_gs
+            raise AssertionError(f"unexpected live client action: {action}")
+
+    env.client = StubClient()
+    env._gs = {
+        "state": "PACK_OPEN",
+        "round": {"chips": 0, "hands_left": 4, "discards_left": 3, "reroll_cost": 5},
+        "blinds": {
+            "small": {"score": 300, "status": "DEFEATED"},
+            "big": {"score": 450, "status": "CURRENT"},
+            "boss": {"score": 600, "status": "UPCOMING"},
+        },
+        "hand": {
+            "cards": [
+                {"value": {"rank": "5", "suit": "C"}},
+                {"value": {"rank": "K", "suit": "H"}},
+                {"value": {"rank": "A", "suit": "S"}},
+            ]
+        },
+        "jokers": {"cards": [], "limit": 5},
+        "consumables": {"cards": [], "limit": 2},
+        "shop": {"cards": []},
+        "packs": {"cards": []},
+        "pack": {
+            "cards": [
+                {"label": "The Lovers", "set": "Tarot", "selectable": True},
+                {"label": "Mercury", "set": "Planet", "selectable": True},
+            ],
+            "choices": 1,
+            "selected_indexes": [],
+        },
+        "cards": {"count": 52},
+        "hands": {},
+        "money": 0,
+        "ante_num": 1,
+        "round_num": 2,
+    }
+    initial_obs = env._build_obs()
+    assert initial_obs["action_mask"][Action.SELECT_FROM_PACK_BASE] == 1
+    assert initial_obs["action_mask"][Action.SELECT_FROM_PACK_BASE + 1] == 1
+    assert initial_obs["action_mask"][Action.SKIP_PACK] == 1
+
+    obs, reward, terminated, truncated, info = env.step(Action.SELECT_FROM_PACK_BASE)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert truncated is False
+    assert info["action"] == "pending_pack_target_selection"
+    assert info["card"] == 0
+    assert info["targets_required"] == 1
+    assert calls == []
+    assert env._pending_pack_consumable == "The Lovers"
+    assert env._pending_pack_index == 0
+    assert obs["pack_item_ids"][:2].tolist() == [
+        encode_consumable_id("The Lovers"),
+        encode_consumable_id("Mercury"),
+    ]
+    assert obs["pack_choices_remaining"] == 1
+    assert obs["action_mask"][Action.SELECT_FROM_PACK_BASE] == 0
+    assert obs["action_mask"][Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert obs["action_mask"][Action.SELECT_CARD_BASE + 0] == 1
+    assert obs["action_mask"][Action.SELECT_CARD_BASE + 1] == 1
+    assert obs["action_mask"][Action.SELECT_CARD_BASE + 2] == 1
+    assert obs["action_mask"][Action.SKIP_PACK] == 1
+
+    obs, reward, terminated, truncated, info = env.step(Action.SELECT_FROM_PACK_BASE)
+
+    assert reward == -1.0
+    assert terminated is False
+    assert truncated is False
+    assert info["error"] == "invalid action"
+    assert calls == []
+
+    obs, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE + 1)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert truncated is False
+    assert info["action"] == "toggle_pack_target"
+    assert info["selected"] == [1]
+    assert info["required_targets"] == 1
+    assert obs["pack_choices_remaining"] == 0
+    assert obs["action_mask"][Action.SELECT_FROM_PACK_BASE] == 1
+    assert obs["action_mask"][Action.SELECT_FROM_PACK_BASE + 1] == 0
+    assert obs["action_mask"][Action.SKIP_PACK] == 1
+
+    obs, reward, terminated, truncated, info = env.step(Action.SELECT_FROM_PACK_BASE)
+
+    assert reward == 0.5
+    assert terminated is False
+    assert truncated is False
+    assert info["action"] == "select_pack"
+    assert calls == [("pack", {"card": 0, "targets": [1]})]
+    assert obs["phase"] == Phase.SHOP
+    assert env._pending_pack_consumable is None
+    assert env._pending_pack_index is None
+    assert env._selected == []
 
 
 def test_selecting_big_blind_resets_round_state_and_transitions_to_play():
