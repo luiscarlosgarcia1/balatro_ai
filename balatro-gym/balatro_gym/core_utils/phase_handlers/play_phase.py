@@ -7,6 +7,7 @@ This module handles all actions during the PLAY phase including:
 - Card selection
 """
 
+from dataclasses import replace
 from typing import Tuple, Dict, List, Any, Optional
 import numpy as np
 
@@ -19,7 +20,7 @@ from balatro_gym.core.cards import Card, Enhancement, Edition, Seal, Enhancement
 from balatro_gym.scoring.scoring_engine import ScoreEngine, HandType
 from balatro_gym.scoring.unified_scoring import UnifiedScorer, ScoringContext
 from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
-from balatro_gym.core.consumables import ConsumableManager
+from balatro_gym.core.consumables import ConsumableManager, is_planet_consumable_name, is_tarot_consumable_name
 from balatro_gym.core.boss_blinds import BossBlindManager
 from balatro_gym.core.balatro_game import BalatroGame
 
@@ -82,6 +83,8 @@ class PlayPhaseHandler:
         """Handle playing the selected hand."""
         if len(self.state.selected_cards) == 0:
             return -1.0, False, {'error': 'No cards selected'}
+
+        previous_round_score = self.state.round_chips_scored
         
         # Get selected cards
         selected_cards, selected_game_cards = self._get_selected_cards()
@@ -118,17 +121,16 @@ class PlayPhaseHandler:
         
         # Apply boss blind post-scoring effects
         if self.state.boss_blind_active and self.boss_blind_manager.active_blind:
-            self.boss_blind_manager.on_hand_scored(selected_game_cards, hand_type_name, self.state.to_dict())
-            # Sync any changes from boss blind
-            if 'money' in self.state.to_dict():
-                self.state.money = self.state.to_dict()['money']
+            boss_state = self.state.to_dict()
+            self.boss_blind_manager.on_hand_scored(selected_game_cards, hand_type_name, boss_state)
+            self._sync_post_score_boss_state(boss_state)
         
         # Clear selection
         self.state.selected_cards = []
         
         # Calculate reward
         reward_info = self.reward_calculator.calculate_play_reward(
-            old_score=final_score - self.state.round_chips_scored,
+            old_score=previous_round_score,
             new_score=self.state.round_chips_scored,
             chips_needed=self.state.chips_needed,
             final_score=final_score,
@@ -244,11 +246,7 @@ class PlayPhaseHandler:
         
         if card_idx >= len(self.state.hand_indexes):
             return -1.0, False, {'error': 'Invalid card index'}
-        
-        # Check if card is face down (boss blind effect)
-        if card_idx in self.state.face_down_cards:
-            return -1.0, False, {'error': 'Cannot select face down card'}
-        
+
         # Toggle selection
         if card_idx in self.state.selected_cards:
             self.state.selected_cards.remove(card_idx)
@@ -297,6 +295,9 @@ class PlayPhaseHandler:
             'consumable_used': consumable_name,
             'result': result['message']
         }
+
+        if is_tarot_consumable_name(consumable_name) or is_planet_consumable_name(consumable_name):
+            self.state.last_tarot_planet_consumable = consumable_name
         
         return reward, False, info
     
@@ -505,6 +506,15 @@ class PlayPhaseHandler:
                 self.state.hand_indexes.append(self.rng.choice('card_draw', available))
         
         self.state.force_draw_count = None
+
+    def _sync_post_score_boss_state(self, boss_state: Dict[str, Any]) -> None:
+        """Copy boss post-score mutations from the scratch dict back into unified state."""
+        if 'money' in boss_state:
+            self.state.money = int(boss_state['money'])
+
+        if 'force_draw_count' in boss_state:
+            force_draw_count = boss_state['force_draw_count']
+            self.state.force_draw_count = None if force_draw_count is None else int(force_draw_count)
     
     def _apply_discard_effects(self, discarded_cards: List[Any]) -> int:
         """Apply joker effects for discarding."""
@@ -638,6 +648,16 @@ class PlayPhaseHandler:
         """Apply modifications to affected cards."""
         for affected in affected_cards:
             if hasattr(affected, 'card_idx'):
+                if 0 <= affected.card_idx < len(self.state.deck):
+                    original = self.state.deck[affected.card_idx]
+                    updated_rank = getattr(affected, 'rank', original.rank)
+                    updated_suit = getattr(affected, 'suit', original.suit)
+                    self.state.deck[affected.card_idx] = replace(
+                        original,
+                        rank=updated_rank,
+                        suit=updated_suit,
+                    )
+
                 card_state = self.state.get_card_state(affected.card_idx)
                 
                 if hasattr(affected, 'enhancement'):

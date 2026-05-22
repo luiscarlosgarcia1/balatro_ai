@@ -10,6 +10,11 @@ from typing import List, Optional, Dict, Tuple, Any
 from dataclasses import dataclass
 import random
 
+PLANET_NAMES = (
+    'Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter',
+    'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Planet X', 'Ceres', 'Eris',
+)
+
 # Card suits and ranks
 class Suit(IntEnum):
     SPADES = 0
@@ -125,13 +130,12 @@ class TarotEffects:
         }
         
         if tarot == TarotCard.THE_FOOL:
-            # Copy random consumable
-            if game_state.get('consumables'):
-                copied = random.choice(game_state['consumables'])
-                game_state['consumables'].append(copied)
-                result['items_created'].append(copied)
+            remembered = game_state.get('last_tarot_planet_consumable')
+            has_capacity = len(game_state.get('consumables', [])) < game_state.get('consumable_slots', 2)
+            if remembered and remembered != 'The Fool' and has_capacity:
+                result['items_created'].append(remembered)
                 result['success'] = True
-                result['message'] = f"Copied {copied}"
+                result['message'] = f"Recreated {remembered}"
                 
         elif tarot == TarotCard.THE_MAGICIAN:
             # Enhance 2 cards to Lucky
@@ -144,8 +148,7 @@ class TarotEffects:
                 
         elif tarot == TarotCard.THE_HIGH_PRIESTESS:
             # Create 2 random Planet cards
-            planets = ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 
-                      'Saturn', 'Uranus', 'Neptune', 'Pluto']
+            planets = list(PLANET_NAMES[:9])
             for _ in range(2):
                 planet = random.choice(planets)
                 if len(game_state.get('consumables', [])) < game_state.get('consumable_slots', 2):
@@ -317,8 +320,7 @@ class TarotEffects:
                 
         elif tarot == TarotCard.JUDGEMENT:
             # Create random Planet card
-            planets = ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 
-                      'Saturn', 'Uranus', 'Neptune', 'Pluto']
+            planets = list(PLANET_NAMES[:9])
             planet = random.choice(planets)
             if len(game_state.get('consumables', [])) < game_state.get('consumable_slots', 2):
                 game_state['consumables'].append(planet)
@@ -642,9 +644,7 @@ class ConsumableManager:
             pass
         
         # Check if it's a Planet card
-        planet_names = ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter',
-                       'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Planet X', 'Ceres', 'Eris']
-        if consumable_name in planet_names:
+        if consumable_name in PLANET_NAMES:
             # This would be handled by the ScoreEngine
             return {
                 'success': True,
@@ -653,6 +653,26 @@ class ConsumableManager:
             }
         
         return {'success': False, 'message': f"Unknown consumable: {consumable_name}"}
+
+
+def is_tarot_consumable_name(consumable_name: str) -> bool:
+    try:
+        TarotCard[consumable_name.upper().replace(' ', '_')]
+    except KeyError:
+        return False
+    return True
+
+
+def is_spectral_consumable_name(consumable_name: str) -> bool:
+    try:
+        SpectralCard[consumable_name.upper().replace(' ', '_')]
+    except KeyError:
+        return False
+    return True
+
+
+def is_planet_consumable_name(consumable_name: str) -> bool:
+    return consumable_name in PLANET_NAMES
 
 # ---------------------------------------------------------------------------
 # Testing
