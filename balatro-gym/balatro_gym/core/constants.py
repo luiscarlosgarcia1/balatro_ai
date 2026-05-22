@@ -74,7 +74,8 @@ class Action(IntEnum):
     SELECT_BLIND_BASE: int = 45  # small/big/boss → 45‑47
     # SELECT_BLIND_COUNT = 3
     SKIP_BLIND: int = 48
-    
+    REROLL_BOSS_BLIND: int = 49
+
     # === Pack opening ===
     SELECT_FROM_PACK_BASE: int = 50  # 5 choices → 50‑54
     # SELECT_FROM_PACK_COUNT = 5
