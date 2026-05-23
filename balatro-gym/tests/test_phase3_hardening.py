@@ -432,6 +432,130 @@ def test_round_manager_preserves_voucher_hand_and_discard_bonuses():
     assert game.round_discards == 5
 
 
+def test_round_manager_cashout_uses_blind_reward_hands_and_interest():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        round=2,
+        money=37,
+        hands_left=2,
+        vouchers=["Seed Money"],
+        jokers=[JokerInfo(84, "To the Moon", 5, "Extra interest")],
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
+
+    manager.advance_round()
+
+    assert state.money == 57
+    assert state.phase == Phase.SHOP
+    assert state.round == 3
+
+
+def test_round_manager_boss_cashout_uses_boss_reward_and_resets_blind_state():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=2,
+        round=3,
+        money=24,
+        hands_left=1,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_HOOK,
+        face_down_cards=[0, 2],
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    boss_blind_manager = SimpleNamespace(active_blind=SimpleNamespace(money_reward=5), deactivate=lambda: None)
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_blind_manager)
+
+    manager.advance_round()
+
+    assert state.money == 34
+    assert state.ante == 3
+    assert state.round == 1
+    assert state.phase == Phase.SHOP
+    assert state.boss_blind_active is False
+    assert state.active_boss_blind is None
+    assert state.face_down_cards == []
+
+
+def test_round_manager_cashout_includes_supported_joker_rows_and_discard_modifier():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        round=2,
+        money=20,
+        hands_left=2,
+        discards_left=3,
+        money_per_discard=2,
+        deck=[
+            Card(Rank.NINE, Suit.CLUBS),
+            Card(Rank.NINE, Suit.HEARTS),
+            Card(Rank.ACE, Suit.SPADES),
+        ],
+        jokers=[
+            JokerInfo(90, "Golden Joker", 6, "+$4 each round"),
+            JokerInfo(73, "Cloud 9", 7, "$ per 9 in deck"),
+            JokerInfo(35, "Delayed Grat.", 4, "$2/discard if none"),
+            JokerInfo(139, "Satellite", 6, "$ per Planet used"),
+            JokerInfo(74, "Rocket", 6, "$ each round +2 boss"),
+        ],
+        unique_planet_cards_used=["Mercury", "Mars"],
+    )
+    state.rocket_payouts = {4: 5}
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
+
+    manager.advance_round()
+
+    assert state.money == 55
+    assert state.phase == Phase.SHOP
+    assert state.round == 3
+    assert state.get_rocket_payout(4) == 5
+
+
+def test_round_manager_delayed_gratification_requires_no_discards_used():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        round=1,
+        money=0,
+        hands_left=1,
+        discards_left=3,
+        discards_used_this_round=1,
+        jokers=[JokerInfo(35, "Delayed Grat.", 4, "$2/discard if none")],
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
+
+    manager.advance_round()
+
+    assert state.money == 4
+
+
+def test_round_manager_boss_clear_increases_future_rocket_payout_after_current_cashout():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=2,
+        round=3,
+        money=0,
+        hands_left=1,
+        jokers=[JokerInfo(74, "Rocket", 6, "$ each round +2 boss")],
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_HOOK,
+    )
+    state.rocket_payouts = {0: 3}
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    boss_blind_manager = SimpleNamespace(active_blind=SimpleNamespace(money_reward=5), deactivate=lambda: None)
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_blind_manager)
+
+    manager.advance_round()
+
+    assert state.money == 9
+    assert state.get_rocket_payout(0) == 5
+
+
 def test_skip_blind_progression_advances_visible_selection_without_changing_ante():
     state = UnifiedGameState(phase=Phase.BLIND_SELECT, ante=2, round=1)
     handler = BlindSelectHandler(
@@ -706,6 +830,7 @@ def test_pack_planet_consumable_resolves_immediately_instead_of_entering_invento
     assert state.phase == Phase.SHOP
     assert state.consumables == []
     assert state.hand_levels[HandType.FLUSH] == 2
+    assert state.unique_planet_cards_used == ["Jupiter"]
 
 
 def test_targeted_pack_consumable_enters_pending_subflow_and_resolves_with_explicit_targets():
@@ -939,10 +1064,15 @@ def test_play_mask_requires_selected_targets_for_single_target_consumables():
     state = UnifiedGameState(
         phase=Phase.PLAY,
         deck=[Card(Rank.FIVE, Suit.CLUBS)],
-        hand_indexes=[0],
+        hand_indexes=[0, 1, 2],
         consumables=["The Magician", "Mercury"],
         selected_cards=[],
     )
+    state.deck = [
+        Card(Rank.FIVE, Suit.CLUBS),
+        Card(Rank.SEVEN, Suit.HEARTS),
+        Card(Rank.KING, Suit.SPADES),
+    ]
 
     mask = build_mvp_action_mask(state)
 
@@ -953,6 +1083,11 @@ def test_play_mask_requires_selected_targets_for_single_target_consumables():
     mask = build_mvp_action_mask(state)
 
     assert mask[Action.USE_CONSUMABLE_BASE + 0] == 1
+
+    state.selected_cards = [0, 1, 2]
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.USE_CONSUMABLE_BASE + 0] == 0
 
 
 def test_play_mask_requires_two_selected_targets_for_death():
@@ -975,6 +1110,79 @@ def test_play_mask_requires_two_selected_targets_for_death():
     mask = build_mvp_action_mask(state)
 
     assert mask[Action.USE_CONSUMABLE_BASE] == 1
+
+    state.selected_cards = [0, 1, 2]
+    state.hand_indexes = [0, 1, 2]
+    state.deck.append(Card(Rank.ACE, Suit.SPADES))
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.USE_CONSUMABLE_BASE] == 0
+
+
+def test_play_consumable_rejects_overselected_single_target_tarot_before_engine_call():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        deck=[
+            Card(Rank.FIVE, Suit.CLUBS),
+            Card(Rank.SEVEN, Suit.HEARTS),
+            Card(Rank.KING, Suit.SPADES),
+        ],
+        hand_indexes=[0, 1, 2],
+        selected_cards=[0, 1, 2],
+        consumables=["The Lovers"],
+    )
+    manager = SimpleNamespace(use_consumable=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("engine should not be called")))
+    handler = PlayPhaseHandler(
+        state,
+        SimpleNamespace(hand_size=state.hand_size),
+        SimpleNamespace(apply_planet=lambda *_args, **_kwargs: None),
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=manager,
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    reward, terminated, info = handler.step(Action.USE_CONSUMABLE_BASE)
+
+    assert reward == -1.0
+    assert terminated is False
+    assert info["error"] == "Invalid target count for consumable"
+    assert info["required_targets"] == 1
+    assert info["selected_targets"] == 3
+
+
+def test_play_consumable_rejects_non_exact_target_count_for_death_before_engine_call():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        deck=[
+            Card(Rank.FIVE, Suit.CLUBS),
+            Card(Rank.KING, Suit.HEARTS),
+            Card(Rank.ACE, Suit.SPADES),
+        ],
+        hand_indexes=[0, 1, 2],
+        selected_cards=[0],
+        consumables=["Death"],
+    )
+    manager = SimpleNamespace(use_consumable=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("engine should not be called")))
+    handler = PlayPhaseHandler(
+        state,
+        SimpleNamespace(hand_size=state.hand_size),
+        SimpleNamespace(apply_planet=lambda *_args, **_kwargs: None),
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=manager,
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    reward, terminated, info = handler.step(Action.USE_CONSUMABLE_BASE)
+
+    assert reward == -1.0
+    assert terminated is False
+    assert info["error"] == "Invalid target count for consumable"
+    assert info["required_targets"] == 2
+    assert info["selected_targets"] == 1
 
 
 def test_play_consumable_updates_memory_and_persists_rank_suit_mutations():
@@ -1009,6 +1217,77 @@ def test_play_consumable_updates_memory_and_persists_rank_suit_mutations():
     assert state.last_tarot_planet_consumable == "Death"
     assert state.deck[0].rank == Rank.KING
     assert state.deck[0].suit == Suit.HEARTS
+
+
+def test_play_discard_tracks_discards_used_this_round():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        deck=[Card(Rank.FIVE, Suit.CLUBS)],
+        hand_indexes=[0],
+        selected_cards=[0],
+        discards_left=3,
+    )
+    game = SimpleNamespace(
+        hand_indexes=[0],
+        highlighted_indexes=[],
+        deck=state.deck,
+        round_hands=state.hands_left,
+        round_discards=state.discards_left,
+        discards=state.discards_left,
+        highlight_card=lambda idx: None,
+    )
+
+    def _discard_hand():
+        game.round_discards -= 1
+
+    game.discard_hand = _discard_hand
+
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        SimpleNamespace(),
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(apply_joker_effect=lambda *_args, **_kwargs: None),
+        consumable_manager=SimpleNamespace(),
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    reward, terminated, info = handler.step(Action.DISCARD)
+
+    assert reward >= 0.2
+    assert terminated is False
+    assert info["cards_discarded"] == 1
+    assert state.discards_used_this_round == 1
+
+
+def test_play_planet_consumable_records_unique_planet_usage():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        consumables=["Mercury"],
+        hand_levels={HandType.ONE_PAIR: 1},
+    )
+    game = SimpleNamespace(hand_size=state.hand_size)
+    engine = SimpleNamespace(apply_planet=lambda *_args, **_kwargs: None)
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        engine,
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=ConsumableManager(),
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    reward, terminated, info = handler.step(Action.USE_CONSUMABLE_BASE)
+
+    assert reward > 0.0
+    assert terminated is False
+    assert info["consumable_used"] == "Mercury"
+    assert state.consumables == []
+    assert state.last_tarot_planet_consumable == "Mercury"
+    assert state.unique_planet_cards_used == ["Mercury"]
 
 
 def test_telescope_forces_first_celestial_pack_choice_to_most_played_planet(monkeypatch):

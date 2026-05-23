@@ -100,6 +100,7 @@ class UnifiedGameState:
     hands_left: int = 4
     discards_left: int = 3
     hand_size: int = 8
+    money_per_discard: Optional[int] = None
     
     # Collections
     jokers: List[JokerInfo] = field(default_factory=list)
@@ -121,8 +122,10 @@ class UnifiedGameState:
     best_hand_this_ante: int = 0
     jokers_sold: int = 0
     cards_discarded_total: int = 0
+    discards_used_this_round: int = 0
     rerolls_used: int = 0
     shop_visits: int = 0
+    unique_planet_cards_used: List[str] = field(default_factory=list)
     
     # Hand levels (HandType -> level)
     hand_levels: Dict[HandType, int] = field(default_factory=dict)
@@ -143,6 +146,7 @@ class UnifiedGameState:
     eternal_jokers: List[int] = field(default_factory=list)  # Indexes of eternal jokers
     perishable_counters: Dict[int, int] = field(default_factory=dict)  # Joker index -> rounds left
     rental_jokers: List[int] = field(default_factory=list)  # Indexes of rental jokers
+    rocket_payouts: Dict[int, int] = field(default_factory=dict)  # Joker index -> current round-end payout
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to dictionary for joker effects and other systems.
@@ -171,6 +175,7 @@ class UnifiedGameState:
             'hands_left': self.hands_left,
             'discards_left': self.discards_left,
             'hand_size': self.hand_size,
+            'money_per_discard': self.money_per_discard,
             'joker_slots': self.joker_slots,
             'consumable_slots': self.consumable_slots,
             'last_tarot_planet_consumable': self.last_tarot_planet_consumable,
@@ -181,6 +186,7 @@ class UnifiedGameState:
             'round_chips_scored': self.round_chips_scored,
             'chips_scored': self.chips_scored,
             'chips_needed': self.chips_needed,
+            'discards_used_this_round': self.discards_used_this_round,
             'pending_pack_consumable': self.pending_pack_consumable,
             'pending_pack_index': self.pending_pack_index,
             
@@ -194,6 +200,7 @@ class UnifiedGameState:
             'joker_count': len(self.jokers),
             'consumable_count': len(self.consumables),
             'voucher_count': len(self.vouchers),
+            'unique_planet_cards_used': self.unique_planet_cards_used.copy(),
         }
     
     def get_card_state(self, card_index: int) -> CardState:
@@ -221,6 +228,7 @@ class UnifiedGameState:
             hands_left=self.hands_left,
             discards_left=self.discards_left,
             hand_size=self.hand_size,
+            money_per_discard=self.money_per_discard,
             
             # Collections - JokerInfo objects are immutable
             jokers=self.jokers.copy(),
@@ -242,8 +250,10 @@ class UnifiedGameState:
             best_hand_this_ante=self.best_hand_this_ante,
             jokers_sold=self.jokers_sold,
             cards_discarded_total=self.cards_discarded_total,
+            discards_used_this_round=self.discards_used_this_round,
             rerolls_used=self.rerolls_used,
             shop_visits=self.shop_visits,
+            unique_planet_cards_used=self.unique_planet_cards_used.copy(),
             
             # Levels and states - need deep copies
             hand_levels=self.hand_levels.copy(),
@@ -262,11 +272,13 @@ class UnifiedGameState:
             eternal_jokers=self.eternal_jokers.copy(),
             perishable_counters=self.perishable_counters.copy(),
             rental_jokers=self.rental_jokers.copy(),
+            rocket_payouts=self.rocket_payouts.copy(),
         )
     
     def reset_round_state(self):
         """Reset state for a new round (but not a new ante)."""
         self.round_chips_scored = 0
+        self.discards_used_this_round = 0
         self.face_down_cards = []
         self.force_draw_count = None
         
@@ -291,12 +303,10 @@ class UnifiedGameState:
             self.perishable_counters[joker_idx] = rounds_left - 1
             if self.perishable_counters[joker_idx] <= 0:
                 expired_jokers.append(joker_idx)
-        
+
         # Remove expired perishable jokers
-        for joker_idx in expired_jokers:
-            if 0 <= joker_idx < len(self.jokers):
-                self.jokers.pop(joker_idx)
-            del self.perishable_counters[joker_idx]
+        for joker_idx in sorted(expired_jokers, reverse=True):
+            self.remove_joker(joker_idx)
     
     def add_joker(self, joker: JokerInfo, eternal: bool = False, 
                   perishable: bool = False, rental: bool = False) -> bool:
@@ -313,6 +323,8 @@ class UnifiedGameState:
             self.perishable_counters[joker_idx] = 5  # 5 rounds before perishing
         if rental:
             self.rental_jokers.append(joker_idx)
+        if joker.name == "Rocket":
+            self.rocket_payouts[joker_idx] = 1
         
         return True
     
@@ -334,6 +346,8 @@ class UnifiedGameState:
             del self.perishable_counters[joker_idx]
         if joker_idx in self.rental_jokers:
             self.rental_jokers.remove(joker_idx)
+        if joker_idx in self.rocket_payouts:
+            del self.rocket_payouts[joker_idx]
         
         # Adjust indices for remaining jokers
         self.eternal_jokers = [idx - 1 if idx > joker_idx else idx 
@@ -348,8 +362,30 @@ class UnifiedGameState:
             if new_idx >= 0:
                 new_perishable[new_idx] = count
         self.perishable_counters = new_perishable
+
+        new_rocket_payouts = {}
+        for idx, payout in self.rocket_payouts.items():
+            new_idx = idx - 1 if idx > joker_idx else idx
+            if new_idx >= 0:
+                new_rocket_payouts[new_idx] = payout
+        self.rocket_payouts = new_rocket_payouts
         
         return removed
+
+    def record_planet_card_used(self, planet_name: str) -> None:
+        """Track unique Planet consumables used across the run."""
+        if planet_name not in self.unique_planet_cards_used:
+            self.unique_planet_cards_used.append(planet_name)
+
+    def get_rocket_payout(self, joker_idx: int) -> int:
+        """Return the current Rocket payout for a joker slot."""
+        return int(self.rocket_payouts.get(joker_idx, 1))
+
+    def increase_rocket_payouts(self, increase: int = 2) -> None:
+        """Increase all Rocket jokers' future payout after a boss defeat."""
+        for joker_idx, joker in enumerate(self.jokers):
+            if joker.name == "Rocket":
+                self.rocket_payouts[joker_idx] = self.get_rocket_payout(joker_idx) + increase
     
     def get_active_joker_count(self) -> int:
         """Get number of active (non-disabled) joker slots."""

@@ -12,6 +12,7 @@ from typing import Tuple, Dict, List, Any, Optional
 import numpy as np
 
 from balatro_gym.core_utils.card_adapter import CardAdapter
+from balatro_gym.core_utils.mvp_contract import get_pack_consumable_target_count
 from balatro_gym.core_utils.reward_calculator import RewardCalculator
 from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState, CardState
@@ -218,6 +219,7 @@ class PlayPhaseHandler:
         
         self.game.discard_hand()
         self.state.discards_left -= 1
+        self.state.discards_used_this_round += 1
         self.state.cards_discarded_total += len(self.state.selected_cards)
         self.state.selected_cards = []
         self._sync_state_from_game()
@@ -263,6 +265,13 @@ class PlayPhaseHandler:
             return -1.0, False, {'error': 'Invalid consumable index'}
         
         consumable_name = self.state.consumables[consumable_idx]
+        required_targets = get_pack_consumable_target_count(consumable_name)
+        if required_targets > 0 and len(self.state.selected_cards) != required_targets:
+            return -1.0, False, {
+                'error': 'Invalid target count for consumable',
+                'required_targets': required_targets,
+                'selected_targets': len(self.state.selected_cards),
+            }
         
         # Get target cards
         target_cards = []
@@ -298,7 +307,9 @@ class PlayPhaseHandler:
 
         if is_tarot_consumable_name(consumable_name) or is_planet_consumable_name(consumable_name):
             self.state.last_tarot_planet_consumable = consumable_name
-        
+        if is_planet_consumable_name(consumable_name):
+            self.state.record_planet_card_used(consumable_name)
+
         return reward, False, info
     
     def apply_boss_blind_to_hand(self):
@@ -677,8 +688,8 @@ class PlayPhaseHandler:
                 from balatro_gym.core.jokers import JOKER_LIBRARY
                 for joker_info in JOKER_LIBRARY:
                     if joker_info.name == joker_name:
-                        self.state.jokers.append(joker_info)
-                        created += 1
+                        if self.state.add_joker(joker_info):
+                            created += 1
                         break
         
         return created * 15.0

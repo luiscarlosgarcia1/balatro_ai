@@ -515,6 +515,8 @@ class PackOpenHandler:
 
         if result.get('success') and (is_tarot_consumable_name(consumable_name) or is_planet_consumable_name(consumable_name)):
             self.state.last_tarot_planet_consumable = consumable_name
+        if result.get('success') and is_planet_consumable_name(consumable_name):
+            self.state.record_planet_card_used(consumable_name)
 
         return reward, info
 
