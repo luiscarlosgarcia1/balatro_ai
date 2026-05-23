@@ -727,7 +727,7 @@ def can_use_consumable_from_pack(state: UnifiedGameState, consumable_name: str) 
 def can_use_consumable_in_play(state: UnifiedGameState, consumable_name: str) -> bool:
     required_targets = PACK_TARGETED_MIN_HAND_SIZE.get(consumable_name)
     if required_targets is not None:
-        return len(state.selected_cards) >= required_targets
+        return len(state.selected_cards) == required_targets
 
     return can_use_consumable_from_pack(state, consumable_name)
 

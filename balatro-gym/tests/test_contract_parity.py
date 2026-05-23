@@ -19,6 +19,7 @@ except ModuleNotFoundError:
     sys.modules["httpx"] = httpx
 
 from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.cards import Card, Rank, Suit
 from balatro_gym.core.jokers import JokerInfo
 from balatro_gym.core_utils.blind_scaling import get_blind_chips
 from balatro_gym.core_utils.mvp_contract import (
@@ -270,6 +271,37 @@ def test_play_mask_disallows_playing_more_than_five_selected_cards_and_keeps_har
     assert mask[Action.PLAY_HAND] == 0
     assert mask[Action.DISCARD] == 1
     assert mask[Action.USE_CONSUMABLE_BASE] == 0
+
+
+def test_play_mask_requires_exact_target_counts_for_targeted_consumables():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        deck=[
+            Card(Rank.FIVE, Suit.CLUBS),
+            Card(Rank.KING, Suit.HEARTS),
+            Card(Rank.ACE, Suit.SPADES),
+        ],
+        hand_indexes=[0, 1, 2],
+        consumables=["The Magician", "Death"],
+        selected_cards=[0, 1, 2],
+    )
+
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.USE_CONSUMABLE_BASE + 0] == 0
+    assert mask[Action.USE_CONSUMABLE_BASE + 1] == 0
+
+    state.selected_cards = [0]
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.USE_CONSUMABLE_BASE + 0] == 1
+    assert mask[Action.USE_CONSUMABLE_BASE + 1] == 0
+
+    state.selected_cards = [0, 1]
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.USE_CONSUMABLE_BASE + 0] == 0
+    assert mask[Action.USE_CONSUMABLE_BASE + 1] == 1
 
 
 def test_face_down_cards_remain_selectable_in_play_handler():
