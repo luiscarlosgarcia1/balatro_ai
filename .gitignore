@@ -19,3 +19,9 @@
 
 # Instance logs
 /logs/
+
+# Local training outputs
+/artifacts/
+
+# Local smoke-test caches
+/balatro-gym/.tmp/
