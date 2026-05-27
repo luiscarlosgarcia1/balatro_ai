@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from balatro_gym.core.boss_blinds import BossBlindType
+from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType
 from balatro_gym.core.cards import Card, Rank, Suit
 from balatro_gym.core.consumables import ConsumableManager
 from balatro_gym.core.constants import Action, Phase
@@ -615,7 +615,7 @@ def test_directors_cut_allows_one_boss_reroll_per_ante(monkeypatch):
         DeterministicRNG(123),
     )
 
-    def _reroll(ante, exclude=None):
+    def _reroll(ante, exclude=None, rng=None):
         assert ante == 2
         assert exclude == [BossBlindType.THE_HOOK]
         return BossBlindType.THE_WALL
@@ -663,7 +663,7 @@ def test_retcon_allows_repeated_boss_rerolls(monkeypatch):
     offers = iter([BossBlindType.THE_WALL, BossBlindType.THE_WHEEL])
     excludes: list[list[BossBlindType] | None] = []
 
-    def _reroll(_ante, exclude=None):
+    def _reroll(_ante, exclude=None, rng=None):
         excludes.append(exclude)
         return next(offers)
 
@@ -768,6 +768,51 @@ def test_boss_reroll_state_resets_after_boss_round_advances_ante():
     assert state.active_boss_blind is None
     assert state.pending_boss_blind is None
     assert state.boss_blind_rerolls_used_ante == 0
+
+
+def test_boss_hook_draw_discards_use_seeded_boss_ability_rng():
+    hand_cards = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.KING, Suit.HEARTS),
+        Card(Rank.QUEEN, Suit.DIAMONDS),
+        Card(Rank.JACK, Suit.CLUBS),
+        Card(Rank.TEN, Suit.SPADES),
+    ]
+
+    discard_sequences = []
+    rng_histories = []
+    for _ in range(3):
+        rng = DeterministicRNG(321)
+        manager = BossBlindManager(rng)
+        manager.activate_boss_blind(BossBlindType.THE_HOOK, {})
+        effects = manager.on_hand_drawn(hand_cards, {})
+        discard_sequences.append(tuple(effects["discarded_cards"]))
+        rng_histories.append(rng.history.copy())
+
+    assert discard_sequences == [discard_sequences[0]] * 3
+    assert rng_histories[0] == [("boss_abilities", "sample", discard_sequences[0])]
+
+
+def test_boss_wheel_draw_flips_use_seeded_boss_ability_rng():
+    hand_cards = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.KING, Suit.HEARTS),
+        Card(Rank.QUEEN, Suit.DIAMONDS),
+        Card(Rank.JACK, Suit.CLUBS),
+        Card(Rank.TEN, Suit.SPADES),
+        Card(Rank.NINE, Suit.HEARTS),
+    ]
+
+    face_down_sequences = []
+    for _ in range(3):
+        rng = DeterministicRNG(654)
+        manager = BossBlindManager(rng)
+        manager.activate_boss_blind(BossBlindType.THE_WHEEL, {})
+        effects = manager.on_hand_drawn(hand_cards, {})
+        face_down_sequences.append(tuple(effects["face_down_cards"]))
+        assert [entry[0] for entry in rng.history] == ["boss_abilities"] * len(hand_cards)
+
+    assert face_down_sequences == [face_down_sequences[0]] * 3
 
 
 def test_pack_mask_updates_after_first_consumable_fills_last_slot():
