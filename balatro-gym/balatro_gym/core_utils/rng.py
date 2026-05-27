@@ -57,6 +57,20 @@ class DeterministicRNG:
         self.history.append((stream, 'choice', value))
         return value
 
+    def sample(self, stream: str, sequence: List[Any], k: int) -> List[Any]:
+        """Sample unique items from a sequence without replacement."""
+        if stream not in self.streams:
+            raise ValueError(f"Unknown RNG stream: {stream}")
+
+        if k < 0:
+            raise ValueError("Sample size cannot be negative")
+        if k > len(sequence):
+            raise ValueError("Sample size cannot exceed sequence length")
+
+        value = self.streams[stream].sample(sequence, k)
+        self.history.append((stream, 'sample', tuple(value)))
+        return value
+
     def shuffle(self, stream: str, sequence: List[Any]) -> None:
         """Shuffle a sequence in-place"""
         if stream not in self.streams:

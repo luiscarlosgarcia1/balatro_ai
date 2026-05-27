@@ -96,6 +96,7 @@ class BlindSelectHandler:
         
         # Update game blind requirement
         if hasattr(self.game, 'blinds') and hasattr(self.game, 'blind_index'):
+            self.game.blind_index = expected_blind_type
             self.game.blinds[self.game.blind_index] = self.state.chips_needed
         
         # Reset round-specific state
@@ -269,6 +270,8 @@ class BlindSelectHandler:
             self.state.round += 1
         self._ensure_pending_boss_blind()
         self.state.phase = Phase.BLIND_SELECT
+        if hasattr(self.game, 'blind_index'):
+            self.game.blind_index = max(0, min(2, int(self.state.round) - 1))
 
     def _ensure_pending_boss_blind(self) -> None:
         """Seed the visible boss offer when entering a boss round."""
@@ -281,4 +284,4 @@ class BlindSelectHandler:
     def _roll_pending_boss_blind(self, exclude_current: bool = False):
         """Roll a boss blind, avoiding the current offer when possible."""
         exclude = [self.state.pending_boss_blind] if exclude_current and self.state.pending_boss_blind else None
-        return select_boss_blind(self.state.ante, exclude=exclude)
+        return select_boss_blind(self.state.ante, exclude=exclude, rng=self.rng)

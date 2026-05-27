@@ -8,6 +8,7 @@ from balatro_gym.core.cards import Enhancement, EnhancementEffects, Rank
 from balatro_gym.core.constants import Phase
 from balatro_gym.core.balatro_game import BalatroGame
 from balatro_gym.core_utils.state import UnifiedGameState
+from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
 
 
@@ -20,11 +21,13 @@ class RoundManager:
         game: BalatroGame,
         joker_effects_engine: CompleteJokerEffects,
         boss_blind_manager: BossBlindManager | None = None,
+        rng: DeterministicRNG | None = None,
     ):
         self.state = state
         self.game = game
         self.joker_effects_engine = joker_effects_engine
         self.boss_blind_manager = boss_blind_manager
+        self.rng = rng
 
     def advance_round(self) -> None:
         """Apply end-of-round effects and move to the next blind/shop."""
@@ -66,7 +69,7 @@ class RoundManager:
             self.state.round += 1
             self.state.reset_round_state()
             if self.state.round == 3:
-                self.state.pending_boss_blind = select_boss_blind(self.state.ante)
+                self.state.pending_boss_blind = select_boss_blind(self.state.ante, rng=self.rng)
 
         self.state.money += self._cashout_amount(completed_round, boss_reward, completed_round_discards_used)
         if completed_round == 3:
@@ -75,6 +78,8 @@ class RoundManager:
         self.state.discards_left = self._base_round_discards()
         self.state.phase = Phase.SHOP
 
+        if hasattr(self.game, "blind_index"):
+            self.game.blind_index = max(0, min(2, int(self.state.round) - 1))
         self.game.round_hands = self.state.hands_left
         self.game.round_discards = self.state.discards_left
 

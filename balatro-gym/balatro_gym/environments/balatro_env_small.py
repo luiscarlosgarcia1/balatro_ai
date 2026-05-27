@@ -108,7 +108,7 @@ class BalatroEnv(gym.Env):
         self.game = BalatroGame(engine=self.engine)
         self.joker_effects_engine = CompleteJokerEffects()
         self.consumable_manager = ConsumableManager()
-        self.boss_blind_manager = BossBlindManager()
+        self.boss_blind_manager = BossBlindManager(self.rng)
         self.unified_scorer = UnifiedScorer(self.engine, self.joker_effects_engine)
         
         # Create initial deck
@@ -255,6 +255,11 @@ class BalatroEnv(gym.Env):
         self.game.deck = saved_state['game_state']['deck'].copy()
         self.game.state = saved_state['game_state']['state']
         self.game.blind_index = saved_state['game_state']['blind_index']
+        self.game.hand_indexes = self.state.hand_indexes.copy()
+        self.game.round_hands = self.state.hands_left
+        self.game.round_discards = self.state.discards_left
+        self.game.hand_size = self.state.hand_size
+        self.game.highlighted_indexes = self.state.selected_cards.copy()
         
         # Restore boss blind state
         if 'boss_blind_state' in saved_state:
@@ -337,7 +342,11 @@ class BalatroEnv(gym.Env):
 
         if self.state.phase == Phase.PLAY:
             self._start_play_phase()
-        elif self.state.phase == Phase.SHOP and self.shop_handler:
+        elif (
+            self.state.phase == Phase.SHOP
+            and previous_phase != Phase.PACK_OPEN
+            and self.shop_handler
+        ):
             self.shop_handler.invalidate_shop()
             self.shop_handler.generate_shop()
 

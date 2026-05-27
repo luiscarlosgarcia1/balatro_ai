@@ -301,9 +301,10 @@ BOSS_BLINDS: Dict[BossBlindType, BossBlind] = {
 class BossBlindManager:
     """Manages boss blind effects and state"""
     
-    def __init__(self):
+    def __init__(self, rng: Any | None = None):
         self.active_blind: Optional[BossBlind] = None
         self.blind_state: Dict[str, Any] = {}
+        self.rng = rng
         
     def activate_boss_blind(self, blind_type: BossBlindType, game_state: Dict) -> Dict[str, Any]:
         """Activate a boss blind and apply initial effects"""
@@ -350,13 +351,21 @@ class BossBlindManager:
         if self.active_blind.blind_type == BossBlindType.THE_HOOK:
             # Discard 2 random cards
             if len(hand_cards) >= 2:
-                to_discard = random.sample(range(len(hand_cards)), 2)
+                indexes = list(range(len(hand_cards)))
+                if self.rng is not None:
+                    to_discard = self.rng.sample('boss_abilities', indexes, 2)
+                else:
+                    to_discard = random.sample(indexes, 2)
                 effects['discarded_cards'] = to_discard
                 
         elif self.active_blind.blind_type == BossBlindType.THE_WHEEL:
             # 1 in 7 cards face down
             for i, card in enumerate(hand_cards):
-                if random.random() < 1/7:
+                if self.rng is not None:
+                    roll = self.rng.get_float('boss_abilities')
+                else:
+                    roll = random.random()
+                if roll < 1/7:
                     effects['face_down_cards'].append(i)
                     
         elif self.active_blind.blind_type == BossBlindType.THE_HOUSE:
@@ -519,7 +528,11 @@ class BossBlindManager:
 # Integration with Environment
 # ---------------------------------------------------------------------------
 
-def select_boss_blind(ante: int, exclude: Optional[List[BossBlindType]] = None) -> BossBlindType:
+def select_boss_blind(
+    ante: int,
+    exclude: Optional[List[BossBlindType]] = None,
+    rng: Any | None = None,
+) -> BossBlindType:
     """Select a random boss blind for the given ante"""
     # All blinds available from the start in standard Balatro
     available_blinds = list(BossBlindType)
@@ -528,7 +541,11 @@ def select_boss_blind(ante: int, exclude: Optional[List[BossBlindType]] = None) 
     if exclude:
         available_blinds = [b for b in available_blinds if b not in exclude]
     
-    # Random selection
+    # Prefer the environment RNG when available so repeated seeded episodes
+    # produce the same boss offer sequence.
+    if rng is not None:
+        return rng.choice('blind_selection', available_blinds)
+
     return random.choice(available_blinds)
 
 # ---------------------------------------------------------------------------

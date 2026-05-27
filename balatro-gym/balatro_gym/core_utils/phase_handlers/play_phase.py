@@ -162,6 +162,7 @@ class PlayPhaseHandler:
                 self.game,
                 self.joker_effects_engine,
                 self.boss_blind_manager,
+                self.rng,
             )
             round_manager.advance_round()
             info['beat_blind'] = True
@@ -223,6 +224,7 @@ class PlayPhaseHandler:
         self.state.cards_discarded_total += len(self.state.selected_cards)
         self.state.selected_cards = []
         self._sync_state_from_game()
+        self._prepare_next_hand()
         
         # Create tarot cards from purple seals
         tarots_created = self._create_tarots_from_purple_seals(purple_seal_count)

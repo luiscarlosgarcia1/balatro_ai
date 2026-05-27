@@ -506,7 +506,7 @@ class BalatroEnv(gym.Env):
         
         self.joker_effects_engine = CompleteJokerEffects()
         self.consumable_manager = ConsumableManager()
-        self.boss_blind_manager = BossBlindManager()
+        self.boss_blind_manager = BossBlindManager(self.rng)
         
         # Initialize unified scorer
         self.unified_scorer = UnifiedScorer(self.engine, self.joker_effects_engine)
