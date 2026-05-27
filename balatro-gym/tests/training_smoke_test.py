@@ -332,3 +332,37 @@ def test_real_trainer_module_import_smoke():
     assert callable(module.BalatroFeaturesExtractor)
     assert callable(module.BalatroMetricsCallback)
     assert module.RecurrentPPO.__name__ == "RecurrentPPO"
+
+
+def test_real_recurrent_ppo_training_smoke(tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    pytest.importorskip("gymnasium")
+    pytest.importorskip("torch")
+    pytest.importorskip("stable_baselines3")
+    pytest.importorskip("sb3_contrib")
+
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+
+    module = importlib.import_module("balatro_gym.training.train_balatro_agent")
+
+    _, save_path = module.train_balatro_agent(
+        total_timesteps=8,
+        n_envs=1,
+        seed=123,
+        checkpoint_freq=1_000,
+        save_dir=str(tmp_path / "models"),
+        hyperparams={
+            "n_steps": 4,
+            "batch_size": 4,
+            "n_epochs": 1,
+            "policy_kwargs": {
+                "features_extractor_kwargs": {"features_dim": 64},
+                "net_arch": {"pi": [64], "vf": [64]},
+                "lstm_hidden_size": 64,
+            },
+        },
+    )
+
+    assert (save_path / "recurrent_ppo_final.zip").exists()
+    assert (save_path / "vec_normalize.pkl").exists()
+    assert (save_path / "config.json").exists()
