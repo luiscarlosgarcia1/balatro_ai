@@ -14,8 +14,17 @@
 # Balatro game folder.
 /balatro_unpacked/
 
-# DS Store thingy
-.DS_store
+# macOS Finder metadata
+.DS_Store
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local virtualenvs
+.venv/
+.venv_*/
 
 # Instance logs
 /logs/
