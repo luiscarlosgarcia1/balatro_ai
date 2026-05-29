@@ -133,6 +133,14 @@ def _load_train_module_with_stubs(monkeypatch: pytest.MonkeyPatch, module_name: 
     evaluation_module = types.ModuleType("stable_baselines3.common.evaluation")
     evaluation_module.evaluate_policy = lambda *args, **kwargs: (0.0, 0.0)
 
+    distributions_module = types.ModuleType("stable_baselines3.common.distributions")
+
+    class _FakeCategoricalDistribution:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    distributions_module.CategoricalDistribution = _FakeCategoricalDistribution
+
     torch_layers_module = types.ModuleType("stable_baselines3.common.torch_layers")
 
     class _FakeBaseFeaturesExtractor:
@@ -143,6 +151,11 @@ def _load_train_module_with_stubs(monkeypatch: pytest.MonkeyPatch, module_name: 
     torch_layers_module.BaseFeaturesExtractor = _FakeBaseFeaturesExtractor
 
     sb3_contrib_module = types.ModuleType("sb3_contrib")
+    sb3_contrib_common_module = types.ModuleType("sb3_contrib.common")
+    sb3_contrib_common_maskable_module = types.ModuleType("sb3_contrib.common.maskable")
+    sb3_contrib_common_maskable_distributions_module = types.ModuleType("sb3_contrib.common.maskable.distributions")
+    sb3_contrib_common_recurrent_module = types.ModuleType("sb3_contrib.common.recurrent")
+    sb3_contrib_common_recurrent_policies_module = types.ModuleType("sb3_contrib.common.recurrent.policies")
 
     class _FakeRecurrentPPO:
         created = []
@@ -171,6 +184,29 @@ def _load_train_module_with_stubs(monkeypatch: pytest.MonkeyPatch, module_name: 
             Path(path).write_text("model")
 
     sb3_contrib_module.RecurrentPPO = _FakeRecurrentPPO
+
+    class _FakeMaskableCategoricalDistribution:
+        def __init__(self, action_dim):
+            self.action_dim = action_dim
+
+        def proba_distribution(self, logits):
+            self.logits = logits
+            return self
+
+        def apply_masking(self, masks):
+            self.masks = masks
+
+    class _FakeRecurrentMultiInputActorCriticPolicy:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    sb3_contrib_common_maskable_distributions_module.MaskableCategoricalDistribution = _FakeMaskableCategoricalDistribution
+    sb3_contrib_common_recurrent_policies_module.RecurrentMultiInputActorCriticPolicy = _FakeRecurrentMultiInputActorCriticPolicy
+    sb3_contrib_common_maskable_module.distributions = sb3_contrib_common_maskable_distributions_module
+    sb3_contrib_common_recurrent_module.policies = sb3_contrib_common_recurrent_policies_module
+    sb3_contrib_common_module.maskable = sb3_contrib_common_maskable_module
+    sb3_contrib_common_module.recurrent = sb3_contrib_common_recurrent_module
+    sb3_contrib_module.common = sb3_contrib_common_module
 
     balatro_env_module = types.ModuleType("balatro_gym.environments.balatro_env_small")
 
@@ -223,6 +259,7 @@ def _load_train_module_with_stubs(monkeypatch: pytest.MonkeyPatch, module_name: 
     stable_baselines3_common_module.callbacks = callbacks_module
     stable_baselines3_common_module.monitor = monitor_module
     stable_baselines3_common_module.evaluation = evaluation_module
+    stable_baselines3_common_module.distributions = distributions_module
     stable_baselines3_common_module.torch_layers = torch_layers_module
     stable_baselines3_module.common = stable_baselines3_common_module
 
@@ -244,8 +281,14 @@ def _load_train_module_with_stubs(monkeypatch: pytest.MonkeyPatch, module_name: 
         "stable_baselines3.common.callbacks": callbacks_module,
         "stable_baselines3.common.monitor": monitor_module,
         "stable_baselines3.common.evaluation": evaluation_module,
+        "stable_baselines3.common.distributions": distributions_module,
         "stable_baselines3.common.torch_layers": torch_layers_module,
         "sb3_contrib": sb3_contrib_module,
+        "sb3_contrib.common": sb3_contrib_common_module,
+        "sb3_contrib.common.maskable": sb3_contrib_common_maskable_module,
+        "sb3_contrib.common.maskable.distributions": sb3_contrib_common_maskable_distributions_module,
+        "sb3_contrib.common.recurrent": sb3_contrib_common_recurrent_module,
+        "sb3_contrib.common.recurrent.policies": sb3_contrib_common_recurrent_policies_module,
         "balatro_gym": balatro_gym_module,
         "balatro_gym.environments": balatro_gym_environments_module,
         "balatro_gym.environments.balatro_env_small": balatro_env_module,
@@ -274,7 +317,7 @@ def test_train_balatro_agent_imports_and_constructs_with_stubs(monkeypatch, tmp_
         save_dir=str(tmp_path),
     )
 
-    assert model.policy == "MultiInputLstmPolicy"
+    assert model.policy.__name__ == "MaskedMultiInputLstmPolicy"
     assert model.learn_calls[0]["total_timesteps"] == 0
     assert model.learn_calls[0]["callback"].__class__.__name__ == "_FakeCallbackList"
     assert model.learn_calls[0]["log_interval"] == 10
@@ -282,7 +325,7 @@ def test_train_balatro_agent_imports_and_constructs_with_stubs(monkeypatch, tmp_
 
     config = json.loads((save_path / "config.json").read_text())
     assert config["algorithm"] == "sb3_contrib.RecurrentPPO"
-    assert config["policy"] == "MultiInputLstmPolicy"
+    assert config["policy"].endswith(".MaskedMultiInputLstmPolicy")
     assert config["n_envs"] == 1
     assert (save_path / "recurrent_ppo_final").exists()
     assert (save_path / "vec_normalize.pkl").exists()
@@ -331,7 +374,76 @@ def test_real_trainer_module_import_smoke():
     assert callable(module.train_balatro_agent)
     assert callable(module.BalatroFeaturesExtractor)
     assert callable(module.BalatroMetricsCallback)
+    assert callable(module.MaskedMultiInputLstmPolicy)
     assert module.RecurrentPPO.__name__ == "RecurrentPPO"
+
+
+def test_masked_policy_respects_action_mask():
+    np = pytest.importorskip("numpy")
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("gymnasium")
+    pytest.importorskip("stable_baselines3")
+    pytest.importorskip("sb3_contrib")
+
+    from sb3_contrib.common.recurrent.type_aliases import RNNStates
+
+    from balatro_gym.environments.balatro_env_small import BalatroEnv
+    from balatro_gym.training.train_balatro_agent import BalatroFeaturesExtractor, MaskedMultiInputLstmPolicy
+
+    env = BalatroEnv(seed=123)
+    obs, _ = env.reset()
+
+    legal_action = int(np.flatnonzero(obs["action_mask"])[0])
+    forced_mask = np.zeros_like(obs["action_mask"])
+    forced_mask[legal_action] = 1
+    obs["action_mask"] = forced_mask
+
+    policy = MaskedMultiInputLstmPolicy(
+        env.observation_space,
+        env.action_space,
+        lr_schedule=lambda _: 0.0,
+        features_extractor_class=BalatroFeaturesExtractor,
+        features_extractor_kwargs={"features_dim": 64},
+        net_arch={"pi": [64], "vf": [64]},
+        lstm_hidden_size=32,
+    )
+
+    obs_tensor = {
+        key: torch.as_tensor(np.expand_dims(value, axis=0))
+        for key, value in obs.items()
+    }
+    hidden_shape = policy.lstm_hidden_state_shape
+    actor_state = (
+        torch.zeros(hidden_shape, dtype=torch.float32),
+        torch.zeros(hidden_shape, dtype=torch.float32),
+    )
+    critic_state = (
+        torch.zeros(hidden_shape, dtype=torch.float32),
+        torch.zeros(hidden_shape, dtype=torch.float32),
+    )
+    lstm_states = RNNStates(actor_state, critic_state)
+    episode_starts = torch.ones((1,), dtype=torch.float32)
+
+    with torch.no_grad():
+        distribution, _ = policy.get_distribution(obs_tensor, actor_state, episode_starts)
+        actions, _, log_prob, _ = policy(obs_tensor, lstm_states, episode_starts, deterministic=False)
+
+    probs = distribution.distribution.probs.squeeze(0)
+    assert int(actions.cpu().numpy().reshape(-1)[0]) == legal_action
+    assert torch.isclose(probs.sum(), torch.tensor(1.0, dtype=probs.dtype))
+    assert torch.isclose(probs[legal_action], torch.tensor(1.0, dtype=probs.dtype))
+    assert torch.isfinite(log_prob).all()
+
+
+def test_features_extractor_uses_action_mask_signal():
+    pytest.importorskip("gymnasium")
+
+    from balatro_gym.core_utils.mvp_contract import create_mvp_observation_space
+    from balatro_gym.training.train_balatro_agent import BalatroFeaturesExtractor
+
+    observation_space = create_mvp_observation_space()
+    extractor = BalatroFeaturesExtractor(observation_space, features_dim=32)
+    assert "action_mask" in extractor.flat_keys
 
 
 def test_real_recurrent_ppo_training_smoke(tmp_path, monkeypatch):
