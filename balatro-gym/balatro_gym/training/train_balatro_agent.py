@@ -15,7 +15,10 @@ import torch
 import torch.nn as nn
 from gymnasium import spaces
 from sb3_contrib import RecurrentPPO
+from sb3_contrib.common.maskable.distributions import MaskableCategoricalDistribution
+from sb3_contrib.common.recurrent.policies import RecurrentMultiInputActorCriticPolicy
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
+from stable_baselines3.common.distributions import CategoricalDistribution
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
@@ -32,19 +35,19 @@ class BalatroFeaturesExtractor(BaseFeaturesExtractor):
 
     The maintained MVP path uses RecurrentPPO with ``MultiInputLstmPolicy``.
     This extractor keeps the hand representation structured via card one-hot
-    encoding while flattening the remaining scalar/vector game state features.
-    ``action_mask`` is intentionally ignored because plain RecurrentPPO does not
-    consume action masks.
+    encoding while flattening the remaining scalar/vector game state features,
+    including the current legal-action mask. RecurrentPPO does not natively
+    enforce the mask, but exposing it during training lets the policy learn
+    to suppress illegal logits instead of only being corrected at runtime.
     """
 
     def __init__(self, observation_space: spaces.Dict, features_dim: int = 512):
         super().__init__(observation_space, features_dim)
 
         self.hand_key = "hand"
-        self.ignored_keys = {"action_mask"}
         self.flat_keys = [
             key for key in observation_space.spaces.keys()
-            if key not in {self.hand_key, *self.ignored_keys}
+            if key != self.hand_key
         ]
 
         hand_space = observation_space[self.hand_key]
@@ -99,6 +102,106 @@ class BalatroFeaturesExtractor(BaseFeaturesExtractor):
         state_features = self.flat_net(flat_features)
 
         return self.combined_net(torch.cat([hand_features, state_features], dim=1))
+
+
+class MaskedMultiInputLstmPolicy(RecurrentMultiInputActorCriticPolicy):
+    """Recurrent multi-input policy that enforces ``action_mask`` during PPO."""
+
+    def _extract_action_mask(self, obs: dict[str, torch.Tensor]) -> torch.Tensor | None:
+        if not isinstance(self.action_space, spaces.Discrete) or "action_mask" not in obs:
+            return None
+
+        action_mask = obs["action_mask"]
+        if action_mask is None:
+            return None
+
+        legal_mask = action_mask.to(device=self.device, dtype=torch.bool).reshape(-1, self.action_space.n)
+        empty_rows = ~legal_mask.any(dim=1)
+        if empty_rows.any():
+            # Recurrent PPO pads minibatches with zero observations; those rows are
+            # ignored by the loss mask and should not force an invalid categorical.
+            legal_mask = legal_mask.clone()
+            legal_mask[empty_rows] = True
+        return legal_mask
+
+    def _mask_distribution(
+        self,
+        distribution: CategoricalDistribution,
+        action_mask: torch.Tensor | None,
+    ) -> CategoricalDistribution:
+        if action_mask is None or not isinstance(distribution, CategoricalDistribution):
+            return distribution
+
+        masked_distribution = MaskableCategoricalDistribution(self.action_space.n)
+        masked_distribution.proba_distribution(distribution.distribution.logits.reshape(-1, self.action_space.n))
+        masked_distribution.apply_masking(action_mask)
+        return masked_distribution
+
+    def forward(
+        self,
+        obs: dict[str, torch.Tensor],
+        lstm_states,
+        episode_starts: torch.Tensor,
+        deterministic: bool = False,
+    ):
+        features = self.extract_features(obs)
+        if self.share_features_extractor:
+            pi_features = vf_features = features
+        else:
+            pi_features, vf_features = features
+
+        latent_pi, lstm_states_pi = self._process_sequence(pi_features, lstm_states.pi, episode_starts, self.lstm_actor)
+        if self.lstm_critic is not None:
+            latent_vf, lstm_states_vf = self._process_sequence(vf_features, lstm_states.vf, episode_starts, self.lstm_critic)
+        elif self.shared_lstm:
+            latent_vf = latent_pi.detach()
+            lstm_states_vf = (lstm_states_pi[0].detach(), lstm_states_pi[1].detach())
+        else:
+            latent_vf = self.critic(vf_features)
+            lstm_states_vf = lstm_states_pi
+
+        latent_pi = self.mlp_extractor.forward_actor(latent_pi)
+        latent_vf = self.mlp_extractor.forward_critic(latent_vf)
+
+        values = self.value_net(latent_vf)
+        distribution = self._mask_distribution(
+            self._get_action_dist_from_latent(latent_pi),
+            self._extract_action_mask(obs),
+        )
+        actions = distribution.get_actions(deterministic=deterministic)
+        log_prob = distribution.log_prob(actions)
+        actions = actions.reshape((-1, *self.action_space.shape))
+        return actions, values, log_prob, type(lstm_states)(lstm_states_pi, lstm_states_vf)
+
+    def evaluate_actions(self, obs: dict[str, torch.Tensor], actions: torch.Tensor, lstm_states, episode_starts: torch.Tensor):
+        features = self.extract_features(obs)
+        if self.share_features_extractor:
+            pi_features = vf_features = features
+        else:
+            pi_features, vf_features = features
+
+        latent_pi, _ = self._process_sequence(pi_features, lstm_states.pi, episode_starts, self.lstm_actor)
+        if self.lstm_critic is not None:
+            latent_vf, _ = self._process_sequence(vf_features, lstm_states.vf, episode_starts, self.lstm_critic)
+        elif self.shared_lstm:
+            latent_vf = latent_pi.detach()
+        else:
+            latent_vf = self.critic(vf_features)
+
+        latent_pi = self.mlp_extractor.forward_actor(latent_pi)
+        latent_vf = self.mlp_extractor.forward_critic(latent_vf)
+
+        distribution = self._mask_distribution(
+            self._get_action_dist_from_latent(latent_pi),
+            self._extract_action_mask(obs),
+        )
+        log_prob = distribution.log_prob(actions)
+        values = self.value_net(latent_vf)
+        return values, log_prob, distribution.entropy()
+
+    def get_distribution(self, obs: dict[str, torch.Tensor], lstm_states, episode_starts: torch.Tensor):
+        distribution, next_lstm_states = super().get_distribution(obs, lstm_states, episode_starts)
+        return self._mask_distribution(distribution, self._extract_action_mask(obs)), next_lstm_states
 
 
 class BalatroMetricsCallback(BaseCallback):
@@ -225,7 +328,7 @@ def train_balatro_agent(
     algo_hyperparams = _merge_dicts(default_hyperparams, hyperparams or {})
 
     model = RecurrentPPO(
-        "MultiInputLstmPolicy",
+        MaskedMultiInputLstmPolicy,
         env,
         verbose=1,
         tensorboard_log=str(save_path / "tb_logs"),
@@ -263,7 +366,7 @@ def train_balatro_agent(
 
     config = {
         "algorithm": "sb3_contrib.RecurrentPPO",
-        "policy": "MultiInputLstmPolicy",
+        "policy": f"{MaskedMultiInputLstmPolicy.__module__}.{MaskedMultiInputLstmPolicy.__qualname__}",
         "total_timesteps": total_timesteps,
         "n_envs": n_envs,
         "seed": seed,
