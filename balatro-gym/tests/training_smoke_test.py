@@ -331,6 +331,22 @@ def test_train_balatro_agent_imports_and_constructs_with_stubs(monkeypatch, tmp_
     assert (save_path / "vec_normalize.pkl").exists()
 
 
+def test_train_balatro_agent_applies_short_budget_defaults(monkeypatch, tmp_path):
+    module = _load_train_module_with_stubs(monkeypatch, "train_balatro_agent_short_budget")
+
+    model, _ = module.train_balatro_agent(
+        total_timesteps=10_000,
+        n_envs=1,
+        checkpoint_freq=1,
+        save_dir=str(tmp_path),
+    )
+
+    assert model.kwargs["n_steps"] == 256
+    assert model.kwargs["batch_size"] == 256
+    assert model.kwargs["n_epochs"] == 4
+    assert model.kwargs["ent_coef"] == 0.001
+
+
 def test_real_small_env_reset_step_smoke():
     np = pytest.importorskip("numpy")
     pytest.importorskip("gymnasium")

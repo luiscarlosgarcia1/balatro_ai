@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import sys
 from copy import deepcopy
 from datetime import datetime
@@ -213,7 +214,7 @@ class BalatroMetricsCallback(BaseCallback):
 
     def _on_training_start(self) -> None:
         log_dir = getattr(self.logger, "dir", None) or getattr(self.model, "tensorboard_log", None)
-        if log_dir is not None:
+        if log_dir is not None and hasattr(torch.utils, "tensorboard"):
             self.writer = torch.utils.tensorboard.SummaryWriter(log_dir=log_dir)
 
     def _on_step(self) -> bool:
@@ -279,6 +280,28 @@ def _merge_dicts(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, A
     return merged
 
 
+def _short_budget_hyperparams(total_timesteps: int, n_envs: int) -> dict[str, Any]:
+    """Use a smaller rollout/update recipe when validating short masked-policy runs."""
+
+    if total_timesteps > 20_000:
+        return {}
+
+    per_env_budget = max(total_timesteps // max(n_envs, 1), 1)
+    n_steps = max(32, min(256, per_env_budget))
+    batch_size = min(256, n_steps * max(n_envs, 1))
+    return {
+        "n_steps": n_steps,
+        "batch_size": batch_size,
+        "n_epochs": 4,
+        "ent_coef": 0.001,
+    }
+
+
+def _tensorboard_log_dir(save_path: Path) -> str | None:
+    """Disable tensorboard logging when the optional dependency is unavailable."""
+    return str(save_path / "tb_logs") if importlib.util.find_spec("tensorboard") else None
+
+
 def train_balatro_agent(
     total_timesteps: int = 1_000_000,
     n_envs: int = 8,
@@ -325,13 +348,25 @@ def train_balatro_agent(
             "net_arch": {"pi": [256, 256], "vf": [256, 256]},
         },
     }
-    algo_hyperparams = _merge_dicts(default_hyperparams, hyperparams or {})
+    algo_hyperparams = _merge_dicts(
+        default_hyperparams,
+        _merge_dicts(_short_budget_hyperparams(total_timesteps, n_envs), hyperparams or {}),
+    )
+
+    if total_timesteps <= 20_000:
+        print(
+            "Applying short-budget PPO defaults: "
+            f"n_steps={algo_hyperparams['n_steps']}, "
+            f"batch_size={algo_hyperparams['batch_size']}, "
+            f"n_epochs={algo_hyperparams['n_epochs']}, "
+            f"ent_coef={algo_hyperparams['ent_coef']}"
+        )
 
     model = RecurrentPPO(
         MaskedMultiInputLstmPolicy,
         env,
         verbose=1,
-        tensorboard_log=str(save_path / "tb_logs"),
+        tensorboard_log=_tensorboard_log_dir(save_path),
         **algo_hyperparams,
     )
 
