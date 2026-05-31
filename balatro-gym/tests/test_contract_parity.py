@@ -326,7 +326,7 @@ def test_face_down_cards_remain_selectable_in_play_handler():
 
     reward, terminated, info = handler.step(Action.SELECT_CARD_BASE + 1)
 
-    assert reward == -0.05
+    assert reward == 0.0
     assert terminated is False
     assert info["selected_cards"] == [1]
     assert state.selected_cards == [1]
@@ -802,7 +802,7 @@ def test_env_active_hook_discard_redraw_is_seed_stable_across_repeated_episodes(
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -846,7 +846,7 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -872,7 +872,7 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -950,7 +950,7 @@ def test_env_active_wheel_second_same_round_draw_is_seed_stable_across_repeated_
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -997,7 +997,7 @@ def test_env_active_wheel_discard_redraw_is_seed_stable_across_repeated_episodes
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1046,7 +1046,7 @@ def test_env_active_wheel_mid_round_save_load_preserves_seed_stable_discard_redr
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1074,7 +1074,7 @@ def test_env_active_wheel_mid_round_save_load_preserves_seed_stable_discard_redr
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1140,7 +1140,7 @@ def test_env_active_fish_mid_round_save_load_preserves_face_down_redraw_state():
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1162,7 +1162,7 @@ def test_env_active_fish_mid_round_save_load_preserves_face_down_redraw_state():
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1192,7 +1192,7 @@ def test_env_active_fish_mid_round_save_load_preserves_face_down_redraw_state():
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1264,7 +1264,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_face_down_sta
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1296,7 +1296,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_face_down_sta
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1361,7 +1361,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_discard_redra
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1393,7 +1393,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_discard_redra
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
@@ -1458,14 +1458,14 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_multi_discard
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE + 1)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0, 1]
@@ -1497,14 +1497,14 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_multi_discard
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0]
 
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE + 1)
 
-        assert reward == -0.05
+        assert reward == 0.0
         assert terminated is False
         assert truncated is False
         assert info["selected_cards"] == [0, 1]
