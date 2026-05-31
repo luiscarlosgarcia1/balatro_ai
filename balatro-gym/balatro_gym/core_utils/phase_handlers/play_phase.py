@@ -59,6 +59,7 @@ class PlayPhaseHandler:
         self.boss_blind_manager = boss_blind_manager
         self.rng = rng
         self.reward_calculator = RewardCalculator()
+        self._reset_selection_sequence_tracking()
     
     def step(self, action: int) -> Tuple[float, bool, Dict]:
         """Process an action during play phase.
@@ -125,9 +126,12 @@ class PlayPhaseHandler:
             boss_state = self.state.to_dict()
             self.boss_blind_manager.on_hand_scored(selected_game_cards, hand_type_name, boss_state)
             self._sync_post_score_boss_state(boss_state)
+
+        selection_commit_bonus = self._selection_commit_bonus()
         
         # Clear selection
         self.state.selected_cards = []
+        self._reset_selection_sequence_tracking()
         
         # Calculate reward
         reward_info = self.reward_calculator.calculate_play_reward(
@@ -143,7 +147,9 @@ class PlayPhaseHandler:
             selected_game_cards=selected_game_cards
         )
         
-        reward = reward_info['total_reward']
+        reward = min(100.0, reward_info['total_reward'] + selection_commit_bonus)
+        reward_info['selection_commit_bonus'] = selection_commit_bonus
+        reward_info['total_reward'] = reward
         info = {
             'score_breakdown': breakdown,
             'final_score': final_score,
@@ -223,6 +229,7 @@ class PlayPhaseHandler:
         self.state.discards_used_this_round += 1
         self.state.cards_discarded_total += len(self.state.selected_cards)
         self.state.selected_cards = []
+        self._reset_selection_sequence_tracking()
         self._sync_state_from_game()
         self._prepare_next_hand()
         
@@ -246,18 +253,27 @@ class PlayPhaseHandler:
     
     def _handle_card_selection(self, action: int) -> Tuple[float, bool, Dict]:
         """Handle selecting/deselecting a card."""
+        self._ensure_selection_sequence_tracking()
         card_idx = action - Action.SELECT_CARD_BASE
         
         if card_idx >= len(self.state.hand_indexes):
             return -1.0, False, {'error': 'Invalid card index'}
+
+        previous_selection = tuple(sorted(self.state.selected_cards))
 
         # Toggle selection
         if card_idx in self.state.selected_cards:
             self.state.selected_cards.remove(card_idx)
         else:
             self.state.selected_cards.append(card_idx)
-        
-        return -0.05, False, {'selected_cards': self.state.selected_cards.copy()}  # time pressure: each selection step must pay off
+
+        current_selection = tuple(sorted(self.state.selected_cards))
+        reward, breakdown = self._score_selection_transition(previous_selection, current_selection)
+
+        return reward, False, {
+            'selected_cards': self.state.selected_cards.copy(),
+            'selection_reward_breakdown': breakdown,
+        }
     
     def _handle_consumable_use(self, action: int) -> Tuple[float, bool, Dict]:
         """Handle using a consumable."""
@@ -301,6 +317,7 @@ class PlayPhaseHandler:
         
         # Clear selection
         self.state.selected_cards = []
+        self._reset_selection_sequence_tracking()
         
         info = {
             'consumable_used': consumable_name,
@@ -368,6 +385,7 @@ class PlayPhaseHandler:
 
     def _prepare_next_hand(self):
         """Apply post-draw effects to the hand already drawn by the game engine."""
+        self._reset_selection_sequence_tracking()
         if self.state.boss_blind_active:
             self.apply_boss_blind_to_hand()
 
@@ -742,3 +760,72 @@ class PlayPhaseHandler:
         
         self.state.chips_scored = current_total_score
         self.state.round_chips_scored = current_round_score
+
+    def _ensure_selection_sequence_tracking(self):
+        """Initialize selection-loop tracking for tests that bypass __init__."""
+        if not hasattr(self, "_selection_seen_states"):
+            self._reset_selection_sequence_tracking()
+
+    def _reset_selection_sequence_tracking(self):
+        """Reset per-hand selection tracking after a hand resolves or redraws."""
+        self._selection_seen_states = {()}
+        self._selection_repeat_counts = {}
+        self._selection_peak_size = 0
+        self._selection_constructive_steps = 0
+
+    def _score_selection_transition(
+        self,
+        previous_selection: Tuple[int, ...],
+        current_selection: Tuple[int, ...],
+    ) -> Tuple[float, Dict[str, float]]:
+        """Shape selection behavior toward building a hand instead of toggling in place."""
+        base_penalty = -0.05
+        buildup_bonus = 0.0
+        deselect_penalty = 0.0
+        repeat_penalty = 0.0
+
+        previous_size = len(previous_selection)
+        current_size = len(current_selection)
+
+        if current_size > previous_size:
+            buildup_bonus += 0.02
+            if current_size > self._selection_peak_size:
+                buildup_bonus += 0.03
+                self._selection_peak_size = current_size
+            self._selection_constructive_steps += 1
+        elif current_size < previous_size:
+            deselect_penalty = -0.02
+
+        if current_selection in self._selection_seen_states:
+            repeat_count = self._selection_repeat_counts.get(current_selection, 0) + 1
+            self._selection_repeat_counts[current_selection] = repeat_count
+            repeat_penalty = -min(0.12, 0.04 * repeat_count)
+        else:
+            self._selection_seen_states.add(current_selection)
+
+        total_reward = base_penalty + buildup_bonus + deselect_penalty + repeat_penalty
+        return total_reward, {
+            'base_penalty': base_penalty,
+            'buildup_bonus': buildup_bonus,
+            'deselect_penalty': deselect_penalty,
+            'repeat_penalty': repeat_penalty,
+            'total_reward': total_reward,
+        }
+
+    def _selection_commit_bonus(self) -> float:
+        """Reward converting a constructive selection sequence into a play action."""
+        self._ensure_selection_sequence_tracking()
+
+        selected_count = len(self.state.selected_cards)
+        if selected_count == 0 or selected_count > 5 or self._selection_constructive_steps == 0:
+            return 0.0
+
+        bonus = 0.10
+        if selected_count == self._selection_peak_size:
+            bonus += 0.05
+
+        repeat_visits = sum(self._selection_repeat_counts.values())
+        if repeat_visits > 0:
+            bonus -= min(0.05, 0.01 * repeat_visits)
+
+        return max(0.0, bonus)

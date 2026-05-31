@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType
 from balatro_gym.core.cards import Card, Rank, Suit
 from balatro_gym.core.consumables import ConsumableManager
@@ -118,9 +120,81 @@ def test_play_handler_allows_selecting_face_down_cards():
 
     reward, terminated, info = handler._handle_card_selection(Action.SELECT_CARD_BASE + 2)
 
-    assert reward == -0.05
+    assert reward == pytest.approx(0.0)
     assert terminated is False
     assert info["selected_cards"] == [2]
+    assert info["selection_reward_breakdown"]["buildup_bonus"] == pytest.approx(0.05)
+
+
+def test_play_handler_penalizes_revisiting_selection_states():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        hand_indexes=list(range(4)),
+    )
+    handler = PlayPhaseHandler.__new__(PlayPhaseHandler)
+    handler.state = state
+
+    first_reward, _, first_info = handler._handle_card_selection(Action.SELECT_CARD_BASE + 0)
+    second_reward, _, second_info = handler._handle_card_selection(Action.SELECT_CARD_BASE + 0)
+
+    assert first_reward == pytest.approx(0.0)
+    assert second_reward == pytest.approx(-0.11)
+    assert second_info["selected_cards"] == []
+    assert second_info["selection_reward_breakdown"]["repeat_penalty"] == pytest.approx(-0.04)
+    assert second_info["selection_reward_breakdown"]["deselect_penalty"] == pytest.approx(-0.02)
+    assert first_info["selection_reward_breakdown"]["repeat_penalty"] == pytest.approx(0.0)
+
+
+def test_play_handler_rewards_committing_constructive_selection_sequence(monkeypatch):
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        selected_cards=[],
+        hand_indexes=[0],
+        deck=[Card(Rank.ACE, Suit.SPADES)],
+        round_chips_scored=120,
+        chips_needed=500,
+        hands_left=3,
+    )
+    game = SimpleNamespace(
+        hand_indexes=[0],
+        highlighted_indexes=[],
+        round_hands=state.hands_left,
+        round_discards=state.discards_left,
+        round_score=0,
+        _classify_hand=lambda cards: (HandType.ONE_PAIR, None),
+        highlight_card=lambda idx: None,
+        play_hand=lambda: None,
+    )
+    engine = SimpleNamespace(hand_play_counts={hand_type: 0 for hand_type in HandType})
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        engine,
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=SimpleNamespace(),
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    monkeypatch.setattr(handler, "_get_selected_cards", lambda: ([SimpleNamespace(hand_type=HandType.ONE_PAIR)], [state.deck[0]]))
+    monkeypatch.setattr(handler, "_sync_and_highlight_cards", lambda: None)
+    monkeypatch.setattr(handler, "_check_boss_blind_can_play", lambda cards, hand_name: True)
+    monkeypatch.setattr(handler, "_score_hand", lambda *args, **kwargs: (80, {}))
+    monkeypatch.setattr(handler, "_apply_card_effects", lambda *args, **kwargs: (80, 0, [], []))
+    monkeypatch.setattr(handler, "_apply_boss_blind_scoring", lambda score, *args, **kwargs: score)
+    monkeypatch.setattr(handler, "_consume_played_hand", lambda: None)
+    monkeypatch.setattr(handler, "_prepare_next_hand", lambda: None)
+    handler.reward_calculator = SimpleNamespace(calculate_play_reward=lambda **kwargs: {"total_reward": 1.0})
+
+    select_reward, _, select_info = handler.step(Action.SELECT_CARD_BASE)
+    reward, terminated, info = handler.step(Action.PLAY_HAND)
+
+    assert select_reward == pytest.approx(0.0)
+    assert select_info["selection_reward_breakdown"]["buildup_bonus"] == pytest.approx(0.05)
+    assert reward == pytest.approx(1.15)
+    assert terminated is False
+    assert info["reward_breakdown"]["selection_commit_bonus"] == pytest.approx(0.15)
 
 
 def test_boss_post_score_state_changes_propagate_back_to_unified_state(monkeypatch):
