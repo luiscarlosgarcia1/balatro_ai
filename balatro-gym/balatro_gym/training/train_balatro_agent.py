@@ -329,7 +329,19 @@ def train_balatro_agent(
     else:
         env = DummyVecEnv([make_env(0)])
 
-    env = VecNormalize(env, norm_obs=False, norm_reward=True)
+    observation_space = getattr(env, "observation_space", None)
+    if observation_space is None and hasattr(env, "envs") and env.envs:
+        observation_space = getattr(env.envs[0], "observation_space", None)
+
+    vec_normalize_kwargs: dict[str, Any] = {"norm_obs": True, "norm_reward": True}
+    if observation_space is not None and hasattr(observation_space, "spaces"):
+        vec_normalize_kwargs["norm_obs_keys"] = [
+            key
+            for key, space in observation_space.spaces.items()
+            if isinstance(space, spaces.Box)
+        ]
+
+    env = VecNormalize(env, **vec_normalize_kwargs)
 
     default_hyperparams = {
         "learning_rate": 3e-4,
