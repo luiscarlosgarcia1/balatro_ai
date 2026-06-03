@@ -451,7 +451,7 @@ def test_masked_policy_respects_action_mask():
     assert torch.isfinite(log_prob).all()
 
 
-def test_features_extractor_uses_action_mask_signal():
+def test_features_extractor_keeps_action_mask_out_of_learned_flat_features():
     pytest.importorskip("gymnasium")
 
     from balatro_gym.core_utils.mvp_contract import create_mvp_observation_space
@@ -459,7 +459,8 @@ def test_features_extractor_uses_action_mask_signal():
 
     observation_space = create_mvp_observation_space()
     extractor = BalatroFeaturesExtractor(observation_space, features_dim=32)
-    assert "action_mask" in extractor.flat_keys
+    assert "action_mask" not in extractor.flat_keys
+    assert "selected_cards" in extractor.flat_keys
 
 
 def test_real_recurrent_ppo_training_smoke(tmp_path, monkeypatch):

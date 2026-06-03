@@ -48,7 +48,7 @@ class BalatroFeaturesExtractor(BaseFeaturesExtractor):
         self.hand_key = "hand"
         self.flat_keys = [
             key for key in observation_space.spaces.keys()
-            if key != self.hand_key
+            if key not in {self.hand_key, "action_mask"}
         ]
 
         hand_space = observation_space[self.hand_key]
