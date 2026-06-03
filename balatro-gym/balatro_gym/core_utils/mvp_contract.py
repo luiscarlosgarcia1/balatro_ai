@@ -246,8 +246,11 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
 
     if phase == Phase.PLAY:
         selected_count = len(state.selected_cards)
-        for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
-            mask[Action.SELECT_CARD_BASE + i] = 1
+        selected_indexes = set(int(i) for i in state.selected_cards)
+        if selected_count < 5:
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
+                if i not in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
         if 0 < selected_count <= 5:
             mask[Action.PLAY_HAND] = 1
         if selected_count > 0 and state.discards_left > 0:
@@ -452,10 +455,13 @@ def build_action_mask(
     if phase == Phase.PLAY:
         hand_size = int(kwargs["hand_size"])
         selected_cards = list(kwargs["selected_cards"])
+        selected_indexes = {int(idx) for idx in selected_cards}
         discards_left = int(kwargs["discards_left"])
         consumable_count = int(kwargs["consumable_count"])
-        for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
-            mask[Action.SELECT_CARD_BASE + i] = 1
+        if len(selected_cards) < 5:
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
+                if i not in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
         if 0 < len(selected_cards) <= 5:
             mask[Action.PLAY_HAND] = 1
         if selected_cards and discards_left > 0:
