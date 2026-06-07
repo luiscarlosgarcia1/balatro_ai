@@ -276,6 +276,22 @@ def test_play_mask_disallows_playing_more_than_five_selected_cards_and_keeps_har
     assert mask[Action.USE_CONSUMABLE_BASE] == 0
 
 
+def test_play_mask_allows_backing_out_of_full_selection():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        hand_indexes=[0, 1, 2, 3, 4],
+        selected_cards=[0, 1, 2, 3, 4],
+        discards_left=0,
+    )
+
+    mask = build_mvp_action_mask(state)
+
+    assert mask[Action.PLAY_HAND] == 1
+    assert mask[Action.DISCARD] == 0
+    assert mask[Action.SELECT_CARD_BASE + 0] == 1
+    assert mask[Action.SELECT_CARD_BASE + 4] == 1
+
+
 def test_play_mask_requires_exact_target_counts_for_targeted_consumables():
     state = UnifiedGameState(
         phase=Phase.PLAY,

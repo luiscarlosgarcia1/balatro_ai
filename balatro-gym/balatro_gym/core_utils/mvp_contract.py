@@ -251,6 +251,10 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
             for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
                 if i not in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
+        else:
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
+                if i in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
         if 0 < selected_count <= 5:
             mask[Action.PLAY_HAND] = 1
         if selected_count > 0 and state.discards_left > 0:
@@ -461,6 +465,10 @@ def build_action_mask(
         if len(selected_cards) < 5:
             for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
                 if i not in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
+        else:
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
+                if i in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
         if 0 < len(selected_cards) <= 5:
             mask[Action.PLAY_HAND] = 1
