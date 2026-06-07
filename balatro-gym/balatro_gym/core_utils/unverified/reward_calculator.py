@@ -28,8 +28,10 @@ class RewardCalculator:
     ) -> Dict[str, float]:
         old_progress = min(1.0, old_score / max(1, chips_needed))
         new_progress = min(1.0, new_score / max(1, chips_needed))
+        progress_delta = max(0.0, new_progress - old_progress)
 
-        progress_reward = 15.0 * new_progress
+        progress_reward = 10.0 * new_progress
+        progress_delta_reward = min(14.0, 30.0 * progress_delta)
 
         milestone_reward = 0.0
         if old_progress < 0.25 <= new_progress:
@@ -65,7 +67,11 @@ class RewardCalculator:
             efficiency_reward = 2.0
         elif hand_type >= HandType.FLUSH and cards_played == 5:
             efficiency_reward = 1.0
-        elif cards_played <= 4 and hands_left <= 2:
+        elif (
+            cards_played <= 4
+            and hands_left <= 2
+            and (new_progress >= 0.5 or hand_type >= HandType.TWO_PAIR)
+        ):
             efficiency_reward = 1.5
 
         synergy_reward = 0.0
@@ -92,32 +98,57 @@ class RewardCalculator:
             synergy_reward += 0.5 * face_cards
 
         strategy_reward = 0.0
-        if new_progress > 0.7 and hands_left >= 3:
-            strategy_reward = 2.0
+        if new_progress >= 0.85:
+            strategy_reward = 2.5
+        elif new_progress >= 0.6 and progress_delta >= 0.2:
+            strategy_reward = 1.5
         elif new_progress < 0.3 and hand_type >= HandType.FLUSH:
             strategy_reward = 3.0
+        elif new_progress > 0.7 and hands_left >= 3:
+            strategy_reward = 2.0
+
+        blind_clear_reward = 14.0 if old_progress < 1.0 <= new_progress else 0.0
+
+        weak_commit_penalty = 0.0
+        if new_progress < 1.0 and progress_delta < 0.1:
+            hands_pressure = max(0, 3 - hands_left)
+            if hand_type == HandType.HIGH_CARD and cards_played == 1:
+                weak_commit_penalty = -5.0 - hands_pressure
+                if new_progress < 0.2:
+                    weak_commit_penalty -= 1.0
+            elif hand_type <= HandType.ONE_PAIR and cards_played <= 2:
+                weak_commit_penalty = -2.0 - 0.5 * hands_pressure
+                if new_progress < 0.25 and progress_delta < 0.06:
+                    weak_commit_penalty -= 0.5
+            weak_commit_penalty = max(-9.0, weak_commit_penalty)
 
         ante_bonus = min(5.0, (ante - 3) * 0.5) if ante >= 4 else 0.0
 
         total_reward = (
             progress_reward
+            + progress_delta_reward
             + milestone_reward
             + score_reward
             + hand_quality_reward * 2.0
             + efficiency_reward * 1.5
             + synergy_reward * 3.0
             + strategy_reward * 2.0
+            + blind_clear_reward
+            + weak_commit_penalty
             + ante_bonus
         )
 
         return {
             "progress": progress_reward,
+            "progress_delta": progress_delta_reward,
             "milestone": milestone_reward,
             "score": score_reward,
             "hand_quality": hand_quality_reward,
             "efficiency": efficiency_reward,
             "synergy": synergy_reward,
             "strategy": strategy_reward,
+            "blind_clear": blind_clear_reward,
+            "weak_commitment": weak_commit_penalty,
             "ante_bonus": ante_bonus,
-            "total_reward": min(total_reward, 100.0),
+            "total_reward": max(-20.0, min(total_reward, 100.0)),
         }
