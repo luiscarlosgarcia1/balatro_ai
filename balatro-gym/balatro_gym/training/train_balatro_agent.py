@@ -24,6 +24,25 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
 
+try:
+    from sb3_contrib.common.recurrent.type_aliases import RNNStates
+except (ImportError, ModuleNotFoundError):
+    from typing import NamedTuple
+
+    class RNNStates(NamedTuple):
+        pi: tuple[torch.Tensor, ...]
+        vf: tuple[torch.Tensor, ...]
+
+try:
+    from stable_baselines3.common.utils import obs_as_tensor
+except (ImportError, ModuleNotFoundError):
+    def obs_as_tensor(obs: np.ndarray | dict[str, np.ndarray], device: torch.device):
+        if isinstance(obs, np.ndarray):
+            return torch.as_tensor(obs, device=device)
+        if isinstance(obs, dict):
+            return {key: torch.as_tensor(value, device=device) for key, value in obs.items()}
+        raise TypeError(f"Unrecognized type of observation {type(obs)}")
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -304,6 +323,116 @@ def _tensorboard_log_dir(save_path: Path) -> str | None:
     return str(save_path / "tb_logs") if importlib.util.find_spec("tensorboard") else None
 
 
+def _stack_demo_observations(batch: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
+    keys = batch[0].keys()
+    return {
+        key: np.stack([np.asarray(obs[key]) for obs in batch], axis=0)
+        for key in keys
+    }
+
+
+def _normalize_demo_observations(model: RecurrentPPO, obs_batch: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    env = getattr(model, "env", None)
+    if env is None or not hasattr(env, "normalize_obs"):
+        return obs_batch
+    normalized = env.normalize_obs(obs_batch)
+    return normalized if isinstance(normalized, dict) else obs_batch
+
+
+def _initial_lstm_states(policy: MaskedMultiInputLstmPolicy, batch_size: int) -> RNNStates:
+    shape = policy.lstm_hidden_state_shape
+    state = (
+        torch.zeros((shape[0], batch_size, shape[2]), dtype=torch.float32, device=policy.device),
+        torch.zeros((shape[0], batch_size, shape[2]), dtype=torch.float32, device=policy.device),
+    )
+    return RNNStates(state, state)
+
+
+def _behavior_clone_greedy_expert(
+    model: RecurrentPPO,
+    *,
+    save_path: Path,
+    seed: int,
+    expert_samples: int,
+    expert_epochs: int,
+    expert_batch_size: int,
+) -> dict[str, Any]:
+    from balatro_gym.training.greedy_expert import collect_greedy_demonstrations
+
+    demonstrations, expert_stats = collect_greedy_demonstrations(
+        target_steps=expert_samples,
+        seed=seed,
+    )
+
+    print(
+        "Greedy expert warm-start: "
+        f"{len(demonstrations)} samples from {int(expert_stats['episodes'])} episodes "
+        f"(beat_blind_rate={expert_stats['beat_blind_rate']:.2f})"
+    )
+
+    rng = np.random.default_rng(seed)
+    losses: list[float] = []
+    entropies: list[float] = []
+
+    for epoch in range(expert_epochs):
+        indices = rng.permutation(len(demonstrations))
+        for start in range(0, len(indices), expert_batch_size):
+            batch_indices = indices[start : start + expert_batch_size]
+            batch = [demonstrations[int(i)] for i in batch_indices]
+            obs_batch = _stack_demo_observations([step.observation for step in batch])
+            obs_batch = _normalize_demo_observations(model, obs_batch)
+            actions = torch.as_tensor(
+                [step.action for step in batch],
+                dtype=torch.long,
+                device=model.device,
+            )
+
+            obs_tensor = obs_as_tensor(obs_batch, model.device)
+            lstm_states = _initial_lstm_states(model.policy, len(batch))
+            episode_starts = torch.ones(len(batch), dtype=torch.float32, device=model.device)
+
+            _, log_prob, entropy = model.policy.evaluate_actions(
+                obs_tensor,
+                actions,
+                lstm_states,
+                episode_starts,
+            )
+            illegal_actions = torch.isneginf(log_prob) | (log_prob < -1e5)
+            if illegal_actions.any():
+                raise RuntimeError(
+                    f"Behavior cloning batch contained {int(illegal_actions.sum().item())} illegal expert actions"
+                )
+            loss = -log_prob.mean()
+
+            model.policy.optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.policy.parameters(), model.max_grad_norm)
+            model.policy.optimizer.step()
+
+            losses.append(float(loss.detach().cpu().item()))
+            entropies.append(float(entropy.mean().detach().cpu().item()))
+
+        print(
+            f"[bc epoch {epoch + 1:>2d}/{expert_epochs}] "
+            f"loss={losses[-1]:.4f} entropy={entropies[-1]:.4f}"
+        )
+
+    summary = {
+        "samples": len(demonstrations),
+        "epochs": expert_epochs,
+        "batch_size": expert_batch_size,
+        "mean_loss": float(np.mean(losses)) if losses else 0.0,
+        "final_loss": losses[-1] if losses else 0.0,
+        "mean_entropy": float(np.mean(entropies)) if entropies else 0.0,
+        "expert_stats": expert_stats,
+    }
+
+    with open(save_path / "behavior_clone_summary.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    return summary
+
+
 def train_balatro_agent(
     total_timesteps: int = 1_000_000,
     n_envs: int = 8,
@@ -311,6 +440,9 @@ def train_balatro_agent(
     save_dir: str = str(REPO_ROOT / "artifacts" / "models"),
     checkpoint_freq: int = 10_000,
     hyperparams: dict[str, Any] | None = None,
+    behavior_clone_samples: int = 0,
+    behavior_clone_epochs: int = 0,
+    behavior_clone_batch_size: int = 128,
 ):
     """Train a Balatro agent with sb3-contrib RecurrentPPO."""
 
@@ -385,6 +517,17 @@ def train_balatro_agent(
         **algo_hyperparams,
     )
 
+    bc_summary = None
+    if behavior_clone_samples > 0 and behavior_clone_epochs > 0:
+        bc_summary = _behavior_clone_greedy_expert(
+            model,
+            save_path=save_path,
+            seed=seed,
+            expert_samples=behavior_clone_samples,
+            expert_epochs=behavior_clone_epochs,
+            expert_batch_size=behavior_clone_batch_size,
+        )
+
     callback_save_freq = max(checkpoint_freq // n_envs, 1)
     callbacks = CallbackList(
         [
@@ -421,7 +564,11 @@ def train_balatro_agent(
         "n_envs": n_envs,
         "seed": seed,
         "checkpoint_freq": checkpoint_freq,
+        "behavior_clone_samples": behavior_clone_samples,
+        "behavior_clone_epochs": behavior_clone_epochs,
+        "behavior_clone_batch_size": behavior_clone_batch_size,
         "hyperparams": _make_json_safe(algo_hyperparams),
+        "behavior_clone_summary": _make_json_safe(bc_summary),
         "save_path": str(save_path),
     }
     with open(save_path / "config.json", "w", encoding="utf-8") as f:
@@ -455,6 +602,24 @@ if __name__ == "__main__":
         action="store_true",
         help="Run a short 10k-timestep smoke test",
     )
+    parser.add_argument(
+        "--bc-samples",
+        type=int,
+        default=0,
+        help="Number of greedy-expert samples to collect for behavior cloning warm-start",
+    )
+    parser.add_argument(
+        "--bc-epochs",
+        type=int,
+        default=0,
+        help="Number of supervised warm-start epochs over the greedy expert samples",
+    )
+    parser.add_argument(
+        "--bc-batch-size",
+        type=int,
+        default=128,
+        help="Batch size for greedy-expert behavior cloning warm-start",
+    )
 
     args = parser.parse_args()
     timesteps = 10_000 if args.quick_test else args.timesteps
@@ -465,6 +630,9 @@ if __name__ == "__main__":
         seed=args.seed,
         save_dir=args.save_dir,
         checkpoint_freq=args.checkpoint_freq,
+        behavior_clone_samples=args.bc_samples,
+        behavior_clone_epochs=args.bc_epochs,
+        behavior_clone_batch_size=args.bc_batch_size,
     )
 
     print(f"Artifacts written to: {save_path}")
