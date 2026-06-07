@@ -28,6 +28,9 @@ from balatro_gym.core.balatro_game import BalatroGame
 
 class PlayPhaseHandler:
     """Handles all actions during the PLAY phase."""
+
+    BLIND_CLEAR_OUTCOME_BONUS = 15.0
+    BLIND_FAILURE_OUTCOME_PENALTY = -15.0
     
     def __init__(self, 
                  state: UnifiedGameState,
@@ -80,6 +83,13 @@ class PlayPhaseHandler:
             return self._handle_consumable_use(action)
         else:
             return -1.0, False, {'error': 'Invalid play phase action'}
+
+    def _progress_info(self) -> Dict[str, float | int]:
+        return {
+            "round_chips_scored": int(self.state.round_chips_scored),
+            "chips_needed": int(self.state.chips_needed),
+            "progress": float(self.state.round_chips_scored / max(1, self.state.chips_needed)),
+        }
     
     def _handle_play_hand(self) -> Tuple[float, bool, Dict]:
         """Handle playing the selected hand."""
@@ -157,11 +167,15 @@ class PlayPhaseHandler:
             'cards_played': len(selected_game_cards),
             'reward_breakdown': reward_info
         }
+        info.update(self._progress_info())
         
         # Check end conditions
         terminated = False
         if self.state.round_chips_scored >= self.state.chips_needed:
             # Beat the blind!
+            reward = min(100.0, reward + self.BLIND_CLEAR_OUTCOME_BONUS)
+            reward_info['blind_outcome'] = self.BLIND_CLEAR_OUTCOME_BONUS
+            reward_info['total_reward'] = reward
             from balatro_gym.core_utils.round_manager import RoundManager
             round_manager = RoundManager(
                 self.state,
@@ -174,10 +188,14 @@ class PlayPhaseHandler:
             info['beat_blind'] = True
         elif self.state.hands_left <= 0:
             # Failed the blind
+            reward = max(-20.0, reward + self.BLIND_FAILURE_OUTCOME_PENALTY)
+            reward_info['blind_outcome'] = self.BLIND_FAILURE_OUTCOME_PENALTY
+            reward_info['total_reward'] = reward
             terminated = True
             info['failed'] = True
         else:
             # Continue playing
+            reward_info['blind_outcome'] = 0.0
             self._prepare_next_hand()
         
         return reward, terminated, info
@@ -245,6 +263,7 @@ class PlayPhaseHandler:
             'money_earned': money_from_discards,
             'discards_left': self.state.discards_left
         }
+        info.update(self._progress_info())
         
         if tarots_created:
             info['tarots_created'] = tarots_created
@@ -273,6 +292,7 @@ class PlayPhaseHandler:
         return reward, False, {
             'selected_cards': self.state.selected_cards.copy(),
             'selection_reward_breakdown': breakdown,
+            **self._progress_info(),
         }
     
     def _handle_consumable_use(self, action: int) -> Tuple[float, bool, Dict]:
@@ -323,6 +343,7 @@ class PlayPhaseHandler:
             'consumable_used': consumable_name,
             'result': result['message']
         }
+        info.update(self._progress_info())
 
         if is_tarot_consumable_name(consumable_name) or is_planet_consumable_name(consumable_name):
             self.state.last_tarot_planet_consumable = consumable_name

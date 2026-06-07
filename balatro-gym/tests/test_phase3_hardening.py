@@ -197,6 +197,111 @@ def test_play_handler_rewards_committing_constructive_selection_sequence(monkeyp
     assert info["reward_breakdown"]["selection_commit_bonus"] == pytest.approx(0.15)
 
 
+def test_play_handler_adds_terminal_bonus_when_blind_is_cleared(monkeypatch):
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        selected_cards=[0],
+        hand_indexes=[0],
+        deck=[Card(Rank.ACE, Suit.SPADES)],
+        round_chips_scored=280,
+        chips_needed=300,
+        hands_left=2,
+    )
+    game = SimpleNamespace(
+        hand_indexes=[0],
+        highlighted_indexes=[],
+        round_hands=state.hands_left,
+        round_discards=state.discards_left,
+        round_score=0,
+        _classify_hand=lambda cards: (HandType.ONE_PAIR, None),
+        highlight_card=lambda idx: None,
+        play_hand=lambda: None,
+    )
+    engine = SimpleNamespace(hand_play_counts={hand_type: 0 for hand_type in HandType})
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        engine,
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=SimpleNamespace(),
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    monkeypatch.setattr(handler, "_get_selected_cards", lambda: ([SimpleNamespace(hand_type=HandType.ONE_PAIR)], [state.deck[0]]))
+    monkeypatch.setattr(handler, "_sync_and_highlight_cards", lambda: None)
+    monkeypatch.setattr(handler, "_check_boss_blind_can_play", lambda cards, hand_name: True)
+    monkeypatch.setattr(handler, "_score_hand", lambda *args, **kwargs: (40, {}))
+    monkeypatch.setattr(handler, "_apply_card_effects", lambda *args, **kwargs: (40, 0, [], []))
+    monkeypatch.setattr(handler, "_apply_boss_blind_scoring", lambda score, *args, **kwargs: score)
+    monkeypatch.setattr(handler, "_consume_played_hand", lambda: None)
+    monkeypatch.setattr(RoundManager, "advance_round", lambda self: None)
+    handler.reward_calculator = SimpleNamespace(calculate_play_reward=lambda **_: {"total_reward": 1.0})
+
+    reward, terminated, info = handler.step(Action.PLAY_HAND)
+
+    assert reward == pytest.approx(16.0)
+    assert terminated is False
+    assert info["beat_blind"] is True
+    assert info["reward_breakdown"]["blind_outcome"] == pytest.approx(15.0)
+    assert info["reward_breakdown"]["total_reward"] == pytest.approx(16.0)
+
+
+def test_play_handler_adds_terminal_penalty_when_blind_is_failed(monkeypatch):
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        selected_cards=[0],
+        hand_indexes=[0],
+        deck=[Card(Rank.ACE, Suit.SPADES)],
+        round_chips_scored=0,
+        chips_needed=300,
+        hands_left=1,
+    )
+    game = SimpleNamespace(
+        hand_indexes=[0],
+        highlighted_indexes=[],
+        round_hands=state.hands_left,
+        round_discards=state.discards_left,
+        round_score=0,
+        _classify_hand=lambda cards: (HandType.HIGH_CARD, None),
+        highlight_card=lambda idx: None,
+        play_hand=lambda: None,
+    )
+    engine = SimpleNamespace(hand_play_counts={hand_type: 0 for hand_type in HandType})
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        engine,
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=SimpleNamespace(),
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    monkeypatch.setattr(
+        handler,
+        "_get_selected_cards",
+        lambda: ([SimpleNamespace(hand_type=HandType.HIGH_CARD)], [state.deck[0]]),
+    )
+    monkeypatch.setattr(handler, "_sync_and_highlight_cards", lambda: None)
+    monkeypatch.setattr(handler, "_check_boss_blind_can_play", lambda cards, hand_name: True)
+    monkeypatch.setattr(handler, "_score_hand", lambda *args, **kwargs: (20, {}))
+    monkeypatch.setattr(handler, "_apply_card_effects", lambda *args, **kwargs: (20, 0, [], []))
+    monkeypatch.setattr(handler, "_apply_boss_blind_scoring", lambda score, *args, **kwargs: score)
+    monkeypatch.setattr(handler, "_consume_played_hand", lambda: setattr(state, "hands_left", 0))
+    handler.reward_calculator = SimpleNamespace(calculate_play_reward=lambda **_: {"total_reward": 1.0})
+
+    reward, terminated, info = handler.step(Action.PLAY_HAND)
+
+    assert reward == pytest.approx(-14.0)
+    assert terminated is True
+    assert info["failed"] is True
+    assert info["reward_breakdown"]["blind_outcome"] == pytest.approx(-15.0)
+    assert info["reward_breakdown"]["total_reward"] == pytest.approx(-14.0)
+
+
 def test_boss_post_score_state_changes_propagate_back_to_unified_state(monkeypatch):
     state = UnifiedGameState(
         phase=Phase.PLAY,

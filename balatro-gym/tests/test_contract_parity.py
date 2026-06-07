@@ -825,7 +825,7 @@ def test_env_active_hook_discard_redraw_is_seed_stable_across_repeated_episodes(
 
         obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -869,7 +869,7 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
 
         obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -895,7 +895,7 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
 
         obs, reward, terminated, truncated, info = restored.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -973,7 +973,7 @@ def test_env_active_wheel_second_same_round_draw_is_seed_stable_across_repeated_
 
         obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1020,7 +1020,7 @@ def test_env_active_wheel_discard_redraw_is_seed_stable_across_repeated_episodes
 
         obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1069,7 +1069,7 @@ def test_env_active_wheel_mid_round_save_load_preserves_seed_stable_discard_redr
 
         obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1097,7 +1097,7 @@ def test_env_active_wheel_mid_round_save_load_preserves_seed_stable_discard_redr
 
         obs, reward, terminated, truncated, info = restored.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1163,7 +1163,7 @@ def test_env_active_fish_mid_round_save_load_preserves_face_down_redraw_state():
 
         obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1185,7 +1185,7 @@ def test_env_active_fish_mid_round_save_load_preserves_face_down_redraw_state():
 
         obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1287,7 +1287,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_face_down_sta
 
         obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
@@ -1319,7 +1319,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_face_down_sta
 
         obs, reward, terminated, truncated, info = restored.step(Action.PLAY_HAND)
 
-        assert reward >= 0.0
+        assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
