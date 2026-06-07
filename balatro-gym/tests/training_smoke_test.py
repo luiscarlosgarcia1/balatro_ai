@@ -341,10 +341,12 @@ def test_train_balatro_agent_applies_short_budget_defaults(monkeypatch, tmp_path
         save_dir=str(tmp_path),
     )
 
-    assert model.kwargs["n_steps"] == 256
-    assert model.kwargs["batch_size"] == 256
-    assert model.kwargs["n_epochs"] == 4
-    assert model.kwargs["ent_coef"] == 0.001
+    assert model.kwargs["n_steps"] == 128
+    assert model.kwargs["batch_size"] == 128
+    assert model.kwargs["n_epochs"] == 6
+    assert model.kwargs["learning_rate"] == 1e-4
+    assert model.kwargs["ent_coef"] == 0.02
+    assert model.kwargs["target_kl"] == 0.03
 
 
 def test_real_small_env_reset_step_smoke():

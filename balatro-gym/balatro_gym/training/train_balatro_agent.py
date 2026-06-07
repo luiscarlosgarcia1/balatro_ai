@@ -283,17 +283,19 @@ def _merge_dicts(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, A
 def _short_budget_hyperparams(total_timesteps: int, n_envs: int) -> dict[str, Any]:
     """Use a smaller rollout/update recipe when validating short masked-policy runs."""
 
-    if total_timesteps > 20_000:
+    if total_timesteps > 50_000:
         return {}
 
     per_env_budget = max(total_timesteps // max(n_envs, 1), 1)
-    n_steps = max(32, min(256, per_env_budget))
-    batch_size = min(256, n_steps * max(n_envs, 1))
+    n_steps = max(64, min(128, per_env_budget))
+    batch_size = min(128, n_steps * max(n_envs, 1))
     return {
         "n_steps": n_steps,
         "batch_size": batch_size,
-        "n_epochs": 4,
-        "ent_coef": 0.001,
+        "n_epochs": 6,
+        "learning_rate": 1e-4,
+        "ent_coef": 0.02,
+        "target_kl": 0.03,
     }
 
 
@@ -344,16 +346,17 @@ def train_balatro_agent(
     env = VecNormalize(env, **vec_normalize_kwargs)
 
     default_hyperparams = {
-        "learning_rate": 3e-4,
-        "n_steps": 2048,
-        "batch_size": 64,
-        "n_epochs": 10,
+        "learning_rate": 1e-4,
+        "n_steps": 512,
+        "batch_size": 128,
+        "n_epochs": 6,
         "gamma": 0.99,
         "gae_lambda": 0.95,
         "clip_range": 0.2,
-        "ent_coef": 0.01,
+        "ent_coef": 0.02,
         "vf_coef": 0.5,
         "max_grad_norm": 0.5,
+        "target_kl": 0.03,
         "policy_kwargs": {
             "features_extractor_class": BalatroFeaturesExtractor,
             "features_extractor_kwargs": {"features_dim": 512},
