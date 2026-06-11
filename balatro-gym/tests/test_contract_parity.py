@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import sys
 import types
 from types import MethodType
@@ -40,6 +41,12 @@ from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.environments.balatro_env_small import BalatroEnv
 from balatro_gym.environments.live.balatro_live_env import BalatroLiveEnv
 from balatro_gym.scoring.scoring_engine import HandType
+from balatro_gym.training.greedy_expert import direct_play_action_for_combo
+
+
+def _requires_direct_play_block():
+    if not hasattr(Action, "PLAY_SUBSET_BASE") or not hasattr(Action, "PLAY_SUBSET_COUNT"):
+        pytest.skip("direct subset-play action block is not exposed in this tree")
 
 
 def _make_live_env_stub() -> BalatroLiveEnv:
@@ -290,6 +297,25 @@ def test_play_mask_allows_backing_out_of_full_selection():
     assert mask[Action.DISCARD] == 0
     assert mask[Action.SELECT_CARD_BASE + 0] == 1
     assert mask[Action.SELECT_CARD_BASE + 4] == 1
+
+
+def test_play_mask_exposes_direct_subset_play_actions_for_legal_subsets():
+    _requires_direct_play_block()
+
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        hand_indexes=[0, 1, 2, 3],
+        discards_left=1,
+    )
+    obs = ObservationBuilder().build_observation(state)
+
+    single_action = direct_play_action_for_combo(obs, (0,))
+    pair_action = direct_play_action_for_combo(obs, (1, 3))
+
+    assert single_action is not None
+    assert pair_action is not None
+    assert obs["action_mask"][single_action] == 1
+    assert obs["action_mask"][pair_action] == 1
 
 
 def test_play_mask_requires_exact_target_counts_for_targeted_consumables():

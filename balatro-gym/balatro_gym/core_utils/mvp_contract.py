@@ -6,7 +6,7 @@ from typing import Any, Iterable, Mapping, TYPE_CHECKING
 import numpy as np
 from gymnasium import spaces
 
-from balatro_gym.core.constants import Action, ActionCounts, Phase
+from balatro_gym.core.constants import Action, ActionCounts, Phase, PLAY_SUBSET_SLOT_SETS
 from balatro_gym.core.consumables import is_planet_consumable_name, is_spectral_consumable_name, is_tarot_consumable_name
 from balatro_gym.scoring.scoring_engine import HandType
 
@@ -247,14 +247,16 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
     if phase == Phase.PLAY:
         selected_count = len(state.selected_cards)
         selected_indexes = set(int(i) for i in state.selected_cards)
+        visible_hand_size = min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))
         if selected_count < 5:
-            for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
+            for i in range(visible_hand_size):
                 if i not in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
         else:
-            for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
+            for i in range(visible_hand_size):
                 if i in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
+        _mark_direct_play_subset_actions(mask, visible_hand_size)
         if 0 < selected_count <= 5:
             mask[Action.PLAY_HAND] = 1
         if selected_count > 0 and state.discards_left > 0:
@@ -462,14 +464,16 @@ def build_action_mask(
         selected_indexes = {int(idx) for idx in selected_cards}
         discards_left = int(kwargs["discards_left"])
         consumable_count = int(kwargs["consumable_count"])
+        visible_hand_size = min(ActionCounts.SELECT_CARD_COUNT, hand_size)
         if len(selected_cards) < 5:
-            for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
+            for i in range(visible_hand_size):
                 if i not in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
         else:
-            for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
+            for i in range(visible_hand_size):
                 if i in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
+        _mark_direct_play_subset_actions(mask, visible_hand_size)
         if 0 < len(selected_cards) <= 5:
             mask[Action.PLAY_HAND] = 1
         if selected_cards and discards_left > 0:
@@ -535,6 +539,13 @@ def build_action_mask(
 
 def encode_joker_tokens(jokers: Iterable[Any], slots: int = 10) -> np.ndarray:
     return encode_joker_ids(jokers, slots=slots)
+
+
+def _mark_direct_play_subset_actions(mask: np.ndarray, visible_hand_size: int) -> None:
+    for subset_index, slot_subset in enumerate(PLAY_SUBSET_SLOT_SETS):
+        if slot_subset[-1] >= visible_hand_size:
+            continue
+        mask[Action.PLAY_SUBSET_BASE + subset_index] = 1
 
 
 def encode_consumables(consumables: Iterable[Any], slots: int = 5) -> np.ndarray:

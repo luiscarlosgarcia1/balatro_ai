@@ -4,7 +4,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from balatro_gym.core.constants import Action
+from balatro_gym.core.constants import (
+    Action,
+    decode_play_subset_action,
+    encode_play_subset_action,
+    is_play_subset_action,
+)
 from balatro_gym.core_utils.mvp_contract import build_mvp_action_mask
 
 if TYPE_CHECKING:
@@ -22,6 +27,18 @@ class ActionHandler:
     @staticmethod
     def get_action_space_size() -> int:
         return Action.ACTION_SPACE_SIZE
+
+    @staticmethod
+    def encode_play_subset_action(selected_slots: list[int] | tuple[int, ...]) -> int:
+        return encode_play_subset_action(selected_slots)
+
+    @staticmethod
+    def decode_play_subset_action(action: int) -> tuple[int, ...]:
+        return decode_play_subset_action(action)
+
+    @staticmethod
+    def is_play_subset_action(action: int) -> bool:
+        return is_play_subset_action(action)
 
     def is_valid_action(self, action: int) -> bool:
         """Check if action is valid."""
