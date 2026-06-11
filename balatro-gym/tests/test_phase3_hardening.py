@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType
-from balatro_gym.core.cards import Card, Rank, Suit
+from balatro_gym.core.cards import Card, Rank, Seal, Suit
 from balatro_gym.core.consumables import ConsumableManager
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.jokers import JokerInfo
@@ -32,7 +32,14 @@ from balatro_gym.core_utils.phase_handlers.shop_phase import ShopPhaseHandler
 from balatro_gym.core_utils.round_manager import RoundManager
 from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
+from balatro_gym.environments.balatro_env_small import BalatroEnv
 from balatro_gym.scoring.scoring_engine import HandType
+from balatro_gym.training.greedy_expert import best_play_sequence, direct_play_action_for_combo
+
+
+def _requires_direct_play_block():
+    if not hasattr(Action, "PLAY_SUBSET_BASE") or not hasattr(Action, "PLAY_SUBSET_COUNT"):
+        pytest.skip("direct subset-play action block is not exposed in this tree")
 
 
 def test_play_reward_uses_preplay_round_score(monkeypatch):
@@ -195,6 +202,97 @@ def test_play_handler_rewards_committing_constructive_selection_sequence(monkeyp
     assert reward == pytest.approx(1.15)
     assert terminated is False
     assert info["reward_breakdown"]["selection_commit_bonus"] == pytest.approx(0.15)
+
+
+def test_direct_play_subset_blue_seal_uses_hand_type_name_without_scoring_card_attr(monkeypatch):
+    _requires_direct_play_block()
+
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        hand_indexes=[0],
+        deck=[Card(Rank.ACE, Suit.SPADES)],
+        round_chips_scored=0,
+        chips_needed=400,
+        hands_left=3,
+        consumable_slots=2,
+    )
+    state.get_card_state(0).seal = Seal.BLUE
+
+    game = SimpleNamespace(
+        hand_indexes=[0],
+        highlighted_indexes=[],
+        round_hands=state.hands_left,
+        round_discards=state.discards_left,
+        round_score=0,
+        _classify_hand=lambda cards: (HandType.ONE_PAIR, None),
+        highlight_card=lambda idx: None,
+        play_hand=lambda: None,
+    )
+    engine = SimpleNamespace(hand_play_counts={hand_type: 0 for hand_type in HandType})
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        engine,
+        unified_scorer=SimpleNamespace(),
+        joker_effects_engine=SimpleNamespace(),
+        consumable_manager=SimpleNamespace(),
+        boss_blind_manager=SimpleNamespace(active_blind=None),
+        rng=DeterministicRNG(123),
+    )
+
+    monkeypatch.setattr(
+        handler,
+        "_get_selected_cards",
+        lambda: ([SimpleNamespace(rank=14, suit="Spades")], [state.deck[0]]),
+    )
+    monkeypatch.setattr(handler, "_sync_and_highlight_cards", lambda: None)
+    monkeypatch.setattr(handler, "_score_hand", lambda *args, **kwargs: (80, {}))
+    monkeypatch.setattr(handler, "_apply_boss_blind_scoring", lambda score, *args, **kwargs: score)
+    monkeypatch.setattr(handler, "_consume_played_hand", lambda: None)
+    monkeypatch.setattr(handler, "_prepare_next_hand", lambda: None)
+    handler.reward_calculator = SimpleNamespace(calculate_play_reward=lambda **kwargs: {"total_reward": 1.0})
+
+    reward, terminated, info = handler.step(int(Action.PLAY_SUBSET_BASE))
+
+    assert reward == pytest.approx(1.0)
+    assert terminated is False
+    assert info["final_score"] == 80
+    assert state.consumables == ["Mercury"]
+
+
+def test_greedy_best_play_sequence_prefers_single_direct_subset_action_when_available():
+    _requires_direct_play_block()
+
+    env = BalatroEnv(seed=123)
+    obs, _ = env.reset(seed=123)
+    if int(obs["phase"]) != Phase.PLAY:
+        pytest.skip("environment did not reset into play phase")
+
+    chosen_actions = best_play_sequence(env)
+
+    assert len(chosen_actions) == 1
+    assert getattr(Action, "PLAY_SUBSET_BASE") <= chosen_actions[0] < getattr(Action, "PLAY_SUBSET_BASE") + getattr(Action, "PLAY_SUBSET_COUNT")
+
+
+def test_direct_subset_play_action_executes_without_legacy_selection_substeps():
+    _requires_direct_play_block()
+
+    env = BalatroEnv(seed=123)
+    obs, _ = env.reset(seed=123)
+    if int(obs["phase"]) != Phase.PLAY:
+        pytest.skip("environment did not reset into play phase")
+
+    direct_action = direct_play_action_for_combo(obs, (0,))
+    if direct_action is None:
+        pytest.skip("direct subset-play action for a single-card subset was not legal on this hand")
+
+    next_obs, reward, terminated, truncated, info = env.step(direct_action)
+
+    assert reward != pytest.approx(-1.0)
+    assert "error" not in info
+    assert next_obs["selected_cards"].sum() == 0
+    assert isinstance(terminated, bool)
+    assert isinstance(truncated, bool)
 
 
 def test_play_handler_adds_terminal_bonus_when_blind_is_cleared(monkeypatch):

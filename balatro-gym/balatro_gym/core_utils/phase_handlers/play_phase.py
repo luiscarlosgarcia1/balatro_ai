@@ -8,6 +8,7 @@ This module handles all actions during the PLAY phase including:
 """
 
 from dataclasses import replace
+import inspect
 from typing import Tuple, Dict, List, Any, Optional
 import numpy as np
 
@@ -16,7 +17,7 @@ from balatro_gym.core_utils.mvp_contract import get_pack_consumable_target_count
 from balatro_gym.core_utils.reward_calculator import RewardCalculator
 from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState, CardState
-from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.constants import Action, Phase, decode_play_subset_action, is_play_subset_action
 from balatro_gym.core.cards import Card, Enhancement, Edition, Seal, EnhancementEffects, SealEffects
 from balatro_gym.scoring.scoring_engine import ScoreEngine, HandType
 from balatro_gym.scoring.unified_scoring import UnifiedScorer, ScoringContext
@@ -77,6 +78,8 @@ class PlayPhaseHandler:
             return self._handle_play_hand()
         elif action == Action.DISCARD:
             return self._handle_discard()
+        elif is_play_subset_action(action):
+            return self._handle_direct_play_subset(action)
         elif Action.SELECT_CARD_BASE <= action < Action.SELECT_CARD_BASE + Action.SELECT_CARD_COUNT:
             return self._handle_card_selection(action)
         elif Action.USE_CONSUMABLE_BASE <= action < Action.USE_CONSUMABLE_BASE + Action.USE_CONSUMABLE_COUNT:
@@ -119,7 +122,12 @@ class PlayPhaseHandler:
         
         # Apply card effects and calculate final score
         final_score, extra_money, cards_to_destroy, consumables_created = \
-            self._apply_card_effects(selected_cards, selected_game_cards, base_score)
+            self._apply_card_effects_compat(
+                selected_cards,
+                selected_game_cards,
+                base_score,
+                hand_type_name,
+            )
         
         # Apply boss blind scoring modifications
         final_score = self._apply_boss_blind_scoring(final_score, selected_game_cards, hand_type, hand_type_name)
@@ -294,6 +302,20 @@ class PlayPhaseHandler:
             'selection_reward_breakdown': breakdown,
             **self._progress_info(),
         }
+
+    def _handle_direct_play_subset(self, action: int) -> Tuple[float, bool, Dict]:
+        """Resolve a play directly from a visible-slot subset action."""
+        try:
+            selected_slots = decode_play_subset_action(action)
+        except ValueError:
+            return -1.0, False, {'error': 'Invalid direct play subset action'}
+
+        if selected_slots[-1] >= len(self.state.hand_indexes):
+            return -1.0, False, {'error': 'Direct play subset exceeds visible hand'}
+
+        self.state.selected_cards = list(selected_slots)
+        self._reset_selection_sequence_tracking()
+        return self._handle_play_hand()
     
     def _handle_consumable_use(self, action: int) -> Tuple[float, bool, Dict]:
         """Handle using a consumable."""
@@ -436,7 +458,7 @@ class PlayPhaseHandler:
         return self.unified_scorer.score_hand(scoring_context)
     
     def _apply_card_effects(self, selected_cards: List[Any], selected_game_cards: List[Card], 
-                           base_score: int) -> Tuple[int, int, List[int], List[str]]:
+                           base_score: int, hand_type_name: str) -> Tuple[int, int, List[int], List[str]]:
         """Apply card enhancement/edition/seal effects."""
         final_score = base_score
         extra_money = 0
@@ -472,15 +494,7 @@ class PlayPhaseHandler:
                 elif card_state.seal == Seal.RED:
                     cards_to_retrigger.append(i)
                 elif card_state.seal == Seal.BLUE:
-                    # Create planet based on hand type
-                    planet_map = {
-                        'High Card': 'Pluto', 'One Pair': 'Mercury', 'Two Pair': 'Venus',
-                        'Three Kind': 'Earth', 'Straight': 'Mars', 'Flush': 'Jupiter',
-                        'Full House': 'Saturn', 'Four Kind': 'Uranus', 
-                        'Straight Flush': 'Neptune', 'Five Kind': 'Planet X'
-                    }
-                    hand_name = scoring_card.hand_type.name.replace('_', ' ').title()
-                    planet = planet_map.get(hand_name)
+                    planet = SealEffects.get_planet_created(card_state.seal, hand_type_name)
                     if planet and len(self.state.consumables) < self.state.consumable_slots:
                         consumables_to_create.append(planet)
         
@@ -493,6 +507,31 @@ class PlayPhaseHandler:
         final_score = int(final_score * (1 + retrigger_bonus))
         
         return final_score, extra_money, cards_to_destroy, consumables_to_create
+
+    def _apply_card_effects_compat(
+        self,
+        selected_cards: List[Any],
+        selected_game_cards: List[Card],
+        base_score: int,
+        hand_type_name: str,
+    ) -> Tuple[int, int, List[int], List[str]]:
+        """Call monkeypatched card-effect handlers with either legacy or current arity."""
+        method = self._apply_card_effects
+        try:
+            parameters = tuple(inspect.signature(method).parameters.values())
+        except (TypeError, ValueError):
+            parameters = ()
+
+        if parameters and not any(param.kind is inspect.Parameter.VAR_POSITIONAL for param in parameters):
+            positional_count = sum(
+                1
+                for param in parameters
+                if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            )
+            if positional_count <= 3:
+                return method(selected_cards, selected_game_cards, base_score)
+
+        return method(selected_cards, selected_game_cards, base_score, hand_type_name)
     
     def _apply_boss_blind_scoring(self, score: int, cards: List[Card], 
                                   hand_type: HandType, hand_type_name: str) -> int:
