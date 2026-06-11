@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
+from typing import Iterable
 
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core_utils.card_adapter import CardAdapter
@@ -14,11 +15,74 @@ class GreedyExpertStep:
     action: int
 
 
+_DIRECT_PLAY_BASE_CANDIDATES = (
+    "PLAY_SUBSET_BASE",
+    "DIRECT_PLAY_BASE",
+    "PLAY_COMBO_BASE",
+    "PLAY_SELECTION_BASE",
+)
+_DIRECT_PLAY_COUNT_CANDIDATES = (
+    "PLAY_SUBSET_COUNT",
+    "DIRECT_PLAY_COUNT",
+    "PLAY_COMBO_COUNT",
+    "PLAY_SELECTION_COUNT",
+)
+
+
 def _copy_observation(obs: dict) -> dict:
     return {
         key: value.copy() if hasattr(value, "copy") else value
         for key, value in obs.items()
     }
+
+
+def _legal_actions(obs: dict) -> list[int]:
+    return [action for action, enabled in enumerate(obs["action_mask"]) if enabled]
+
+
+def _legacy_play_sequence_for_combo(combo: tuple[int, ...]) -> list[int]:
+    return [Action.SELECT_CARD_BASE + idx for idx in combo] + [Action.PLAY_HAND]
+
+
+def _direct_play_block() -> tuple[int, int] | None:
+    base = next((getattr(Action, name, None) for name in _DIRECT_PLAY_BASE_CANDIDATES if hasattr(Action, name)), None)
+    count = next((getattr(Action, name, None) for name in _DIRECT_PLAY_COUNT_CANDIDATES if hasattr(Action, name)), None)
+    if base is None or count is None:
+        return None
+    return int(base), int(count)
+
+
+def _subset_action_combos(max_hand_size: int) -> Iterable[tuple[int, ...]]:
+    capped_hand_size = min(max_hand_size, Action.SELECT_CARD_COUNT)
+    max_cards_to_play = min(5, capped_hand_size)
+    for count in range(1, max_cards_to_play + 1):
+        yield from itertools.combinations(range(capped_hand_size), count)
+
+
+def direct_play_action_for_combo(obs: dict, combo: tuple[int, ...]) -> int | None:
+    block = _direct_play_block()
+    if block is None:
+        return None
+
+    base, count = block
+    combo_to_offset = {
+        subset: offset
+        for offset, subset in enumerate(_subset_action_combos(Action.SELECT_CARD_COUNT))
+    }
+    offset = combo_to_offset.get(tuple(combo))
+    if offset is None or offset >= count:
+        return None
+
+    action = base + offset
+    legal_actions = _legal_actions(obs)
+    return action if action in legal_actions else None
+
+
+def best_play_actions_for_combo(obs: dict, combo: tuple[int, ...]) -> list[int]:
+    direct_action = direct_play_action_for_combo(obs, combo)
+    if direct_action is not None:
+        return [direct_action]
+    return _legacy_play_sequence_for_combo(combo)
 
 
 def best_play_sequence(env: BalatroEnv) -> list[int]:
@@ -56,7 +120,7 @@ def best_play_sequence(env: BalatroEnv) -> list[int]:
 
     if best_choice is None:
         obs = env.obs_builder.build_observation(env.state)
-        legal_actions = [action for action, enabled in enumerate(obs["action_mask"]) if enabled]
+        legal_actions = _legal_actions(obs)
         if Action.DISCARD in legal_actions:
             return [Action.DISCARD]
         card_actions = [
@@ -71,11 +135,12 @@ def best_play_sequence(env: BalatroEnv) -> list[int]:
         raise RuntimeError("Greedy expert found no legal action in play phase")
 
     _, _, combo = best_choice
-    return [Action.SELECT_CARD_BASE + idx for idx in combo] + [Action.PLAY_HAND]
+    obs = env.obs_builder.build_observation(env.state)
+    return best_play_actions_for_combo(obs, combo)
 
 
 def default_phase_action(obs: dict) -> int:
-    valid_actions = [action for action, enabled in enumerate(obs["action_mask"]) if enabled]
+    valid_actions = _legal_actions(obs)
     if not valid_actions:
         raise RuntimeError("Observation exposed no legal actions")
 

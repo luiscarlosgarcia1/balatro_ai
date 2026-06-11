@@ -7,6 +7,7 @@ import sys
 import types
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 
@@ -463,6 +464,25 @@ def test_features_extractor_keeps_action_mask_out_of_learned_flat_features():
     extractor = BalatroFeaturesExtractor(observation_space, features_dim=32)
     assert "action_mask" not in extractor.flat_keys
     assert "selected_cards" in extractor.flat_keys
+
+
+def test_greedy_expert_prefers_direct_subset_play_action_when_available(monkeypatch):
+    from balatro_gym.training import greedy_expert
+
+    monkeypatch.setattr(greedy_expert, "_direct_play_block", lambda: (100, 218))
+
+    obs = {
+        "action_mask": np.zeros(400, dtype=np.int8),
+    }
+    direct_action = 100 + 9
+    obs["action_mask"][direct_action] = 1
+    obs["action_mask"][greedy_expert.Action.SELECT_CARD_BASE + 0] = 1
+    obs["action_mask"][greedy_expert.Action.SELECT_CARD_BASE + 2] = 1
+    obs["action_mask"][greedy_expert.Action.PLAY_HAND] = 1
+
+    chosen_actions = greedy_expert.best_play_actions_for_combo(obs, (0, 2))
+
+    assert chosen_actions == [direct_action]
 
 
 def test_real_recurrent_ppo_training_smoke(tmp_path, monkeypatch):
