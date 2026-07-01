@@ -1,36 +1,80 @@
-# Created by `python3 headless/pool.py start|run` for manager PID, status, and manager logs.
-/headless/.pool/
-
-# Created by `luajit headless/run.lua` and by pool-managed instances via `BALATRO_SAVE_DIR`.
-/headless/.save/
-
-# Created by `python3 headless/pool.py start|run` for per-instance stdout/stderr logs.
-/headless/logs/
-
-# Created by Python when importing or compiling `headless/pool.py`.
-/headless/__pycache__/
-/headless/*.pyc
-
-# Balatro game folder.
+# Protected/generated game sources
 /balatro_unpacked/
 
-# macOS Finder metadata
-.DS_Store
+# balatrobot runtime outputs only. Do not edit balatrobot source as part of gym cleanup.
+/balatrobot/logs/
 
 # Python caches
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
 
-# Local virtualenvs
+# Local environments
 .venv/
 .venv_*/
+venv/
+env/
+ENV/
+.env
+.env.*
 
-# Instance logs
-/logs/
+# Build/package outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+site/
 
-# Local training outputs
-/artifacts/
+# OS/editor noise
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
 
-# Local smoke-test caches
-/balatro-gym/.tmp/
+# Logs and temporary files
+logs/
+log/
+*.log
+tmp/
+temp/
+.tmp/
+*.tmp
+
+# Training/model/experiment outputs
+artifacts/
+models/
+checkpoints/
+runs/
+wandb/
+mlruns/
+tensorboard/
+tb_logs/
+lightning_logs/
+outputs/
+generated/
+experiments/
+saved_models/
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.ckpt
+*.safetensors
+*.zip
+
+# Balatro headless runtime outputs
+/headless/.pool/
+/headless/.save/
+/headless/logs/
+/headless/__pycache__/
+/headless/*.pyc
