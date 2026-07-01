@@ -1,13 +1,6 @@
 # Core RL env API
 gymnasium>=0.29.1,<1.0
 
-# Common scientific stack – add/remove as you learn what the code really needs
+# Runtime dependencies for the Python game implementation and live adapter
 numpy>=1.26
-pandas>=2.2
-matplotlib>=3.9
-
-# MVP recurrent PPO training stack
-torch>=2.3
-stable-baselines3>=2.5
-sb3-contrib>=2.5
-tensorboard>=2.16
+httpx>=0.28

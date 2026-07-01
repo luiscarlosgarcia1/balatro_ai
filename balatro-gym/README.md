@@ -1,59 +1,40 @@
 # Balatro Gym
 
-[![discord](https://img.shields.io/badge/discord-7289da.svg?style=flat-square&logo=discord)](https://amplication.com/discord)
-![GitHub License](https://img.shields.io/github/license/cassiusfive/balatro-gym?style=flat-square)
+`balatro-gym` contains the maintained Python implementation of Balatro gameplay plus a Gymnasium environment.
 
+The package is intentionally focused on game simulation and the shared interface contract. Training loops, bot policies, checkpoint runners, generated trajectories, logs, and model artifacts have been removed.
 
-`balatro-gym` provides a [Gymnasium](https://gymnasium.farama.org/) environment for the poker-themed rougelike deck-builder [Balatro](https://www.playbalatro.com/). This project provides a standard interface to train reinforcement learning models for Balatro v1.0.0.
+## Key Modules
+
+- `balatro_gym/core/`: cards, jokers, consumables, shop, boss blinds, and game primitives.
+- `balatro_gym/core_utils/`: unified game state, phase handlers, observation building, action validation, RNG, and the shared MVP contract.
+- `balatro_gym/scoring/`: scoring engines and joker effects.
+- `balatro_gym/environments/balatro_env_small.py`: maintained Gymnasium environment for the Python implementation.
+- `balatro_gym/environments/live/balatro_live_env.py`: adapter that maps `balatrobot` live game state/actions onto the same contract.
 
 ## Install
 
 ```bash
-git clone https://github.com/cassiusfive/balatro-gym
-cd balatro-gym
-pip install -e .
+poetry install
 ```
 
-## Training Smoke Test
-
-Run the reproducible bootstrap-and-smoke path for a fresh machine:
+Or:
 
 ```bash
-./scripts/run_training_smoke.sh
+python -m pip install -e . pytest
 ```
 
-What it does:
-
-- requires Python 3.12
-- creates `.venv_training_smoke` if needed
-- installs `config/requirements.txt` plus `pytest`
-- runs `tests/training_smoke_test.py`
-
-If your worker exposes Python 3.12 under a different name, set `BALATRO_GYM_PYTHON_BIN`:
+## Run Tests
 
 ```bash
-BALATRO_GYM_PYTHON_BIN=/path/to/python3.12 ./scripts/run_training_smoke.sh
+poetry run pytest
 ```
 
-## MDP - Observations, Actions and Rewards
+## Contract Surface
 
-### Observation
+The canonical action and observation contract lives in:
 
-WIP
+- `balatro_gym/core/constants.py`
+- `balatro_gym/core_utils/mvp_contract.py`
 
-### Action
-
-WIP
-
-### Reward
-
-WIP
-
-## Usage
-
-```python3
-import gymnasium as gym
-import balatro_gym
-
-env = gym.make("BalatroGym-v0")
-```
+Keep these stable when changing the Python environment or live adapter.
