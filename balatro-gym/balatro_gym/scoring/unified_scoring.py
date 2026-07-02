@@ -107,6 +107,23 @@ class UnifiedScorer:
         self.engine = score_engine
         self.joker_effects = joker_effects
         self.effect_converter = EffectConverter()
+
+    @staticmethod
+    def _joker_name(joker_entry: Any) -> Optional[str]:
+        """Return the joker name from supported state/scoring representations."""
+        if isinstance(joker_entry, str):
+            return joker_entry
+        if isinstance(joker_entry, dict):
+            name = joker_entry.get('name')
+            return name if isinstance(name, str) else None
+        name = getattr(joker_entry, 'name', None)
+        return name if isinstance(name, str) else None
+
+    def _iter_joker_names(self, game_state: Dict[str, Any]):
+        for joker_entry in game_state.get('jokers', []):
+            joker_name = self._joker_name(joker_entry)
+            if joker_name:
+                yield joker_name
     
     def score_hand(self, context: ScoringContext) -> Tuple[int, Dict[str, Any]]:
         """
@@ -161,14 +178,13 @@ class UnifiedScorer:
             'hand_type': context.hand_type_name
         }
         
-        for joker_name in context.game_state.get('jokers', []):
-            if isinstance(joker_name, str):
-                joker = type('Joker', (), {'name': joker_name})
-                raw_effect = self.joker_effects.apply_joker_effect(joker, before_context, context.game_state)
-                effect = self.effect_converter.convert_joker_effect(raw_effect)
-                
-                if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
-                    breakdown['effects_applied'].append(f"{joker_name} (before): {effect.message}")
+        for joker_name in self._iter_joker_names(context.game_state):
+            joker = type('Joker', (), {'name': joker_name})
+            raw_effect = self.joker_effects.apply_joker_effect(joker, before_context, context.game_state)
+            effect = self.effect_converter.convert_joker_effect(raw_effect)
+
+            if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
+                breakdown['effects_applied'].append(f"{joker_name} (before): {effect.message}")
         
         # 5. Apply INDIVIDUAL card scoring effects
         individual_chips = 0
@@ -184,20 +200,19 @@ class UnifiedScorer:
                 'hand_type': context.hand_type_name
             }
             
-            for joker_name in context.game_state.get('jokers', []):
-                if isinstance(joker_name, str):
-                    joker = type('Joker', (), {'name': joker_name})
-                    raw_effect = self.joker_effects.apply_joker_effect(joker, card_context, context.game_state)
-                    effect = self.effect_converter.convert_joker_effect(raw_effect)
-                    
-                    individual_chips += effect.chips_add
-                    individual_mult += effect.mult_add
-                    individual_x_mult *= effect.x_mult
-                    money_gained += effect.money
-                    
-                    if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
-                        card_str = f"{getattr(card, 'rank', '?')} of {getattr(card, 'suit', '?')}"
-                        breakdown['effects_applied'].append(f"{joker_name} on {card_str}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}")
+            for joker_name in self._iter_joker_names(context.game_state):
+                joker = type('Joker', (), {'name': joker_name})
+                raw_effect = self.joker_effects.apply_joker_effect(joker, card_context, context.game_state)
+                effect = self.effect_converter.convert_joker_effect(raw_effect)
+
+                individual_chips += effect.chips_add
+                individual_mult += effect.mult_add
+                individual_x_mult *= effect.x_mult
+                money_gained += effect.money
+
+                if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
+                    card_str = f"{getattr(card, 'rank', '?')} of {getattr(card, 'suit', '?')}"
+                    breakdown['effects_applied'].append(f"{joker_name} on {card_str}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}")
         
         # Apply individual effects
         chips += individual_chips
@@ -216,32 +231,31 @@ class UnifiedScorer:
             'hand_type': context.hand_type_name
         }
         
-        for joker_name in context.game_state.get('jokers', []):
-            if isinstance(joker_name, str):
-                joker = type('Joker', (), {'name': joker_name})
-                raw_effect = self.joker_effects.apply_joker_effect(joker, scoring_context, context.game_state)
-                effect = self.effect_converter.convert_joker_effect(raw_effect)
-                
-                # Apply additive effects
-                chips += effect.chips_add
-                mult += effect.mult_add
-                
-                # Apply multiplicative effects
-                chips = int(chips * effect.chips_mult)
-                mult = int(mult * effect.mult_mult)
-                
-                # Track final multiplier
-                x_mult *= effect.x_mult
-                money_gained += effect.money
-                
-                if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
-                    breakdown['effects_applied'].append(
-                        f"{joker_name}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}"
-                    )
-                
-                breakdown['joker_chips'] += effect.chips_add
-                breakdown['joker_mult'] += effect.mult_add
-                breakdown['joker_x_mult'] *= effect.x_mult
+        for joker_name in self._iter_joker_names(context.game_state):
+            joker = type('Joker', (), {'name': joker_name})
+            raw_effect = self.joker_effects.apply_joker_effect(joker, scoring_context, context.game_state)
+            effect = self.effect_converter.convert_joker_effect(raw_effect)
+
+            # Apply additive effects
+            chips += effect.chips_add
+            mult += effect.mult_add
+
+            # Apply multiplicative effects
+            chips = int(chips * effect.chips_mult)
+            mult = int(mult * effect.mult_mult)
+
+            # Track final multiplier
+            x_mult *= effect.x_mult
+            money_gained += effect.money
+
+            if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
+                breakdown['effects_applied'].append(
+                    f"{joker_name}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}"
+                )
+
+            breakdown['joker_chips'] += effect.chips_add
+            breakdown['joker_mult'] += effect.mult_add
+            breakdown['joker_x_mult'] *= effect.x_mult
         
         # 7. Apply card enhancements and editions
         enhancement_chips = 0
