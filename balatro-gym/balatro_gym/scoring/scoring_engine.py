@@ -39,6 +39,22 @@ BASE_HAND_VALUES = {
     HandType.FLUSH_FIVE: (160, 16),
 }
 
+# Per-level scoring increments from Balatro's G.GAME.hands l_chips/l_mult values.
+HAND_LEVEL_INCREMENTS = {
+    HandType.HIGH_CARD: (10, 1),
+    HandType.ONE_PAIR: (15, 1),
+    HandType.TWO_PAIR: (20, 1),
+    HandType.THREE_KIND: (20, 2),
+    HandType.STRAIGHT: (30, 3),
+    HandType.FLUSH: (15, 2),
+    HandType.FULL_HOUSE: (25, 2),
+    HandType.FOUR_KIND: (30, 3),
+    HandType.STRAIGHT_FLUSH: (40, 4),
+    HandType.FIVE_KIND: (35, 3),
+    HandType.FLUSH_HOUSE: (40, 4),
+    HandType.FLUSH_FIVE: (50, 3),
+}
+
 # Planet effects on hand levels
 PLANET_HAND_MAP = {
     'Mercury': HandType.ONE_PAIR,
@@ -87,16 +103,12 @@ class ScoreEngine:
     def get_hand_chips_mult(self, hand_type: HandType) -> Tuple[int, int]:
         """Get base chips and mult for a hand type at current level"""
         base_chips, base_mult = BASE_HAND_VALUES.get(hand_type, (5, 1))
+        level_chips, level_mult = HAND_LEVEL_INCREMENTS.get(hand_type, (10, 1))
         level = self.get_hand_level(hand_type)
         
-        # Each level adds to both chips and mult
-        # Level 1: base values
-        # Level 2: +10 chips, +1 mult
-        # Level 3: +20 chips, +2 mult, etc.
-        
         level_bonus = level - 1
-        final_chips = base_chips + (level_bonus * 10)
-        final_mult = base_mult + level_bonus
+        final_chips = base_chips + (level_bonus * level_chips)
+        final_mult = base_mult + (level_bonus * level_mult)
         
         return final_chips, final_mult
     
