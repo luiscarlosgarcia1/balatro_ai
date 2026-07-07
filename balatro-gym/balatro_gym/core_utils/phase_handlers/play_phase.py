@@ -8,6 +8,7 @@ This module handles all actions during the PLAY phase including:
 """
 
 from dataclasses import replace
+from enum import IntEnum
 import inspect
 from typing import Tuple, Dict, List, Any, Optional
 import numpy as np
@@ -140,10 +141,17 @@ class PlayPhaseHandler:
         
         # Update game state
         self._update_state_after_play(final_score, extra_money, cards_to_destroy, consumables_created)
+        selected_slots = set(self.state.selected_cards)
+        self.state.last_held_card_indexes = [
+            card_idx
+            for slot, card_idx in enumerate(self.state.hand_indexes)
+            if slot not in selected_slots
+        ]
         self._consume_played_hand()
         
         # Track hand usage
         self.engine.hand_play_counts[hand_type] += 1
+        self.state.last_hand_played = hand_type_name
         
         # Apply boss blind post-scoring effects
         if self.state.boss_blind_active and self.boss_blind_manager.active_blind:
@@ -234,7 +242,7 @@ class PlayPhaseHandler:
                     card_state = self.state.get_card_state(card_idx)
                     
                     # Track purple seals
-                    if card_state.seal == Seal.PURPLE:
+                    if self._enum_value(card_state.seal, Seal) == Seal.PURPLE:
                         purple_seal_count += 1
                     
                     # Track card for discard effects
@@ -555,8 +563,18 @@ class PlayPhaseHandler:
         return rank.value if hasattr(rank, "value") else int(rank)
 
     def _card_enhancement(self, card: Any) -> Enhancement:
-        enhancement = getattr(card, "enhancement", Enhancement.NONE)
-        return enhancement if isinstance(enhancement, Enhancement) else Enhancement.NONE
+        return self._enum_value(getattr(card, "enhancement", Enhancement.NONE), Enhancement)
+
+    @staticmethod
+    def _enum_value(value: Any, enum_type: type[IntEnum]) -> IntEnum:
+        if isinstance(value, enum_type):
+            return value
+        if isinstance(value, IntEnum):
+            return enum_type.__members__.get(value.name, enum_type.NONE)
+        if isinstance(value, str):
+            key = value.strip().replace(" ", "_").replace("-", "_").upper()
+            return enum_type.__members__.get(key, enum_type.NONE)
+        return enum_type.NONE
 
     def _has_joker_named(self, joker_name: str) -> bool:
         for joker in self.state.jokers:
@@ -586,8 +604,6 @@ class PlayPhaseHandler:
         extra_money = 0
         cards_to_destroy = []
         consumables_to_create = []
-        cards_to_retrigger = []
-        
         for i, scoring_card in enumerate(selected_cards):
             card_state = self._state_for_scoring_card(scoring_card)
             card_idx = getattr(card_state, "card_index", None)
@@ -599,14 +615,17 @@ class PlayPhaseHandler:
 
             if card_idx is not None and card_state is not None:
                 
-                # Track scored card usage
-                card_state.times_scored += 1
+                # Track scored card usage. Red seals repeat this card's scoring
+                # pass rather than multiplying the whole hand score.
+                seal = self._enum_value(card_state.seal, Seal)
+                card_state.times_scored += 1 + int(seal == Seal.RED)
                 
                 # Apply enhancement effects
-                if card_state.enhancement == Enhancement.GLASS:
+                enhancement = self._enum_value(card_state.enhancement, Enhancement)
+                if enhancement == Enhancement.GLASS:
                     if self.rng.get_float('card_enhancement') < 0.25:
                         cards_to_destroy.append(card_idx)
-                elif card_state.enhancement == Enhancement.LUCKY:
+                elif enhancement == Enhancement.LUCKY:
                     mult_roll = self.rng.get_float('card_enhancement')
                     money_roll = self.rng.get_float('card_enhancement')
                     lucky_mult, lucky_money = EnhancementEffects.get_lucky_bonus(mult_roll, money_roll)
@@ -614,22 +633,14 @@ class PlayPhaseHandler:
                         extra_money += lucky_money
                 
                 # Apply seal effects
-                if card_state.seal == Seal.GOLD:
-                    extra_money += SealEffects.get_money_bonus(card_state.seal)
-                elif card_state.seal == Seal.RED:
-                    cards_to_retrigger.append(i)
-                elif card_state.seal == Seal.BLUE:
-                    planet = SealEffects.get_planet_created(card_state.seal, hand_type_name)
-                    if planet and len(self.state.consumables) < self.state.consumable_slots:
-                        consumables_to_create.append(planet)
+                if seal == Seal.GOLD:
+                    extra_money += SealEffects.get_money_bonus(seal)
+                elif seal == Seal.RED:
+                    pass
         
         # Apply steel card bonus
         steel_mult = self._calculate_steel_bonus()
         final_score = int(final_score * steel_mult)
-        
-        # Apply retriggers
-        retrigger_bonus = len(cards_to_retrigger) * 0.5
-        final_score = int(final_score * (1 + retrigger_bonus))
         
         return final_score, extra_money, cards_to_destroy, consumables_to_create
 
@@ -877,11 +888,11 @@ class PlayPhaseHandler:
                 card_state = self.state.get_card_state(affected.card_idx)
                 
                 if hasattr(affected, 'enhancement'):
-                    card_state.enhancement = affected.enhancement
+                    card_state.enhancement = self._enum_value(affected.enhancement, Enhancement)
                 if hasattr(affected, 'edition'):
-                    card_state.edition = affected.edition
+                    card_state.edition = self._enum_value(affected.edition, Edition)
                 if hasattr(affected, 'seal'):
-                    card_state.seal = affected.seal
+                    card_state.seal = self._enum_value(affected.seal, Seal)
         
         return len(affected_cards) * 2.0
     
@@ -918,7 +929,7 @@ class PlayPhaseHandler:
         for idx in self.state.hand_indexes:
             if idx not in selected_hand_indexes:
                 card_state = self.state.get_card_state(idx)
-                if card_state.enhancement == Enhancement.STEEL:
+                if self._enum_value(card_state.enhancement, Enhancement) == Enhancement.STEEL:
                     steel_mult *= EnhancementEffects.get_mult_multiplier(
                         Enhancement.STEEL, in_hand=True
                     )

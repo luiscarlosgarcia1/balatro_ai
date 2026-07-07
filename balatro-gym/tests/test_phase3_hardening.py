@@ -204,7 +204,7 @@ def test_play_handler_rewards_committing_constructive_selection_sequence(monkeyp
     assert info["reward_breakdown"]["selection_commit_bonus"] == pytest.approx(0.15)
 
 
-def test_direct_play_subset_blue_seal_uses_hand_type_name_without_scoring_card_attr(monkeypatch):
+def test_direct_play_subset_blue_seal_waits_for_held_end_round(monkeypatch):
     _requires_direct_play_block()
 
     state = UnifiedGameState(
@@ -257,7 +257,8 @@ def test_direct_play_subset_blue_seal_uses_hand_type_name_without_scoring_card_a
     assert reward == pytest.approx(1.0)
     assert terminated is False
     assert info["final_score"] == 80
-    assert state.consumables == ["Mercury"]
+    assert state.last_hand_played == "One Pair"
+    assert state.consumables == []
 
 
 def test_greedy_best_play_sequence_prefers_single_direct_subset_action_when_available():

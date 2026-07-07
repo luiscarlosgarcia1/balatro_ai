@@ -11,6 +11,13 @@ from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from enum import IntEnum
 
+from balatro_gym.core.cards import (
+    Edition,
+    EditionEffects,
+    Enhancement,
+    EnhancementEffects,
+    Seal,
+)
 from balatro_gym.scoring.scoring_engine import ScoreEngine, HandType
 from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
 
@@ -124,6 +131,49 @@ class UnifiedScorer:
             joker_name = self._joker_name(joker_entry)
             if joker_name:
                 yield joker_name
+
+    @staticmethod
+    def _enum_value(value: Any, enum_type: type[IntEnum], aliases: Dict[str, str]) -> IntEnum:
+        if isinstance(value, enum_type):
+            return value
+        if isinstance(value, IntEnum):
+            key = aliases.get(value.name, value.name)
+            return enum_type.__members__.get(key, enum_type.NONE)
+        if isinstance(value, str):
+            key = value.strip().replace(" ", "_").replace("-", "_").upper()
+            key = aliases.get(key, key)
+            return enum_type.__members__.get(key, enum_type.NONE)
+        return enum_type.NONE
+
+    @classmethod
+    def _card_enhancement(cls, card: Any) -> Enhancement:
+        return cls._enum_value(getattr(card, "enhancement", Enhancement.NONE), Enhancement, {})
+
+    @classmethod
+    def _card_edition(cls, card: Any) -> Edition:
+        return cls._enum_value(
+            getattr(card, "edition", Edition.NONE),
+            Edition,
+            {"HOLO": "HOLOGRAPHIC"},
+        )
+
+    @classmethod
+    def _card_seal(cls, card: Any) -> Seal:
+        return cls._enum_value(getattr(card, "seal", Seal.NONE), Seal, {})
+
+    @staticmethod
+    def _base_card_chips(card: Any, enhancement: Enhancement) -> int:
+        if enhancement == Enhancement.STONE:
+            return 0
+        if hasattr(card, 'base_value'):
+            return int(card.base_value)
+        if hasattr(card, 'chip_value') and not hasattr(card, 'enhancement'):
+            return int(card.chip_value())
+
+        rank = getattr(card, 'rank', 0)
+        if isinstance(rank, IntEnum):
+            rank = rank.value
+        return 11 if rank == 14 else min(int(rank or 0), 10)
     
     def score_hand(self, context: ScoringContext) -> Tuple[int, Dict[str, Any]]:
         """
@@ -153,22 +203,45 @@ class UnifiedScorer:
             'effects_applied': []
         }
         
-        # 3. Add card base values
+        # 3. Apply per-card scoring, including red-seal retriggers.
         card_chip_total = 0
+        card_enhancement_chips = 0
+        card_enhancement_mult = 0
+        card_enhancement_x_mult = 1.0
+        card_retriggers = 0
         for card in context.scoring_cards:
-            if hasattr(card, 'chip_value'):
-                card_chip_total += card.chip_value()
-            elif hasattr(card, 'base_value'):
-                card_chip_total += card.base_value
-            else:
-                # Estimate based on rank
-                rank = getattr(card, 'rank', 0)
-                if isinstance(rank, IntEnum):
-                    rank = rank.value
-                card_chip_total += 11 if rank == 14 else min(rank, 10)
-        
-        chips += card_chip_total
-        breakdown['card_chips'] = card_chip_total
+            enhancement = self._card_enhancement(card)
+            edition = self._card_edition(card)
+            repetitions = 1 + int(self._card_seal(card) == Seal.RED)
+            card_retriggers += repetitions - 1
+
+            for _ in range(repetitions):
+                base_card_chips = self._base_card_chips(card, enhancement)
+                enhancement_chips = (
+                    EnhancementEffects.get_chip_bonus(enhancement, base_card_chips)
+                    + EditionEffects.get_chip_bonus(edition)
+                )
+                enhancement_mult = (
+                    EnhancementEffects.get_mult_bonus(enhancement)
+                    + EditionEffects.get_mult_bonus(edition)
+                )
+                enhancement_x_mult = (
+                    EnhancementEffects.get_mult_multiplier(enhancement, in_hand=False)
+                    * EditionEffects.get_mult_multiplier(edition)
+                )
+
+                card_chip_total += base_card_chips
+                card_enhancement_chips += enhancement_chips
+                card_enhancement_mult += enhancement_mult
+                card_enhancement_x_mult *= enhancement_x_mult
+
+        chips += card_chip_total + card_enhancement_chips
+        mult += card_enhancement_mult
+        x_mult *= card_enhancement_x_mult
+        breakdown['card_chips'] = card_chip_total + card_enhancement_chips
+        breakdown['card_mult'] = card_enhancement_mult
+        breakdown['card_x_mult'] = card_enhancement_x_mult
+        breakdown['card_retriggers'] = card_retriggers
         
         # 4. Apply BEFORE scoring joker effects
         before_context = {
@@ -192,27 +265,29 @@ class UnifiedScorer:
         individual_x_mult = 1.0
         
         for card in context.scoring_cards:
-            card_context = {
-                'phase': 'individual_scoring',
-                'card': card,
-                'cards': context.cards,
-                'scoring_cards': context.scoring_cards,
-                'hand_type': context.hand_type_name
-            }
-            
-            for joker_name in self._iter_joker_names(context.game_state):
-                joker = type('Joker', (), {'name': joker_name})
-                raw_effect = self.joker_effects.apply_joker_effect(joker, card_context, context.game_state)
-                effect = self.effect_converter.convert_joker_effect(raw_effect)
+            repetitions = 1 + int(self._card_seal(card) == Seal.RED)
+            for _ in range(repetitions):
+                card_context = {
+                    'phase': 'individual_scoring',
+                    'card': card,
+                    'cards': context.cards,
+                    'scoring_cards': context.scoring_cards,
+                    'hand_type': context.hand_type_name
+                }
 
-                individual_chips += effect.chips_add
-                individual_mult += effect.mult_add
-                individual_x_mult *= effect.x_mult
-                money_gained += effect.money
+                for joker_name in self._iter_joker_names(context.game_state):
+                    joker = type('Joker', (), {'name': joker_name})
+                    raw_effect = self.joker_effects.apply_joker_effect(joker, card_context, context.game_state)
+                    effect = self.effect_converter.convert_joker_effect(raw_effect)
 
-                if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
-                    card_str = f"{getattr(card, 'rank', '?')} of {getattr(card, 'suit', '?')}"
-                    breakdown['effects_applied'].append(f"{joker_name} on {card_str}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}")
+                    individual_chips += effect.chips_add
+                    individual_mult += effect.mult_add
+                    individual_x_mult *= effect.x_mult
+                    money_gained += effect.money
+
+                    if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
+                        card_str = f"{getattr(card, 'rank', '?')} of {getattr(card, 'suit', '?')}"
+                        breakdown['effects_applied'].append(f"{joker_name} on {card_str}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}")
         
         # Apply individual effects
         chips += individual_chips
@@ -257,45 +332,7 @@ class UnifiedScorer:
             breakdown['joker_mult'] += effect.mult_add
             breakdown['joker_x_mult'] *= effect.x_mult
         
-        # 7. Apply card enhancements and editions
-        enhancement_chips = 0
-        enhancement_mult = 0
-        enhancement_x_mult = 1.0
-        
-        for card in context.scoring_cards:
-            # Enhancement effects
-            if hasattr(card, 'enhancement'):
-                if card.enhancement == 'bonus':
-                    enhancement_chips += 30
-                elif card.enhancement == 'mult':
-                    enhancement_mult += 4
-                elif card.enhancement == 'glass':
-                    enhancement_x_mult *= 2.0
-                elif card.enhancement == 'steel':
-                    enhancement_x_mult *= 1.5
-                elif card.enhancement == 'stone':
-                    enhancement_chips += 50
-                elif card.enhancement == 'gold':
-                    money_gained += 3
-                elif card.enhancement == 'lucky':
-                    import random
-                    if random.random() < 0.2:
-                        money_gained += 1
-            
-            # Edition effects
-            if hasattr(card, 'edition'):
-                if card.edition == 'foil':
-                    enhancement_chips += 50
-                elif card.edition == 'holographic':
-                    enhancement_mult += 10
-                elif card.edition == 'polychrome':
-                    enhancement_x_mult *= 1.5
-        
-        chips += enhancement_chips
-        mult += enhancement_mult
-        x_mult *= enhancement_x_mult
-        
-        # 8. Calculate final score
+        # 7. Calculate final score
         # Order is: (base_chips + additions) * (base_mult + additions) * x_mult
         final_score = int(chips * mult * x_mult)
         

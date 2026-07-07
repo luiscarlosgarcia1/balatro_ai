@@ -122,6 +122,8 @@ class UnifiedGameState:
     # Statistics
     hands_played_total: int = 0
     hands_played_ante: int = 0
+    last_hand_played: Optional[str] = None
+    last_held_card_indexes: Optional[List[int]] = None
     best_hand_this_ante: int = 0
     jokers_sold: int = 0
     cards_discarded_total: int = 0
@@ -189,6 +191,8 @@ class UnifiedGameState:
             # Statistics
             'hands_played': self.hands_played_total,
             'hands_played_ante': self.hands_played_ante,
+            'last_hand_played': self.last_hand_played,
+            'last_held_card_indexes': self.last_held_card_indexes,
             'round_chips_scored': self.round_chips_scored,
             'chips_scored': self.chips_scored,
             'chips_needed': self.chips_needed,
@@ -256,6 +260,8 @@ class UnifiedGameState:
             # Statistics
             hands_played_total=self.hands_played_total,
             hands_played_ante=self.hands_played_ante,
+            last_hand_played=self.last_hand_played,
+            last_held_card_indexes=self.last_held_card_indexes.copy() if self.last_held_card_indexes is not None else None,
             best_hand_this_ante=self.best_hand_this_ante,
             jokers_sold=self.jokers_sold,
             cards_discarded_total=self.cards_discarded_total,
@@ -292,6 +298,8 @@ class UnifiedGameState:
         self.discard_pile_indexes = []
         self.play_area_indexes = []
         self.hand_indexes = []
+        self.last_hand_played = None
+        self.last_held_card_indexes = None
         self.face_down_cards = []
         self.force_draw_count = None
         

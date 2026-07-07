@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from enum import IntEnum
+
 from balatro_gym.core.boss_blinds import select_boss_blind
 from balatro_gym.core.boss_blinds import BossBlindManager
-from balatro_gym.core.cards import Enhancement, EnhancementEffects, Rank
+from balatro_gym.core.cards import Enhancement, EnhancementEffects, Rank, Seal, SealEffects
 from balatro_gym.core.constants import Phase
 from balatro_gym.core.balatro_game import BalatroGame
 from balatro_gym.core_utils.state import UnifiedGameState
@@ -40,11 +42,20 @@ class RoundManager:
                 self.state.jokers = [j for j in self.state.jokers if j.name != joker_name]
 
         gold_money = 0
-        for idx in self.state.hand_indexes:
+        held_card_indexes = self.state.last_held_card_indexes
+        if held_card_indexes is None:
+            held_card_indexes = self.state.hand_indexes
+
+        for idx in held_card_indexes:
             card_state = self.state.card_states.get(idx)
-            if card_state and card_state.enhancement == Enhancement.GOLD:
-                gold_money += EnhancementEffects.get_gold_value(card_state.enhancement)
+            enhancement = self._enum_value(
+                card_state.enhancement if card_state else Enhancement.NONE,
+                Enhancement,
+            )
+            if enhancement == Enhancement.GOLD:
+                gold_money += EnhancementEffects.get_gold_value(enhancement)
         self.state.money += gold_money
+        self._create_planets_from_held_blue_seals()
 
         if self.state.boss_blind_active and self.boss_blind_manager and self.boss_blind_manager.active_blind:
             boss_reward = self.boss_blind_manager.active_blind.money_reward
@@ -98,6 +109,37 @@ class RoundManager:
             if voucher_name in {"Wasteful", "Recyclomancy"}:
                 bonus += 1
         return 3 + bonus
+
+    @staticmethod
+    def _enum_value(value: IntEnum | str, enum_type: type[IntEnum]) -> IntEnum:
+        if isinstance(value, enum_type):
+            return value
+        if isinstance(value, IntEnum):
+            return enum_type.__members__.get(value.name, enum_type.NONE)
+        if isinstance(value, str):
+            key = value.strip().replace(" ", "_").replace("-", "_").upper()
+            return enum_type.__members__.get(key, enum_type.NONE)
+        return enum_type.NONE
+
+    def _create_planets_from_held_blue_seals(self) -> None:
+        """Create last-hand planet cards from blue-sealed cards held at round end."""
+        if not self.state.last_hand_played:
+            return
+
+        held_card_indexes = self.state.last_held_card_indexes
+        if held_card_indexes is None:
+            held_card_indexes = self.state.hand_indexes
+
+        for idx in held_card_indexes:
+            if len(self.state.consumables) >= self.state.consumable_slots:
+                return
+            card_state = self.state.card_states.get(idx)
+            seal = self._enum_value(card_state.seal if card_state else Seal.NONE, Seal)
+            if seal != Seal.BLUE:
+                continue
+            planet = SealEffects.get_planet_created(seal, self.state.last_hand_played)
+            if planet:
+                self.state.consumables.append(planet)
 
     def _cashout_amount(self, completed_round: int, boss_reward: int, completed_round_discards_used: int) -> int:
         """Return round-eval cashout dollars for the cleared blind."""
