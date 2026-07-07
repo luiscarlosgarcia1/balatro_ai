@@ -118,6 +118,8 @@ class BalatroEnv(gym.Env):
         # Set up game with deck
         self.game.deck = initial_deck
         self.state.deck = initial_deck
+        self.game.draw_pile_indexes = list(range(len(initial_deck)))
+        self.state.draw_pile_indexes = self.game.draw_pile_indexes.copy()
         
         # Initialize hand levels
         self._initialize_hand_levels()
@@ -228,6 +230,9 @@ class BalatroEnv(gym.Env):
             },
             'game_state': {
                 'deck': self.game.deck.copy(),
+                'draw_pile_indexes': self.game.draw_pile_indexes.copy(),
+                'discard_pile_indexes': self.game.discard_pile_indexes.copy(),
+                'play_area_indexes': self.game.play_area_indexes.copy(),
                 'state': self.game.state,
                 'blind_index': self.game.blind_index,
             },
@@ -253,6 +258,18 @@ class BalatroEnv(gym.Env):
         
         # Restore game state
         self.game.deck = saved_state['game_state']['deck'].copy()
+        self.game.draw_pile_indexes = saved_state['game_state'].get(
+            'draw_pile_indexes',
+            self.state.draw_pile_indexes,
+        ).copy()
+        self.game.discard_pile_indexes = saved_state['game_state'].get(
+            'discard_pile_indexes',
+            self.state.discard_pile_indexes,
+        ).copy()
+        self.game.play_area_indexes = saved_state['game_state'].get(
+            'play_area_indexes',
+            self.state.play_area_indexes,
+        ).copy()
         self.game.state = saved_state['game_state']['state']
         self.game.blind_index = saved_state['game_state']['blind_index']
         self.game.hand_indexes = self.state.hand_indexes.copy()
@@ -304,6 +321,9 @@ class BalatroEnv(gym.Env):
             current_round_score = self.state.round_chips_scored
             
             self.state.deck = self.game.deck
+            self.state.draw_pile_indexes = self.game.draw_pile_indexes.copy()
+            self.state.discard_pile_indexes = self.game.discard_pile_indexes.copy()
+            self.state.play_area_indexes = self.game.play_area_indexes.copy()
             self.state.hand_indexes = self.game.hand_indexes
             self.state.hands_left = self.game.round_hands
             self.state.discards_left = self.game.round_discards
@@ -316,6 +336,9 @@ class BalatroEnv(gym.Env):
         """Sync game systems from unified state."""
         if self.game:
             self.game.deck = self.state.deck
+            self.game.draw_pile_indexes = self.state.draw_pile_indexes.copy()
+            self.game.discard_pile_indexes = self.state.discard_pile_indexes.copy()
+            self.game.play_area_indexes = self.state.play_area_indexes.copy()
             self.game.hand_indexes = self.state.hand_indexes
             self.game.round_hands = self.state.hands_left
             self.game.round_discards = self.state.discards_left
@@ -359,6 +382,9 @@ class BalatroEnv(gym.Env):
         self.state.face_down_cards = []
         self.game.highlighted_indexes = []
         self.game.hand_indexes = []
+        self.game.draw_pile_indexes = self.state.draw_pile_indexes.copy()
+        self.game.discard_pile_indexes = self.state.discard_pile_indexes.copy()
+        self.game.play_area_indexes = self.state.play_area_indexes.copy()
         self.game.hand_size = self.state.hand_size
         self.game.round_hands = self.state.hands_left
         self.game.round_discards = self.state.discards_left

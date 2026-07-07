@@ -394,9 +394,11 @@ class PlayPhaseHandler:
         
         # Apply forced discards (The Hook)
         if 'discarded_cards' in effects:
+            discarded_indexes = []
             for idx in sorted(effects['discarded_cards'], reverse=True):
                 if idx < len(self.state.hand_indexes):
-                    self.state.hand_indexes.pop(idx)
+                    discarded_indexes.append(self.state.hand_indexes.pop(idx))
+            self.state.discard_pile_indexes.extend(reversed(discarded_indexes))
             self._sync_state_to_game()
     
     # -------------------------------------------------------------------------
@@ -711,15 +713,15 @@ class PlayPhaseHandler:
     def _apply_forced_draw_count(self):
         """Apply forced draw count from boss blind."""
         while len(self.state.hand_indexes) > self.state.force_draw_count:
-            self.state.hand_indexes.pop()
+            self.state.draw_pile_indexes.insert(0, self.state.hand_indexes.pop())
         
         while len(self.state.hand_indexes) < self.state.force_draw_count:
-            available = [i for i in range(len(self.state.deck)) 
-                        if i not in self.state.hand_indexes]
-            if available:
-                self.state.hand_indexes.append(self.rng.choice('card_draw', available))
+            if not self.state.draw_pile_indexes:
+                break
+            self.state.hand_indexes.append(self.state.draw_pile_indexes.pop(0))
         
         self.state.force_draw_count = None
+        self._sync_state_to_game()
 
     def _sync_post_score_boss_state(self, boss_state: Dict[str, Any]) -> None:
         """Copy boss post-score mutations from the scratch dict back into unified state."""
@@ -926,6 +928,9 @@ class PlayPhaseHandler:
     def _sync_state_to_game(self):
         """Sync state to game instance."""
         self.game.deck = self.state.deck
+        self.game.draw_pile_indexes = self.state.draw_pile_indexes.copy()
+        self.game.discard_pile_indexes = self.state.discard_pile_indexes.copy()
+        self.game.play_area_indexes = self.state.play_area_indexes.copy()
         self.game.hand_indexes = self.state.hand_indexes
         self.game.round_hands = self.state.hands_left
         self.game.round_discards = self.state.discards_left
@@ -937,6 +942,9 @@ class PlayPhaseHandler:
         current_round_score = self.state.round_chips_scored
         
         self.state.deck = self.game.deck
+        self.state.draw_pile_indexes = self.game.draw_pile_indexes.copy()
+        self.state.discard_pile_indexes = self.game.discard_pile_indexes.copy()
+        self.state.play_area_indexes = self.game.play_area_indexes.copy()
         self.state.hand_indexes = self.game.hand_indexes
         self.state.hands_left = self.game.round_hands
         self.state.discards_left = self.game.round_discards

@@ -95,6 +95,9 @@ class UnifiedGameState:
     
     # Cards and hands
     deck: List[Card] = field(default_factory=list)
+    draw_pile_indexes: List[int] = field(default_factory=list)
+    discard_pile_indexes: List[int] = field(default_factory=list)
+    play_area_indexes: List[int] = field(default_factory=list)
     hand_indexes: List[int] = field(default_factory=list)  # Indexes into deck
     selected_cards: List[int] = field(default_factory=list)  # Indexes into hand_indexes
     hands_left: int = 4
@@ -172,6 +175,9 @@ class UnifiedGameState:
             'phase': self.phase.value,
             
             # Hand/discard state
+            'draw_pile_indexes': self.draw_pile_indexes,
+            'discard_pile_indexes': self.discard_pile_indexes,
+            'play_area_indexes': self.play_area_indexes,
             'hands_left': self.hands_left,
             'discards_left': self.discards_left,
             'hand_size': self.hand_size,
@@ -223,6 +229,9 @@ class UnifiedGameState:
             
             # Cards - need to copy the list but Card objects are immutable
             deck=self.deck.copy() if self.deck else [],
+            draw_pile_indexes=self.draw_pile_indexes.copy(),
+            discard_pile_indexes=self.discard_pile_indexes.copy(),
+            play_area_indexes=self.play_area_indexes.copy(),
             hand_indexes=self.hand_indexes.copy(),
             selected_cards=self.selected_cards.copy(),
             hands_left=self.hands_left,
@@ -279,6 +288,10 @@ class UnifiedGameState:
         """Reset state for a new round (but not a new ante)."""
         self.round_chips_scored = 0
         self.discards_used_this_round = 0
+        self.draw_pile_indexes = list(range(len(self.deck)))
+        self.discard_pile_indexes = []
+        self.play_area_indexes = []
+        self.hand_indexes = []
         self.face_down_cards = []
         self.force_draw_count = None
         
