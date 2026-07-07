@@ -110,7 +110,9 @@ class PlayPhaseHandler:
         self._sync_and_highlight_cards()
         
         # Classify the hand
-        hand_type, _ = self.game._classify_hand(selected_game_cards)
+        hand_type, _ = self.game._classify_hand(
+            self._get_poker_classification_cards(selected_cards, selected_game_cards)
+        )
         hand_type_name = hand_type.name.replace('_', ' ').title()
         
         # Check boss blind restrictions
@@ -119,12 +121,16 @@ class PlayPhaseHandler:
         
         # Score the hand
         base_score, breakdown = self._score_hand(selected_cards, hand_type, hand_type_name)
+        scoring_positions = self._get_scoring_card_positions(selected_cards, hand_type)
+        scoring_cards = [selected_cards[i] for i in scoring_positions]
+        scoring_game_cards = [selected_game_cards[i] for i in scoring_positions]
         
         # Apply card effects and calculate final score
+        self._track_played_cards(selected_cards)
         final_score, extra_money, cards_to_destroy, consumables_created = \
             self._apply_card_effects_compat(
-                selected_cards,
-                selected_game_cards,
+                scoring_cards,
+                scoring_game_cards,
                 base_score,
                 hand_type_name,
             )
@@ -447,15 +453,129 @@ class PlayPhaseHandler:
     def _score_hand(self, selected_cards: List[Any], hand_type: HandType, 
                     hand_type_name: str) -> Tuple[int, Dict]:
         """Score the selected hand."""
+        scoring_cards = self._get_scoring_cards(selected_cards, hand_type)
         scoring_context = ScoringContext(
             cards=selected_cards,
-            scoring_cards=selected_cards,
+            scoring_cards=scoring_cards,
             hand_type=hand_type,
             hand_type_name=hand_type_name,
             game_state=self.state.to_dict()
         )
         
         return self.unified_scorer.score_hand(scoring_context)
+
+    def _get_scoring_cards(self, selected_cards: List[Any], hand_type: HandType) -> List[Any]:
+        """Return the Balatro scoring subset for a played hand."""
+        return [selected_cards[i] for i in self._get_scoring_card_positions(selected_cards, hand_type)]
+
+    def _get_poker_classification_cards(
+        self,
+        selected_cards: List[Any],
+        selected_game_cards: List[Card],
+    ) -> List[Card]:
+        """Return cards that participate in poker-hand classification."""
+        non_stone_cards = [
+            game_card for scoring_card, game_card in zip(selected_cards, selected_game_cards)
+            if self._card_enhancement(scoring_card) != Enhancement.STONE
+        ]
+        return non_stone_cards or selected_game_cards
+
+    def _get_scoring_card_positions(self, selected_cards: List[Any], hand_type: HandType) -> List[int]:
+        """Return selected-card positions that should score for this poker hand."""
+        if not selected_cards:
+            return []
+
+        if self._has_joker_named("Splash"):
+            return list(range(len(selected_cards)))
+
+        stone_positions = [
+            i for i, card in enumerate(selected_cards)
+            if self._card_enhancement(card) == Enhancement.STONE
+        ]
+        poker_positions = [
+            i for i in range(len(selected_cards))
+            if i not in stone_positions
+        ]
+
+        if not poker_positions:
+            return stone_positions
+
+        scoring_positions = self._get_poker_scoring_card_positions(
+            selected_cards,
+            poker_positions,
+            hand_type,
+        )
+        scoring_set = set(scoring_positions)
+        scoring_positions.extend(i for i in stone_positions if i not in scoring_set)
+        return sorted(scoring_positions)
+
+    def _get_poker_scoring_card_positions(
+        self,
+        selected_cards: List[Any],
+        candidate_positions: List[int],
+        hand_type: HandType,
+    ) -> List[int]:
+        if hand_type == HandType.HIGH_CARD:
+            return [max(candidate_positions, key=lambda i: self._card_rank_value(selected_cards[i]))]
+
+        grouped_by_rank: Dict[int, List[int]] = {}
+        for i in candidate_positions:
+            grouped_by_rank.setdefault(self._card_rank_value(selected_cards[i]), []).append(i)
+
+        if hand_type == HandType.ONE_PAIR:
+            return self._positions_for_matching_ranks(grouped_by_rank, [2])
+        if hand_type == HandType.TWO_PAIR:
+            return self._positions_for_matching_ranks(grouped_by_rank, [2, 2])
+        if hand_type == HandType.THREE_KIND:
+            return self._positions_for_matching_ranks(grouped_by_rank, [3])
+        if hand_type == HandType.FOUR_KIND:
+            return self._positions_for_matching_ranks(grouped_by_rank, [4])
+
+        return candidate_positions
+
+    def _positions_for_matching_ranks(
+        self,
+        grouped_by_rank: Dict[int, List[int]],
+        group_sizes: List[int],
+    ) -> List[int]:
+        matching_ranks = sorted(
+            (rank for rank, positions in grouped_by_rank.items() if len(positions) >= 2),
+            key=lambda rank: (len(grouped_by_rank[rank]), rank),
+            reverse=True,
+        )
+        positions: List[int] = []
+        for rank, group_size in zip(matching_ranks, group_sizes):
+            positions.extend(grouped_by_rank[rank][:group_size])
+        return sorted(positions)
+
+    def _card_rank_value(self, card: Any) -> int:
+        rank = getattr(card, "rank", 0)
+        return rank.value if hasattr(rank, "value") else int(rank)
+
+    def _card_enhancement(self, card: Any) -> Enhancement:
+        enhancement = getattr(card, "enhancement", Enhancement.NONE)
+        return enhancement if isinstance(enhancement, Enhancement) else Enhancement.NONE
+
+    def _has_joker_named(self, joker_name: str) -> bool:
+        for joker in self.state.jokers:
+            if joker == joker_name or getattr(joker, "name", None) == joker_name:
+                return True
+            if isinstance(joker, dict) and joker.get("name") == joker_name:
+                return True
+        return False
+
+    def _track_played_cards(self, selected_cards: List[Any]) -> None:
+        for card in selected_cards:
+            card_state = self._state_for_scoring_card(card)
+            if card_state is not None:
+                card_state.times_played += 1
+
+    def _state_for_scoring_card(self, scoring_card: Any) -> Optional[CardState]:
+        card_state = getattr(scoring_card, "card_state", None)
+        card_idx = getattr(card_state, "card_index", None)
+        if card_idx is None:
+            return None
+        return self.state.get_card_state(card_idx)
     
     def _apply_card_effects(self, selected_cards: List[Any], selected_game_cards: List[Card], 
                            base_score: int, hand_type_name: str) -> Tuple[int, int, List[int], List[str]]:
@@ -466,15 +586,18 @@ class PlayPhaseHandler:
         consumables_to_create = []
         cards_to_retrigger = []
         
-        for i, (idx, card, scoring_card) in enumerate(
-            zip(self.state.selected_cards, selected_game_cards, selected_cards)
-        ):
-            if idx < len(self.state.hand_indexes):
-                card_idx = self.state.hand_indexes[idx]
-                card_state = self.state.get_card_state(card_idx)
+        for i, scoring_card in enumerate(selected_cards):
+            card_state = self._state_for_scoring_card(scoring_card)
+            card_idx = getattr(card_state, "card_index", None)
+            if card_idx is None and i < len(self.state.selected_cards):
+                selected_idx = self.state.selected_cards[i]
+                if selected_idx < len(self.state.hand_indexes):
+                    card_idx = self.state.hand_indexes[selected_idx]
+                    card_state = self.state.get_card_state(card_idx)
+
+            if card_idx is not None and card_state is not None:
                 
-                # Track card usage
-                card_state.times_played += 1
+                # Track scored card usage
                 card_state.times_scored += 1
                 
                 # Apply enhancement effects
