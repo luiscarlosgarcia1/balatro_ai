@@ -138,6 +138,8 @@ class PlayPhaseHandler:
                 base_score,
                 hand_type_name,
             )
+        extra_money += int(breakdown.get('money_gained', 0) or 0)
+        consumables_created.extend(breakdown.get('consumables_created', []))
         
         # Apply boss blind scoring modifications
         final_score = self._apply_boss_blind_scoring(final_score, selected_game_cards, hand_type, hand_type_name)
@@ -786,7 +788,8 @@ class PlayPhaseHandler:
         }
         
         money_earned = 0
-        for joker in self.state.jokers:
+        for joker_index, joker in enumerate(self.state.jokers):
+            discard_context['joker_index'] = joker_index
             effect = self.joker_effects_engine.apply_joker_effect(
                 type('Joker', (), {'name': joker.name}), 
                 discard_context, 

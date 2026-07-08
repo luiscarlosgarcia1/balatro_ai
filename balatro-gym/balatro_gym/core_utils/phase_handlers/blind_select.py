@@ -126,10 +126,10 @@ class BlindSelectHandler:
         
         # Apply skip blind joker effects
         skip_effects = []
-        for joker in self.state.jokers:
+        for joker_index, joker in enumerate(self.state.jokers):
             effect = self.joker_effects_engine.apply_joker_effect(
                 type('Joker', (), {'name': joker.name}), 
-                {'phase': 'skip_blind'}, 
+                {'phase': 'skip_blind', 'joker_index': joker_index},
                 self.state.to_dict()
             )
             if effect:

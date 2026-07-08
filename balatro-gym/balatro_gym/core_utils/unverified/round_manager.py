@@ -36,10 +36,22 @@ class RoundManager:
         completed_round = self.state.round
         completed_round_discards_used = self.state.discards_used_this_round
         end_effects = self.joker_effects_engine.end_of_round_effects(self.state.to_dict())
-        for effect in end_effects:
+        for effect in sorted(
+            end_effects,
+            key=lambda item: int(item.get("destroy_joker_index", -1)),
+            reverse=True,
+        ):
+            joker_index = effect.get("destroy_joker_index")
+            if joker_index is not None:
+                self.state.remove_joker(int(joker_index))
+                continue
+
             joker_name = effect.get("destroy_joker")
             if joker_name:
-                self.state.jokers = [j for j in self.state.jokers if j.name != joker_name]
+                for idx in range(len(self.state.jokers) - 1, -1, -1):
+                    if self.state.jokers[idx].name == joker_name:
+                        self.state.remove_joker(idx)
+                        break
 
         gold_money = 0
         held_card_indexes = self.state.last_held_card_indexes

@@ -72,6 +72,7 @@ class EffectConverter:
                 mult_add=effect_dict.get('mult', 0),
                 x_mult=effect_dict.get('x_mult', 1.0),
                 money=effect_dict.get('money', 0),
+                retriggers=effect_dict.get('retriggers', 0),
                 message=effect_dict.get('message', '')
             )
         
@@ -132,6 +133,12 @@ class UnifiedScorer:
             if joker_name:
                 yield joker_name
 
+    def _iter_jokers(self, game_state: Dict[str, Any]):
+        for joker_index, joker_entry in enumerate(game_state.get('jokers', [])):
+            joker_name = self._joker_name(joker_entry)
+            if joker_name:
+                yield joker_index, joker_name
+
     @staticmethod
     def _enum_value(value: Any, enum_type: type[IntEnum], aliases: Dict[str, str]) -> IntEnum:
         if isinstance(value, enum_type):
@@ -174,6 +181,67 @@ class UnifiedScorer:
         if isinstance(rank, IntEnum):
             rank = rank.value
         return 11 if rank == 14 else min(int(rank or 0), 10)
+
+    def _score_card_once(self, card: Any) -> Tuple[int, int, float]:
+        enhancement = self._card_enhancement(card)
+        edition = self._card_edition(card)
+        base_card_chips = self._base_card_chips(card, enhancement)
+        chips = (
+            base_card_chips
+            + EnhancementEffects.get_chip_bonus(enhancement, base_card_chips)
+            + EditionEffects.get_chip_bonus(edition)
+        )
+        mult = (
+            EnhancementEffects.get_mult_bonus(enhancement)
+            + EditionEffects.get_mult_bonus(edition)
+        )
+        x_mult = (
+            EnhancementEffects.get_mult_multiplier(enhancement, in_hand=False)
+            * EditionEffects.get_mult_multiplier(edition)
+        )
+        return chips, mult, x_mult
+
+    def _apply_individual_jokers(
+        self,
+        card: Any,
+        context: ScoringContext,
+        collect_retriggers: bool,
+        breakdown: Dict[str, Any],
+    ) -> ScoringEffect:
+        card_context = {
+            'phase': 'individual_scoring',
+            'card': card,
+            'cards': context.cards,
+            'scoring_cards': context.scoring_cards,
+            'hand_type': context.hand_type_name
+        }
+        combined = ScoringEffect()
+
+        for joker_index, joker_name in self._iter_jokers(context.game_state):
+            joker = type('Joker', (), {'name': joker_name})
+            card_context['joker_index'] = joker_index
+            raw_effect = self.joker_effects.apply_joker_effect(joker, card_context, context.game_state)
+            effect = self.effect_converter.convert_joker_effect(raw_effect)
+            if not collect_retriggers:
+                effect.retriggers = 0
+            combined = combined.combine(effect)
+            self._record_raw_side_effects(raw_effect, breakdown)
+
+            if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
+                card_str = f"{getattr(card, 'rank', '?')} of {getattr(card, 'suit', '?')}"
+                breakdown['effects_applied'].append(
+                    f"{joker_name} on {card_str}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}"
+                )
+
+        return combined
+
+    @staticmethod
+    def _record_raw_side_effects(raw_effect: Optional[Dict], breakdown: Dict[str, Any]) -> None:
+        if not isinstance(raw_effect, dict):
+            return
+        created_consumable = raw_effect.get('created_consumable')
+        if created_consumable:
+            breakdown.setdefault('consumables_created', []).append(created_consumable)
     
     def score_hand(self, context: ScoringContext) -> Tuple[int, Dict[str, Any]]:
         """
@@ -183,6 +251,8 @@ class UnifiedScorer:
             (final_score, scoring_breakdown)
         """
         
+        self.joker_effects.reset_scoring_hand_state(context.game_state)
+
         # 1. Get base hand values from engine
         base_chips, base_mult = self.engine.get_hand_chips_mult(context.hand_type)
         
@@ -200,48 +270,24 @@ class UnifiedScorer:
             'joker_chips': 0,
             'joker_mult': 0,
             'joker_x_mult': 1.0,
+            'consumables_created': [],
             'effects_applied': []
         }
         
         # 3. Apply per-card scoring, including red-seal retriggers.
         card_chip_total = 0
-        card_enhancement_chips = 0
         card_enhancement_mult = 0
         card_enhancement_x_mult = 1.0
         card_retriggers = 0
         for card in context.scoring_cards:
-            enhancement = self._card_enhancement(card)
-            edition = self._card_edition(card)
-            repetitions = 1 + int(self._card_seal(card) == Seal.RED)
-            card_retriggers += repetitions - 1
+            chips_once, mult_once, x_mult_once = self._score_card_once(card)
+            card_chip_total += chips_once
+            card_enhancement_mult += mult_once
+            card_enhancement_x_mult *= x_mult_once
 
-            for _ in range(repetitions):
-                base_card_chips = self._base_card_chips(card, enhancement)
-                enhancement_chips = (
-                    EnhancementEffects.get_chip_bonus(enhancement, base_card_chips)
-                    + EditionEffects.get_chip_bonus(edition)
-                )
-                enhancement_mult = (
-                    EnhancementEffects.get_mult_bonus(enhancement)
-                    + EditionEffects.get_mult_bonus(edition)
-                )
-                enhancement_x_mult = (
-                    EnhancementEffects.get_mult_multiplier(enhancement, in_hand=False)
-                    * EditionEffects.get_mult_multiplier(edition)
-                )
-
-                card_chip_total += base_card_chips
-                card_enhancement_chips += enhancement_chips
-                card_enhancement_mult += enhancement_mult
-                card_enhancement_x_mult *= enhancement_x_mult
-
-        chips += card_chip_total + card_enhancement_chips
+        chips += card_chip_total
         mult += card_enhancement_mult
         x_mult *= card_enhancement_x_mult
-        breakdown['card_chips'] = card_chip_total + card_enhancement_chips
-        breakdown['card_mult'] = card_enhancement_mult
-        breakdown['card_x_mult'] = card_enhancement_x_mult
-        breakdown['card_retriggers'] = card_retriggers
         
         # 4. Apply BEFORE scoring joker effects
         before_context = {
@@ -251,43 +297,43 @@ class UnifiedScorer:
             'hand_type': context.hand_type_name
         }
         
-        for joker_name in self._iter_joker_names(context.game_state):
+        for joker_index, joker_name in self._iter_jokers(context.game_state):
             joker = type('Joker', (), {'name': joker_name})
+            before_context['joker_index'] = joker_index
             raw_effect = self.joker_effects.apply_joker_effect(joker, before_context, context.game_state)
             effect = self.effect_converter.convert_joker_effect(raw_effect)
 
             if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
                 breakdown['effects_applied'].append(f"{joker_name} (before): {effect.message}")
         
-        # 5. Apply INDIVIDUAL card scoring effects
+        # 5. Apply INDIVIDUAL card scoring effects and card retriggers
         individual_chips = 0
         individual_mult = 0
         individual_x_mult = 1.0
         
         for card in context.scoring_cards:
-            repetitions = 1 + int(self._card_seal(card) == Seal.RED)
-            for _ in range(repetitions):
-                card_context = {
-                    'phase': 'individual_scoring',
-                    'card': card,
-                    'cards': context.cards,
-                    'scoring_cards': context.scoring_cards,
-                    'hand_type': context.hand_type_name
-                }
+            effect = self._apply_individual_jokers(card, context, True, breakdown)
+            individual_chips += effect.chips_add
+            individual_mult += effect.mult_add
+            individual_x_mult *= effect.x_mult
+            money_gained += effect.money
 
-                for joker_name in self._iter_joker_names(context.game_state):
-                    joker = type('Joker', (), {'name': joker_name})
-                    raw_effect = self.joker_effects.apply_joker_effect(joker, card_context, context.game_state)
-                    effect = self.effect_converter.convert_joker_effect(raw_effect)
+            retriggers = int(self._card_seal(card) == Seal.RED) + effect.retriggers
+            card_retriggers += retriggers
+            for _ in range(retriggers):
+                chips_once, mult_once, x_mult_once = self._score_card_once(card)
+                card_chip_total += chips_once
+                card_enhancement_mult += mult_once
+                card_enhancement_x_mult *= x_mult_once
+                chips += chips_once
+                mult += mult_once
+                x_mult *= x_mult_once
 
-                    individual_chips += effect.chips_add
-                    individual_mult += effect.mult_add
-                    individual_x_mult *= effect.x_mult
-                    money_gained += effect.money
-
-                    if effect.chips_add or effect.mult_add or effect.x_mult != 1.0:
-                        card_str = f"{getattr(card, 'rank', '?')} of {getattr(card, 'suit', '?')}"
-                        breakdown['effects_applied'].append(f"{joker_name} on {card_str}: +{effect.chips_add}c +{effect.mult_add}m x{effect.x_mult}")
+                repeat_effect = self._apply_individual_jokers(card, context, False, breakdown)
+                individual_chips += repeat_effect.chips_add
+                individual_mult += repeat_effect.mult_add
+                individual_x_mult *= repeat_effect.x_mult
+                money_gained += repeat_effect.money
         
         # Apply individual effects
         chips += individual_chips
@@ -306,10 +352,12 @@ class UnifiedScorer:
             'hand_type': context.hand_type_name
         }
         
-        for joker_name in self._iter_joker_names(context.game_state):
+        for joker_index, joker_name in self._iter_jokers(context.game_state):
             joker = type('Joker', (), {'name': joker_name})
+            scoring_context['joker_index'] = joker_index
             raw_effect = self.joker_effects.apply_joker_effect(joker, scoring_context, context.game_state)
             effect = self.effect_converter.convert_joker_effect(raw_effect)
+            self._record_raw_side_effects(raw_effect, breakdown)
 
             # Apply additive effects
             chips += effect.chips_add
@@ -346,6 +394,10 @@ class UnifiedScorer:
         breakdown['final_x_mult'] = x_mult
         breakdown['final_score'] = final_score
         breakdown['money_gained'] = money_gained
+        breakdown['card_chips'] = card_chip_total
+        breakdown['card_mult'] = card_enhancement_mult
+        breakdown['card_x_mult'] = card_enhancement_x_mult
+        breakdown['card_retriggers'] = card_retriggers
         
         return final_score, breakdown
 
