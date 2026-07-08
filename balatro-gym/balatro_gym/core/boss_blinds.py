@@ -38,7 +38,7 @@ class BossBlindType(IntEnum):
     THE_CLUB = auto()      # All Clubs are debuffed
     THE_TOOTH = auto()     # Lose $1 per card played
     THE_FLINT = auto()     # Base chips and mult halved
-    THE_OXIDE = auto()     # All cards played give no chips
+    THE_OX = auto()        # Most-played hand sets money to $0
     THE_ARM = auto()       # Decrease level of played poker hand
     THE_VIOLET = auto()    # All cards are debuffed
     THE_VERDANT = auto()   # Required cards scale up by 1 per hand until 7
@@ -54,6 +54,8 @@ class BossBlind:
     description: str
     mult: float = 1.0  # Chip requirement multiplier
     money_reward: int = 5  # Extra money for defeating
+    min_ante: int = 1
+    showdown: bool = False
     
     # Effect functions
     on_round_start: Optional[Callable] = None
@@ -73,128 +75,144 @@ BOSS_BLINDS: Dict[BossBlindType, BossBlind] = {
         blind_type=BossBlindType.THE_HOOK,
         name="The Hook",
         description="Discards 2 random cards per hand",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_WALL: BossBlind(
         blind_type=BossBlindType.THE_WALL,
         name="The Wall",
         description="Extra large blind",
-        mult=2.0,  # Double chip requirement
-        money_reward=5
+        mult=4.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_WHEEL: BossBlind(
         blind_type=BossBlindType.THE_WHEEL,
         name="The Wheel",
         description="1 in 7 cards get drawn face down",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_HOUSE: BossBlind(
         blind_type=BossBlindType.THE_HOUSE,
         name="The House",
         description="First hand drawn face down",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_MARK: BossBlind(
         blind_type=BossBlindType.THE_MARK,
         name="The Mark",
         description="All face cards drawn face down",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_FISH: BossBlind(
         blind_type=BossBlindType.THE_FISH,
         name="The Fish",
         description="Cards drawn face down after each hand played",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_PSYCHIC: BossBlind(
         blind_type=BossBlindType.THE_PSYCHIC,
         name="The Psychic",
         description="Must play 5 cards",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_GOAD: BossBlind(
         blind_type=BossBlindType.THE_GOAD,
         name="The Goad",
         description="All Spades are debuffed",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_WATER: BossBlind(
         blind_type=BossBlindType.THE_WATER,
         name="The Water",
         description="Start with 0 discards",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_WINDOW: BossBlind(
         blind_type=BossBlindType.THE_WINDOW,
         name="The Window",
         description="All Diamonds are debuffed",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_MANACLE: BossBlind(
         blind_type=BossBlindType.THE_MANACLE,
         name="The Manacle",
         description="-1 Hand Size",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_EYE: BossBlind(
         blind_type=BossBlindType.THE_EYE,
         name="The Eye",
         description="No repeat hand types this round",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=3
     ),
     
     BossBlindType.THE_MOUTH: BossBlind(
         blind_type=BossBlindType.THE_MOUTH,
         name="The Mouth",
         description="Play only 1 hand type this round",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_PLANT: BossBlind(
         blind_type=BossBlindType.THE_PLANT,
         name="The Plant",
         description="All face cards are debuffed",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=4
     ),
     
     BossBlindType.THE_SERPENT: BossBlind(
         blind_type=BossBlindType.THE_SERPENT,
         name="The Serpent",
         description="After each hand, always draw 3 cards",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=5
     ),
     
     BossBlindType.THE_PILLAR: BossBlind(
         blind_type=BossBlindType.THE_PILLAR,
         name="The Pillar",
         description="Cards played previously are debuffed",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_NEEDLE: BossBlind(
@@ -202,95 +220,112 @@ BOSS_BLINDS: Dict[BossBlindType, BossBlind] = {
         name="The Needle",
         description="Play only 1 hand",
         mult=1.0,
-        money_reward=5
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_HEAD: BossBlind(
         blind_type=BossBlindType.THE_HEAD,
         name="The Head",
         description="All Hearts are debuffed",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_CLUB: BossBlind(
         blind_type=BossBlindType.THE_CLUB,
         name="The Club",
         description="All Clubs are debuffed",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=1
     ),
     
     BossBlindType.THE_TOOTH: BossBlind(
         blind_type=BossBlindType.THE_TOOTH,
         name="The Tooth",
         description="Lose $1 per card played",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=3
     ),
     
     BossBlindType.THE_FLINT: BossBlind(
         blind_type=BossBlindType.THE_FLINT,
         name="The Flint",
         description="Base chips and mult halved",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
-    BossBlindType.THE_OXIDE: BossBlind(
-        blind_type=BossBlindType.THE_OXIDE,
-        name="The Oxide",
-        description="All cards played give no chips",
-        mult=1.0,
-        money_reward=5
+    BossBlindType.THE_OX: BossBlind(
+        blind_type=BossBlindType.THE_OX,
+        name="The Ox",
+        description="Playing the most played hand sets money to $0",
+        mult=2.0,
+        money_reward=5,
+        min_ante=6
     ),
     
     BossBlindType.THE_ARM: BossBlind(
         blind_type=BossBlindType.THE_ARM,
         name="The Arm",
         description="Decrease level of played poker hand",
-        mult=1.0,
-        money_reward=5
+        mult=2.0,
+        money_reward=5,
+        min_ante=2
     ),
     
     BossBlindType.THE_VIOLET: BossBlind(
         blind_type=BossBlindType.THE_VIOLET,
-        name="The Violet",
-        description="All cards are debuffed",
-        mult=1.0,
-        money_reward=5
+        name="Violet Vessel",
+        description="Very large blind",
+        mult=6.0,
+        money_reward=8,
+        min_ante=10,
+        showdown=True
     ),
     
     BossBlindType.THE_VERDANT: BossBlind(
         blind_type=BossBlindType.THE_VERDANT,
-        name="The Verdant",
-        description="Required cards scale up by 1 per hand until 7",
-        mult=1.0,
-        money_reward=5
+        name="Verdant Leaf",
+        description="All cards debuffed until 1 Joker sold",
+        mult=2.0,
+        money_reward=8,
+        min_ante=10,
+        showdown=True
     ),
     
     BossBlindType.THE_AMBER: BossBlind(
         blind_type=BossBlindType.THE_AMBER,
-        name="The Amber",
-        description="-1 active joker slot",
-        mult=1.0,
-        money_reward=5
+        name="Amber Acorn",
+        description="Flips and shuffles all Jokers",
+        mult=2.0,
+        money_reward=8,
+        min_ante=10,
+        showdown=True
     ),
     
     BossBlindType.THE_CRIMSON: BossBlind(
         blind_type=BossBlindType.THE_CRIMSON,
-        name="The Crimson",
-        description="All Heart cards are flipped",
-        mult=1.0,
-        money_reward=5
+        name="Crimson Heart",
+        description="One random Joker disabled every hand",
+        mult=2.0,
+        money_reward=8,
+        min_ante=10,
+        showdown=True
     ),
     
     BossBlindType.THE_CERULEAN: BossBlind(
         blind_type=BossBlindType.THE_CERULEAN,
-        name="The Cerulean",
-        description="All cards in deck are flipped",
-        mult=1.0,
-        money_reward=5
+        name="Cerulean Bell",
+        description="Forces 1 card to always be selected",
+        mult=2.0,
+        money_reward=8,
+        min_ante=10,
+        showdown=True
     ),
 }
 
@@ -335,10 +370,6 @@ class BossBlindManager:
         elif blind_type == BossBlindType.THE_NEEDLE:
             effects['modifications']['hands'] = 1
             
-        elif blind_type == BossBlindType.THE_AMBER:
-            self.blind_state['disabled_joker_slots'] = 1
-            effects['modifications']['active_jokers'] = -1
-            
         return effects
     
     def on_hand_drawn(self, hand_cards: List[Any], game_state: Dict) -> Dict[str, Any]:
@@ -376,7 +407,7 @@ class BossBlindManager:
         elif self.active_blind.blind_type == BossBlindType.THE_MARK:
             # Face cards face down
             for i, card in enumerate(hand_cards):
-                if hasattr(card, 'rank') and card.rank in [11, 12, 13]:  # J, Q, K
+                if self._is_face_card(card):
                     effects['face_down_cards'].append(i)
                     
         elif self.active_blind.blind_type == BossBlindType.THE_FISH:
@@ -407,12 +438,6 @@ class BossBlindManager:
                 allowed = list(self.blind_state['played_hand_types'])[0]
                 return False, f"Can only play {allowed}"
                 
-        elif self.active_blind.blind_type == BossBlindType.THE_VERDANT:
-            # Requires specific number of cards
-            required = self.blind_state['cards_required']
-            if len(selected_cards) < required:
-                return False, f"Must play at least {required} cards"
-        
         return True, ""
     
     def modify_scoring(self, base_chips: int, base_mult: int, 
@@ -430,27 +455,6 @@ class BossBlindManager:
             chips = chips // 2
             mult = mult // 2
             
-        elif self.active_blind.blind_type == BossBlindType.THE_OXIDE:
-            # No chips from cards
-            chips = 0
-            
-        elif self.active_blind.blind_type == BossBlindType.THE_ARM:
-            # Decrease hand level effect (simulate by reducing base values)
-            chips = int(chips * 0.75)
-            mult = int(mult * 0.75)
-            
-        # Card-specific debuffs
-        debuffed_cards = 0
-        for card in played_cards:
-            if self._is_card_debuffed(card):
-                debuffed_cards += 1
-        
-        if debuffed_cards > 0:
-            # Each debuffed card reduces effectiveness
-            penalty = 0.8 ** debuffed_cards
-            chips = int(chips * penalty)
-            mult = int(mult * penalty)
-        
         return chips, mult
     
     def _is_card_debuffed(self, card) -> bool:
@@ -471,20 +475,29 @@ class BossBlindManager:
                 
         # Rank debuffs
         if hasattr(card, 'rank'):
-            if self.active_blind.blind_type == BossBlindType.THE_PLANT and card.rank in [11, 12, 13]:
+            if self.active_blind.blind_type == BossBlindType.THE_PLANT and self._is_face_card(card):
                 return True
                 
         # Universal debuffs
-        if self.active_blind.blind_type == BossBlindType.THE_VIOLET:
-            return True
-            
         # Previously played cards
         if self.active_blind.blind_type == BossBlindType.THE_PILLAR:
             card_id = getattr(card, 'id', None) or id(card)
-            if card_id in self.blind_state.get('played_cards', set()):
+            played_this_ante = getattr(getattr(card, "card_state", None), "played_this_ante", False)
+            if played_this_ante or card_id in self.blind_state.get('played_cards', set()):
                 return True
+
+        if self.active_blind.blind_type == BossBlindType.THE_VERDANT:
+            return True
         
         return False
+
+    @staticmethod
+    def _rank_value(card: Any) -> int:
+        rank = getattr(card, "rank", 0)
+        return rank.value if hasattr(rank, "value") else int(rank or 0)
+
+    def _is_face_card(self, card: Any) -> bool:
+        return self._rank_value(card) in {11, 12, 13}
     
     def on_hand_scored(self, played_cards: List[Any], hand_type: str, game_state: Dict):
         """Update state after hand is scored"""
@@ -502,14 +515,18 @@ class BossBlindManager:
                 card_id = getattr(card, 'id', None) or id(card)
                 self.blind_state['played_cards'].add(card_id)
                 
-        # Update required cards for The Verdant
-        if self.active_blind.blind_type == BossBlindType.THE_VERDANT:
-            self.blind_state['cards_required'] = min(7, self.blind_state['cards_required'] + 1)
-            
         # Money penalty for The Tooth
         if self.active_blind.blind_type == BossBlindType.THE_TOOTH:
             game_state['money'] = max(0, game_state.get('money', 0) - len(played_cards))
-            
+
+        if self.active_blind.blind_type == BossBlindType.THE_OX:
+            hand_counts = game_state.get('hand_play_counts', {})
+            if hand_counts:
+                max_count = max(hand_counts.values())
+                most_played = {hand for hand, count in hand_counts.items() if count == max_count}
+                if hand_type in most_played:
+                    game_state['money'] = 0
+
         # Special draw for The Serpent
         if self.active_blind.blind_type == BossBlindType.THE_SERPENT:
             # Force draw exactly 3 cards next hand
@@ -532,21 +549,45 @@ def select_boss_blind(
     ante: int,
     exclude: Optional[List[BossBlindType]] = None,
     rng: Any | None = None,
+    bosses_used: Optional[Dict[BossBlindType, int]] = None,
+    win_ante: int = 8,
 ) -> BossBlindType:
-    """Select a random boss blind for the given ante"""
-    # All blinds available from the start in standard Balatro
-    available_blinds = list(BossBlindType)
-    
-    # Exclude specific blinds if requested (e.g., Chicot joker effect)
-    if exclude:
-        available_blinds = [b for b in available_blinds if b not in exclude]
-    
-    # Prefer the environment RNG when available so repeated seeded episodes
-    # produce the same boss offer sequence.
-    if rng is not None:
-        return rng.choice('blind_selection', available_blinds)
+    """Select a Balatro-eligible boss and increment its offer usage."""
+    ante_for_eligibility = max(1, ante)
+    excluded = set(exclude or [])
+    eligible_blinds: List[BossBlindType] = []
 
-    return random.choice(available_blinds)
+    for blind_type, blind in BOSS_BLINDS.items():
+        if blind_type in excluded:
+            continue
+
+        is_showdown_round = ante % win_ante == 0 and ante >= 2
+        if blind.showdown:
+            if is_showdown_round:
+                eligible_blinds.append(blind_type)
+        elif blind.min_ante <= ante_for_eligibility and not is_showdown_round:
+            eligible_blinds.append(blind_type)
+
+    if not eligible_blinds:
+        for blind_type, blind in BOSS_BLINDS.items():
+            if blind_type not in excluded and not blind.showdown:
+                eligible_blinds.append(blind_type)
+
+    usage = bosses_used if bosses_used is not None else {}
+    min_use = min(usage.get(blind_type, 0) for blind_type in eligible_blinds)
+    least_used_blinds = [
+        blind_type
+        for blind_type in eligible_blinds
+        if usage.get(blind_type, 0) == min_use
+    ]
+
+    if rng is not None:
+        selected = rng.choice('blind_selection', least_used_blinds)
+    else:
+        selected = random.choice(least_used_blinds)
+
+    usage[selected] = usage.get(selected, 0) + 1
+    return selected
 
 # ---------------------------------------------------------------------------
 # Example Usage in Environment

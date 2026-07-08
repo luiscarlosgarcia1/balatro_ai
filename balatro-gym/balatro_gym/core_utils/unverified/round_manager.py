@@ -80,7 +80,14 @@ class RoundManager:
             self.state.round += 1
             self.state.reset_round_state()
             if self.state.round == 3:
-                self.state.pending_boss_blind = select_boss_blind(self.state.ante, rng=self.rng)
+                try:
+                    self.state.pending_boss_blind = select_boss_blind(
+                        self.state.ante,
+                        rng=self.rng,
+                        bosses_used=self.state.bosses_used,
+                    )
+                except TypeError:
+                    self.state.pending_boss_blind = select_boss_blind(self.state.ante, rng=self.rng)
 
         self.state.money += self._cashout_amount(completed_round, boss_reward, completed_round_discards_used)
         if completed_round == 3:

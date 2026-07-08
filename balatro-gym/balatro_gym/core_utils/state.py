@@ -143,6 +143,7 @@ class UnifiedGameState:
     pending_boss_blind: Optional[BossBlindType] = None
     boss_blind_active: bool = False
     boss_blind_rerolls_used_ante: int = 0
+    bosses_used: Dict[BossBlindType, int] = field(default_factory=dict)
     face_down_cards: List[int] = field(default_factory=list)  # Indexes into hand_indexes
     force_draw_count: Optional[int] = None  # For The Serpent boss
     disabled_joker_slots: int = 0  # For The Plant boss
@@ -204,6 +205,7 @@ class UnifiedGameState:
             'boss_blind_active': self.boss_blind_active,
             'active_boss_blind': self.active_boss_blind.name if self.active_boss_blind else None,
             'pending_boss_blind': self.pending_boss_blind.name if self.pending_boss_blind else None,
+            'bosses_used': {boss.name: count for boss, count in self.bosses_used.items()},
             'face_down_cards': self.face_down_cards,
             
             # Collections info
@@ -279,6 +281,7 @@ class UnifiedGameState:
             pending_boss_blind=self.pending_boss_blind,
             boss_blind_active=self.boss_blind_active,
             boss_blind_rerolls_used_ante=self.boss_blind_rerolls_used_ante,
+            bosses_used=self.bosses_used.copy(),
             face_down_cards=self.face_down_cards.copy(),
             force_draw_count=self.force_draw_count,
             disabled_joker_slots=self.disabled_joker_slots,

@@ -82,7 +82,14 @@ class ShopPhaseHandler:
         """Handle ending the shopping phase."""
         # Return to blind select so the next pending blind is chosen explicitly.
         if int(self.state.round) == 3 and self.state.pending_boss_blind is None:
-            self.state.pending_boss_blind = select_boss_blind(self.state.ante, rng=self.rng)
+            try:
+                self.state.pending_boss_blind = select_boss_blind(
+                    self.state.ante,
+                    rng=self.rng,
+                    bosses_used=self.state.bosses_used,
+                )
+            except TypeError:
+                self.state.pending_boss_blind = select_boss_blind(self.state.ante, rng=self.rng)
         self.state.phase = Phase.BLIND_SELECT
         self.state.selected_cards = []
         self.state.face_down_cards = []

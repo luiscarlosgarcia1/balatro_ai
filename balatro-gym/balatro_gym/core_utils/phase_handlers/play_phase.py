@@ -24,7 +24,7 @@ from balatro_gym.scoring.scoring_engine import ScoreEngine, HandType
 from balatro_gym.scoring.unified_scoring import UnifiedScorer, ScoringContext
 from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
 from balatro_gym.core.consumables import ConsumableManager, is_planet_consumable_name, is_tarot_consumable_name
-from balatro_gym.core.boss_blinds import BossBlindManager
+from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType
 from balatro_gym.core.balatro_game import BalatroGame
 
 
@@ -115,10 +115,13 @@ class PlayPhaseHandler:
             self._get_poker_classification_cards(selected_cards, selected_game_cards)
         )
         hand_type_name = hand_type.name.replace('_', ' ').title()
+        pre_play_hand_counts = dict(self.engine.hand_play_counts)
         
         # Check boss blind restrictions
         if not self._check_boss_blind_can_play(selected_game_cards, hand_type_name):
             return -1.0, False, {'error': 'Boss blind prevents playing this hand'}
+
+        self._apply_boss_blind_before_scoring(hand_type)
         
         # Score the hand
         base_score, breakdown = self._score_hand(selected_cards, hand_type, hand_type_name)
@@ -156,6 +159,14 @@ class PlayPhaseHandler:
         # Apply boss blind post-scoring effects
         if self.state.boss_blind_active and self.boss_blind_manager.active_blind:
             boss_state = self.state.to_dict()
+            boss_state["hand_play_counts"] = {
+                hand.name.replace("_", " ").title(): count
+                for hand, count in pre_play_hand_counts.items()
+            }
+            boss_state["hand_levels"] = {
+                hand.name.replace("_", " ").title(): level
+                for hand, level in self.engine.hand_levels.items()
+            }
             self.boss_blind_manager.on_hand_scored(selected_game_cards, hand_type_name, boss_state)
             self._sync_post_score_boss_state(boss_state)
 
@@ -459,6 +470,21 @@ class PlayPhaseHandler:
             can_play, _ = self.boss_blind_manager.can_play_hand(cards, hand_type)
             return can_play
         return True
+
+    def _apply_boss_blind_before_scoring(self, hand_type: HandType) -> None:
+        """Apply boss effects that must alter current hand scoring inputs."""
+        if not self.state.boss_blind_active or not self.boss_blind_manager.active_blind:
+            return
+        if self.boss_blind_manager.active_blind.blind_type != BossBlindType.THE_ARM:
+            return
+
+        current_level = self.engine.get_hand_level(hand_type)
+        if current_level <= 1:
+            return
+
+        next_level = current_level - 1
+        self.engine.set_hand_level(hand_type, next_level)
+        self.state.hand_levels[hand_type] = next_level
     
     def _score_hand(self, selected_cards: List[Any], hand_type: HandType, 
                     hand_type_name: str) -> Tuple[int, Dict]:
@@ -742,6 +768,13 @@ class PlayPhaseHandler:
         if 'force_draw_count' in boss_state:
             force_draw_count = boss_state['force_draw_count']
             self.state.force_draw_count = None if force_draw_count is None else int(force_draw_count)
+
+        for hand_name, level in boss_state.get("hand_levels", {}).items():
+            hand_key = hand_name.replace(" ", "_").upper()
+            hand_type = HandType.__members__.get(hand_key)
+            if hand_type is not None:
+                self.engine.set_hand_level(hand_type, int(level))
+                self.state.hand_levels[hand_type] = int(level)
     
     def _apply_discard_effects(self, discarded_cards: List[Any]) -> int:
         """Apply joker effects for discarding."""

@@ -6,7 +6,7 @@ between small blind, big blind, boss blind, or skipping.
 
 from typing import Tuple, Dict
 
-from balatro_gym.core_utils.blind_scaling import get_blind_chips
+from balatro_gym.core_utils.blind_scaling import get_blind_amount, get_blind_chips
 from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.constants import Action, Phase
@@ -75,7 +75,7 @@ class BlindSelectHandler:
         blind_name = blind_names[expected_blind_type]
         
         # Calculate chip requirement
-        base_chips = get_blind_chips(self.state.ante, blind_name)
+        base_chips = get_blind_amount(self.state.ante) if blind_name == "boss" else get_blind_chips(self.state.ante, blind_name)
         self.state.chips_needed = base_chips
         
         info = {
@@ -93,6 +93,7 @@ class BlindSelectHandler:
         if blind_type == 2:  # Boss blind
             reward, boss_info = self._activate_boss_blind(base_chips)
             info.update(boss_info)
+            info['chips_needed'] = self.state.chips_needed
         
         # Update game blind requirement
         if hasattr(self.game, 'blinds') and hasattr(self.game, 'blind_index'):
@@ -284,4 +285,12 @@ class BlindSelectHandler:
     def _roll_pending_boss_blind(self, exclude_current: bool = False):
         """Roll a boss blind, avoiding the current offer when possible."""
         exclude = [self.state.pending_boss_blind] if exclude_current and self.state.pending_boss_blind else None
-        return select_boss_blind(self.state.ante, exclude=exclude, rng=self.rng)
+        try:
+            return select_boss_blind(
+                self.state.ante,
+                exclude=exclude,
+                rng=self.rng,
+                bosses_used=self.state.bosses_used,
+            )
+        except TypeError:
+            return select_boss_blind(self.state.ante, exclude=exclude, rng=self.rng)
