@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType
-from balatro_gym.core.cards import Card, Rank, Seal, Suit
+from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
 from balatro_gym.core.consumables import ConsumableManager
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.jokers import JokerInfo
@@ -508,7 +508,13 @@ def test_shop_purchase_syncs_playing_cards_back_to_state():
         item_type=ItemType.CARD,
         name="Ace of Spades",
         cost=4,
-        payload={"offer_set": "Playing", "card_index": 51},
+        payload={
+            "offer_set": "Playing",
+            "card_index": 51,
+            "enhancement": Enhancement.LUCKY,
+            "edition": Edition.FOIL,
+            "seal": Seal.GOLD,
+        },
     )
     player = PlayerState(chips=10, deck=[])
 
@@ -535,6 +541,10 @@ def test_shop_purchase_syncs_playing_cards_back_to_state():
     assert len(state.deck) == 1
     assert state.deck[0].rank == Rank.ACE
     assert state.deck[0].suit == Suit.SPADES
+    card_state = state.get_card_state(0)
+    assert card_state.enhancement == Enhancement.LUCKY
+    assert card_state.edition == Edition.FOIL
+    assert card_state.seal == Seal.GOLD
 
 
 def test_pack_mask_and_handler_reject_unselectable_items():

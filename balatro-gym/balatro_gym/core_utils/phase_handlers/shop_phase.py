@@ -9,7 +9,7 @@ This module handles all actions during the SHOP phase including:
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from balatro_gym.core.cards import Card, Rank, Suit
+from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
 from balatro_gym.core.boss_blinds import select_boss_blind
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core_utils.rng import DeterministicRNG
@@ -174,7 +174,7 @@ class ShopPhaseHandler:
         self.state.shop_inventory = self.shop.inventory.copy()
         cost_mult = self.shop._cost_mult() if hasattr(self.shop, '_cost_mult') else 1.0
         self.state.shop_reroll_cost = int(self.shop.reroll_cost * cost_mult)
-        self._sync_inventory_from_player()
+        self._sync_inventory_from_player(shop_info)
 
         if item.item_type == ItemType.PACK:
             return self._handle_pack_purchase(item, shop_info)
@@ -309,15 +309,20 @@ class ShopPhaseHandler:
                             self.state.add_joker(joker_info)
                             break
 
-    def _sync_inventory_from_player(self) -> None:
+    def _sync_inventory_from_player(self, shop_info: Optional[Dict[str, Any]] = None) -> None:
         """Sync deck and consumables after shop purchases mutate the player state."""
         if not self.shop or not self.shop.player:
             return
 
         player_deck = list(self.shop.player.deck)
+        purchased_card = (shop_info or {}).get("card_added")
+        purchased_card_payload = purchased_card if isinstance(purchased_card, dict) else None
         if len(player_deck) > len(self.state.deck):
             for encoded_card in player_deck[len(self.state.deck):]:
-                self.state.deck.append(self._decode_shop_card(encoded_card))
+                card = self._decode_shop_card(encoded_card)
+                card_idx = len(self.state.deck)
+                self.state.deck.append(card)
+                self._apply_shop_card_modifiers(card_idx, purchased_card_payload)
 
         self.state.consumables = self.shop.player.consumables.copy()
 
@@ -327,6 +332,16 @@ class ShopPhaseHandler:
         rank = Rank((normalized // 4) + 2)
         suit = Suit(normalized % 4)
         return Card(rank=rank, suit=suit)
+
+    def _apply_shop_card_modifiers(self, card_idx: int, payload: Optional[Dict[str, Any]]) -> None:
+        """Apply direct shop card modifiers carried by the purchase payload."""
+        if not payload or payload.get("offer_set") != "Playing":
+            return
+
+        card_state = self.state.get_card_state(card_idx)
+        card_state.enhancement = payload.get("enhancement", Enhancement.NONE)
+        card_state.edition = payload.get("edition", Edition.NONE)
+        card_state.seal = payload.get("seal", Seal.NONE)
     
     def _process_purchase(self, item, shop_info: Dict) -> Dict:
         """Process purchase results based on item type."""
