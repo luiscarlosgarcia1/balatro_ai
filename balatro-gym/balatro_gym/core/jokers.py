@@ -1,6 +1,6 @@
 # balatro_gym/jokers.py
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, List
 
 @dataclass(frozen=True)
 class JokerInfo:
@@ -160,3 +160,17 @@ JOKER_LIBRARY: List[JokerInfo] = [
     JokerInfo(149,"Chicot",0,"Disable every boss"),
     JokerInfo(150,"Perkeo",0,"Negative copy consumable"),
 ]
+
+_JOKER_RARITIES = (
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1,
+    2, 1, 1, 2, 2, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 2, 2, 1, 1, 1,
+    1, 1, 1, 1, 2, 1, 2, 2, 1, 1, 3, 1, 1, 2, 2, 2, 1, 1, 1, 1,
+    1, 2, 1, 2, 1, 2, 1, 2, 2, 2, 3, 3, 2, 2, 3, 2, 2, 1, 2, 2,
+    2, 1, 1, 2, 1, 1, 1, 1, 2, 1, 2, 3, 2, 2, 2, 2, 1, 2, 3, 2,
+    1, 2, 2, 1, 3, 1, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2,
+    2, 2, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 1,
+    3, 2, 2, 3, 2, 4, 4, 4, 4, 4,
+)
+JOKER_RARITY_BY_ID: Dict[int, int] = {
+    joker_id: rarity for joker_id, rarity in enumerate(_JOKER_RARITIES, start=1)
+}

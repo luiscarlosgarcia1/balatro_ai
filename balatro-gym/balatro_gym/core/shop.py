@@ -11,7 +11,7 @@ from enum import IntEnum, auto
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
-from balatro_gym.core.jokers import JOKER_LIBRARY, JokerInfo
+from balatro_gym.core.jokers import JOKER_LIBRARY, JOKER_RARITY_BY_ID, JokerInfo
 
 
 class ItemType(IntEnum):
@@ -238,6 +238,7 @@ SPECTRAL_DEFINITIONS: Tuple[ConsumableDefinition, ...] = (
 SHOWMAN_JOKER_ID = 121
 CHAOS_THE_CLOWN_ID = 30
 ASTRONOMER_JOKER_ID = 143
+BASE_JOKER_ID = 1
 
 BASE_JOKER_RATE = 20.0
 BASE_TAROT_RATE = 4.0
@@ -391,10 +392,14 @@ class Shop:
         return self._weighted_choice(eligible)
 
     def _choose_joker(self, taken_keys: set[str]) -> JokerInfo:
+        rarity_roll = self.rng.random()
+        rarity = 3 if rarity_roll > 0.95 else 2 if rarity_roll > 0.7 else 1
         eligible: List[JokerInfo] = []
         owned = set(self.player.jokers)
         for joker in JOKER_LIBRARY:
             if joker.base_cost <= 0:
+                continue
+            if JOKER_RARITY_BY_ID.get(joker.id) != rarity:
                 continue
             if joker.id in owned and not self._has_showman():
                 continue
@@ -403,7 +408,7 @@ class Shop:
                 continue
             eligible.append(joker)
         if not eligible:
-            eligible = [joker for joker in JOKER_LIBRARY if joker.base_cost > 0]
+            return next(joker for joker in JOKER_LIBRARY if joker.id == BASE_JOKER_ID)
         return self.rng.choice(eligible)
 
     def _available_vouchers(self) -> List[VoucherDefinition]:
