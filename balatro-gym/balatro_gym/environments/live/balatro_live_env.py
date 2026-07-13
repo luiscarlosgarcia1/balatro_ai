@@ -38,11 +38,16 @@ from balatro_gym.core.consumables import is_planet_consumable_name, is_tarot_con
 from balatro_gym.core_utils.mvp_contract import (
     build_action_mask,
     create_mvp_observation_space,
+    encode_card_modifier_value,
     encode_consumables,
+    encode_deck_id,
     encode_fool_replayable_consumable,
     encode_joker_tokens,
     encode_pack_item_ids,
     encode_pack_item_types,
+    encode_stake_id,
+    encode_standard_card_id,
+    encode_tag_id,
     get_pack_consumable_target_count,
     get_shop_item_type_id,
     is_pack_item_selectable,
@@ -269,10 +274,13 @@ class BalatroLiveEnv(gym.Env):
             i = action - Action.SHOP_BUY_BASE
             # Determine if this is a pack or a card slot
             shop_cards = (gs.get("shop") or {}).get("cards") or []
+            voucher_cards = (gs.get("vouchers") or {}).get("cards") or []
             if i < len(shop_cards):
                 self._gs = self.client.call("buy", {"card": i})
+            elif i < len(shop_cards) + len(voucher_cards):
+                self._gs = self.client.call("buy", {"voucher": i - len(shop_cards)})
             else:
-                pack_i = i - len(shop_cards)
+                pack_i = i - len(shop_cards) - len(voucher_cards)
                 self._gs = self.client.call("buy", {"pack": pack_i})
                 self._pack_selected_indexes = []
                 self._pack_cards_to_select = 0
@@ -524,6 +532,7 @@ class BalatroLiveEnv(gym.Env):
         jokers_area = gs.get("jokers") or {}
         consumables_area = gs.get("consumables") or {}
         shop_area = gs.get("shop") or {}
+        voucher_area = gs.get("vouchers") or {}
         packs_area = gs.get("packs") or {}
         pack_area = gs.get("pack") or {}
         deck_area = gs.get("cards") or {}
@@ -532,17 +541,34 @@ class BalatroLiveEnv(gym.Env):
         joker_cards = jokers_area.get("cards") or []
         consumable_cards = consumables_area.get("cards") or []
         shop_cards = shop_area.get("cards") or []
+        voucher_cards = voucher_area.get("cards") or []
         pack_cards = pack_area.get("cards") or []
 
         # --- Encode hand cards ---
         hand_array = np.full(8, -1, dtype=np.int8)
         hand_one_hot = np.zeros((8, 52), dtype=np.float32)
         hand_suits_arr = np.zeros(8, dtype=np.int8)
-        hand_ranks_arr = np.zeros(8, dtype=np.int8)
+        hand_ranks_arr = np.full(8, -1, dtype=np.int8)
         rank_counts = np.zeros(13, dtype=np.int8)
         suit_counts = np.zeros(4, dtype=np.int8)
 
+        face_down_cards = np.zeros(8, dtype=np.int8)
+        hand_enhancements = np.zeros(8, dtype=np.int8)
+        hand_editions = np.zeros(8, dtype=np.int8)
+        hand_seals = np.zeros(8, dtype=np.int8)
+        hand_debuffed = np.zeros(8, dtype=np.int8)
+
         for i, card in enumerate(hand_cards[:8]):
+            card_state = card.get("state") or {}
+            card_hidden = bool(card_state.get("hidden"))
+            face_down_cards[i] = np.int8(card_hidden)
+            if not card_hidden:
+                hand_enhancements[i] = encode_card_modifier_value(card, "enhancement")
+                hand_editions[i] = encode_card_modifier_value(card, "edition")
+                hand_seals[i] = encode_card_modifier_value(card, "seal")
+                hand_debuffed[i] = np.int8(bool(card_state.get("debuff")))
+            if card_hidden:
+                continue
             val = card.get("value") or {}
             suit_ch = val.get("suit")
             rank_ch = val.get("rank")
@@ -559,6 +585,19 @@ class BalatroLiveEnv(gym.Env):
 
         # --- Jokers ---
         joker_ids = encode_joker_tokens((jk.get("label", "") for jk in joker_cards[:10]))
+        joker_editions = np.zeros(10, dtype=np.int8)
+        joker_eternal = np.zeros(10, dtype=np.int8)
+        joker_perishable = np.zeros(10, dtype=np.int8)
+        joker_rental = np.zeros(10, dtype=np.int8)
+        joker_perishable_rounds = np.zeros(10, dtype=np.int8)
+        for i, joker in enumerate(joker_cards[:10]):
+            modifier = joker.get("modifier") or {}
+            joker_editions[i] = encode_card_modifier_value(joker, "edition")
+            joker_eternal[i] = np.int8(bool(modifier.get("eternal")))
+            perishable_rounds = int(modifier.get("perishable") or 0)
+            joker_perishable[i] = np.int8(perishable_rounds > 0)
+            joker_perishable_rounds[i] = np.int8(max(0, min(99, perishable_rounds)))
+            joker_rental[i] = np.int8(bool(modifier.get("rental")))
 
         # --- Consumables ---
         cons_ids = encode_consumables(c.get("label", "") for c in consumable_cards[:5])
@@ -567,7 +606,7 @@ class BalatroLiveEnv(gym.Env):
         shop_items = np.zeros(10, dtype=np.int16)
         shop_costs = np.zeros(10, dtype=np.int16)
         pack_cards_shop = (packs_area.get("cards") or [])
-        all_shop = list(shop_cards) + list(pack_cards_shop)
+        all_shop = list(shop_cards) + list(voucher_cards) + list(pack_cards_shop)
         for i, item in enumerate(all_shop[:10]):
             shop_items[i] = get_shop_item_type_id(
                 {
@@ -607,11 +646,44 @@ class BalatroLiveEnv(gym.Env):
         boss_info = blinds.get("boss") or {}
         is_boss = int(round_num == 3 and boss_info.get("status") == "CURRENT")
         pack_features = self._build_pack_features(gs)
+        blind_tag_ids = np.array(
+            [
+                encode_tag_id((blinds.get("small") or {}).get("tag_name")),
+                encode_tag_id((blinds.get("big") or {}).get("tag_name")),
+                0,
+            ],
+            dtype=np.int16,
+        )
+        draw_pile_counts = np.zeros(52, dtype=np.int8)
+        for card in (deck_area.get("cards") or []):
+            card_id = encode_standard_card_id(card)
+            if card_id:
+                draw_pile_counts[card_id - 1] = min(52, draw_pile_counts[card_id - 1] + 1)
+        discard_pile_cards = self._area_card_ids(gs.get("discard"), slots=52)
+        play_area_cards = self._area_card_ids(gs.get("play"), slots=8)
 
         return {
             "hand": hand_array,
             "hand_size": np.int8(len(hand_cards)),
             "deck_size": np.int8(deck_area.get("count", 52)),
+            "deck_id": encode_deck_id(gs.get("deck")),
+            "stake_id": encode_stake_id(gs.get("stake")),
+            "draw_pile_size": np.int8(deck_area.get("count", 52)),
+            "discard_pile_size": np.int8((gs.get("discard") or {}).get("count", 0)),
+            "play_area_size": np.int8((gs.get("play") or {}).get("count", 0)),
+            "draw_pile_counts": draw_pile_counts,
+            "discard_pile_cards": discard_pile_cards,
+            "play_area_cards": play_area_cards,
+            "hand_enhancements": hand_enhancements,
+            "hand_editions": hand_editions,
+            "hand_seals": hand_seals,
+            "hand_debuffed": hand_debuffed,
+            "joker_editions": joker_editions,
+            "joker_eternal": joker_eternal,
+            "joker_perishable": joker_perishable,
+            "joker_rental": joker_rental,
+            "joker_perishable_rounds": joker_perishable_rounds,
+            "blind_tag_ids": blind_tag_ids,
             "selected_cards": np.array(
                 [1 if i in self._selected else 0 for i in range(8)], dtype=np.int8
             ),
@@ -654,8 +726,17 @@ class BalatroLiveEnv(gym.Env):
             "best_hand_this_ante": np.int32(self._best_hand_score),
 
             "boss_blind_active": np.int8(is_boss),
-            "boss_blind_type": np.int8(0),
-            "face_down_cards": np.zeros(8, dtype=np.int8),
+            "boss_blind_type": np.int8(self._boss_blind_id(boss_info.get("name"))),
+            "boss_blind_rerolls_used_ante": np.int8(gs.get("boss_blind_rerolls_used_ante", 0)),
+            "discards_used_this_round": np.int8(round_info.get("discards_used", 0)),
+            "hands_played_ante": np.int32(round_info.get("hands_played", self._hands_played)),
+            "rerolls_used": np.int32(gs.get("rerolls_used", 0)),
+            "shop_visits": np.int32(gs.get("shop_visits", 0)),
+            "jokers_sold": np.int32(gs.get("jokers_sold", 0)),
+            "cards_discarded_total": np.int32(gs.get("cards_discarded_total", 0)),
+            "force_draw_count": np.int8(gs.get("force_draw_count", 0) or 0),
+            "disabled_joker_slots": np.int8(gs.get("disabled_joker_slots", 0) or 0),
+            "face_down_cards": face_down_cards,
 
             "rank_counts": rank_counts,
             "suit_counts": suit_counts,
@@ -676,9 +757,10 @@ class BalatroLiveEnv(gym.Env):
         joker_cards = (gs.get("jokers") or {}).get("cards") or []
         consumable_cards = (gs.get("consumables") or {}).get("cards") or []
         shop_cards = (gs.get("shop") or {}).get("cards") or []
+        voucher_cards = (gs.get("vouchers") or {}).get("cards") or []
         pack_cards_shop = (gs.get("packs") or {}).get("cards") or []
         pack_cards = (gs.get("pack") or {}).get("cards") or []
-        all_shop = list(shop_cards) + list(pack_cards_shop)
+        all_shop = list(shop_cards) + list(voucher_cards) + list(pack_cards_shop)
         current_blind_slot = self._current_blind_slot(gs)
         live_state = self._build_live_contract_state(gs)
         pack_item_selectable = [
@@ -695,6 +777,7 @@ class BalatroLiveEnv(gym.Env):
             money=money,
             shop_reroll_cost=round_info.get("reroll_cost", 5),
             joker_count=len(joker_cards),
+            joker_sellable=[not bool((joker.get("modifier") or {}).get("eternal")) for joker in joker_cards],
             sellable_consumable_count=len(consumable_cards),
             blind_selectable_slots=[] if current_blind_slot is None else [current_blind_slot],
             can_skip_blind=current_blind_slot in (0, 1),
@@ -737,6 +820,13 @@ class BalatroLiveEnv(gym.Env):
             run = (run + 1) if unique[i] == unique[i - 1] + 1 else 1
             max_run = max(max_run, run)
         return min(1.0, max_run / 5.0)
+
+    def _area_card_ids(self, area: Any, slots: int) -> np.ndarray:
+        values = np.zeros(slots, dtype=np.int16)
+        cards = (area or {}).get("cards") if isinstance(area, dict) else []
+        for i, card in enumerate((cards or [])[:slots]):
+            values[i] = encode_standard_card_id(card)
+        return values
 
     def _current_blind_slot(self, gs: dict) -> int | None:
         blinds = gs.get("blinds") or {}
@@ -801,6 +891,19 @@ class BalatroLiveEnv(gym.Env):
             pending_pack_consumable=self._pending_pack_consumable,
             pending_pack_index=self._pending_pack_index,
         )
+
+    def _boss_blind_id(self, name: Any) -> int:
+        if not isinstance(name, str) or not name:
+            return 0
+        normalized = name.upper().replace(" ", "_")
+        if not normalized.startswith("THE_"):
+            normalized = f"THE_{normalized}"
+        try:
+            from balatro_gym.core.boss_blinds import BossBlindType
+
+            return int(BossBlindType[normalized])
+        except (ImportError, KeyError):
+            return 0
 
     def _sync_pack_tracking(self, gs: dict) -> None:
         self._ensure_tracking_attrs()

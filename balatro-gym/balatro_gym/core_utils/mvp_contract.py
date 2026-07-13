@@ -109,6 +109,35 @@ SHOP_ITEM_TYPE_IDS: dict[str, int] = {
     "PLAYING": 7,
 }
 
+DECK_ID_MAP: dict[str, int] = {
+    "RED": 1,
+    "BLUE": 2,
+    "YELLOW": 3,
+    "GREEN": 4,
+    "BLACK": 5,
+    "MAGIC": 6,
+    "NEBULA": 7,
+    "GHOST": 8,
+    "ABANDONED": 9,
+    "CHECKERED": 10,
+    "ZODIAC": 11,
+    "PAINTED": 12,
+    "ANAGLYPH": 13,
+    "PLASMA": 14,
+    "ERRATIC": 15,
+}
+
+STAKE_ID_MAP: dict[str, int] = {
+    "WHITE": 1,
+    "RED": 2,
+    "GREEN": 3,
+    "BLACK": 4,
+    "BLUE": 5,
+    "PURPLE": 6,
+    "ORANGE": 7,
+    "GOLD": 8,
+}
+
 PACK_IMMEDIATE_PLANETS: frozenset[str] = frozenset(
     {
         "Mercury",
@@ -198,6 +227,24 @@ def create_mvp_observation_space() -> spaces.Dict:
             "hand": spaces.Box(-1, 51, (8,), dtype=np.int8),
             "hand_size": spaces.Box(0, 12, (), dtype=np.int8),
             "deck_size": spaces.Box(0, 52, (), dtype=np.int8),
+            "deck_id": spaces.Box(0, 15, (), dtype=np.int8),
+            "stake_id": spaces.Box(0, 8, (), dtype=np.int8),
+            "draw_pile_size": spaces.Box(0, 52, (), dtype=np.int8),
+            "discard_pile_size": spaces.Box(0, 52, (), dtype=np.int8),
+            "play_area_size": spaces.Box(0, 8, (), dtype=np.int8),
+            "draw_pile_counts": spaces.Box(0, 52, (52,), dtype=np.int8),
+            "discard_pile_cards": spaces.Box(0, 52, (52,), dtype=np.int16),
+            "play_area_cards": spaces.Box(0, 52, (8,), dtype=np.int16),
+            "hand_enhancements": spaces.Box(0, 8, (8,), dtype=np.int8),
+            "hand_editions": spaces.Box(0, 4, (8,), dtype=np.int8),
+            "hand_seals": spaces.Box(0, 4, (8,), dtype=np.int8),
+            "hand_debuffed": spaces.MultiBinary(8),
+            "joker_editions": spaces.Box(0, 4, (10,), dtype=np.int8),
+            "joker_eternal": spaces.MultiBinary(10),
+            "joker_perishable": spaces.MultiBinary(10),
+            "joker_rental": spaces.MultiBinary(10),
+            "joker_perishable_rounds": spaces.Box(0, 99, (10,), dtype=np.int8),
+            "blind_tag_ids": spaces.Box(0, 500, (3,), dtype=np.int16),
             "selected_cards": spaces.MultiBinary(8),
             "chips_scored": spaces.Box(0, 10_000_000_000, (), dtype=np.int64),
             "round_chips_scored": spaces.Box(0, 10_000_000, (), dtype=np.int32),
@@ -231,6 +278,15 @@ def create_mvp_observation_space() -> spaces.Dict:
             "best_hand_this_ante": spaces.Box(0, 10_000_000, (), dtype=np.int32),
             "boss_blind_active": spaces.Box(0, 1, (), dtype=np.int8),
             "boss_blind_type": spaces.Box(0, 30, (), dtype=np.int8),
+            "boss_blind_rerolls_used_ante": spaces.Box(0, 99, (), dtype=np.int8),
+            "discards_used_this_round": spaces.Box(0, 99, (), dtype=np.int8),
+            "hands_played_ante": spaces.Box(0, 10000, (), dtype=np.int32),
+            "rerolls_used": spaces.Box(0, 10000, (), dtype=np.int32),
+            "shop_visits": spaces.Box(0, 10000, (), dtype=np.int32),
+            "jokers_sold": spaces.Box(0, 10000, (), dtype=np.int32),
+            "cards_discarded_total": spaces.Box(0, 10000, (), dtype=np.int32),
+            "force_draw_count": spaces.Box(0, 52, (), dtype=np.int8),
+            "disabled_joker_slots": spaces.Box(0, 10, (), dtype=np.int8),
             "face_down_cards": spaces.MultiBinary(8),
             "rank_counts": spaces.Box(0, 4, (13,), dtype=np.int8),
             "suit_counts": spaces.Box(0, 8, (4,), dtype=np.int8),
@@ -447,6 +503,63 @@ def encode_fool_replayable_consumable(state: UnifiedGameState) -> np.int16:
     return np.int16(encode_consumable_id(remembered))
 
 
+def encode_deck_id(deck_name: Any) -> np.int8:
+    return np.int8(DECK_ID_MAP.get(str(deck_name or "").upper(), 0))
+
+
+def encode_stake_id(stake_name: Any) -> np.int8:
+    return np.int8(STAKE_ID_MAP.get(str(stake_name or "").upper(), 0))
+
+
+def encode_tag_id(tag: Any) -> int:
+    if tag is None:
+        return 0
+    if isinstance(tag, dict):
+        tag = tag.get("tag_name") or tag.get("name") or tag.get("key") or tag.get("tag")
+    if not isinstance(tag, str) or not tag:
+        return 0
+    return _stable_text_id(tag, modulus=499)
+
+
+def encode_standard_card_id(card: Any) -> int:
+    return _encode_standard_card_id(card)
+
+
+def encode_card_modifier_value(card_or_state: Any, name: str) -> int:
+    value = getattr(card_or_state, name, None)
+    if isinstance(card_or_state, dict):
+        modifier = card_or_state.get("modifier") or {}
+        state = card_or_state.get("state") or {}
+        value = modifier.get(name, state.get(name, value))
+    if value is None:
+        return 0
+    enum_value = getattr(value, "value", value)
+    if isinstance(enum_value, bool):
+        return int(enum_value)
+    if isinstance(enum_value, int):
+        return max(0, min(99, enum_value))
+    normalized = str(enum_value).upper()
+    lookup = {
+        "NONE": 0,
+        "BONUS": 1,
+        "MULT": 2,
+        "WILD": 3,
+        "GLASS": 4,
+        "STEEL": 5,
+        "STONE": 6,
+        "GOLD": 7 if name == "enhancement" else 1,
+        "LUCKY": 8,
+        "FOIL": 1,
+        "HOLOGRAPHIC": 2,
+        "POLYCHROME": 3,
+        "NEGATIVE": 4,
+        "RED": 2,
+        "BLUE": 3,
+        "PURPLE": 4,
+    }
+    return lookup.get(normalized, 0)
+
+
 def build_action_mask(
     state: UnifiedGameState | None = None,
     shop: Any = None,
@@ -490,8 +603,10 @@ def build_action_mask(
         if int(kwargs["money"]) >= int(kwargs["shop_reroll_cost"]):
             mask[Action.SHOP_REROLL] = 1
         mask[Action.SHOP_END] = 1
+        joker_sellable = kwargs.get("joker_sellable")
         for i in range(min(ActionCounts.SELL_JOKER_COUNT, int(kwargs["joker_count"]))):
-            mask[Action.SELL_JOKER_BASE + i] = 1
+            if joker_sellable is None or i >= len(joker_sellable) or bool(joker_sellable[i]):
+                mask[Action.SELL_JOKER_BASE + i] = 1
         for i in range(min(ActionCounts.SELL_CONSUMABLE_COUNT, int(kwargs["sellable_consumable_count"]))):
             mask[Action.SELL_CONSUMABLE_BASE + i] = 1
         return mask

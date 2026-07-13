@@ -21,11 +21,12 @@ except ModuleNotFoundError:
     sys.modules["httpx"] = httpx
 
 from balatro_gym.core.constants import Action, Phase
-from balatro_gym.core.cards import Card, Rank, Suit
+from balatro_gym.core.cards import Card, Enhancement, Edition, Rank, Seal, Suit
 from balatro_gym.core.boss_blinds import BossBlindType
 from balatro_gym.core.jokers import JokerInfo
 from balatro_gym.core_utils.blind_scaling import get_blind_chips
 from balatro_gym.core_utils.mvp_contract import (
+    SHOP_ITEM_TYPE_IDS,
     build_mvp_action_mask,
     encode_consumable_id,
     encode_pack_item_types,
@@ -41,7 +42,13 @@ from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.environments.balatro_env_small import BalatroEnv
 from balatro_gym.environments.live.balatro_live_env import BalatroLiveEnv
 from balatro_gym.scoring.scoring_engine import HandType
-from balatro_gym.training.greedy_expert import direct_play_action_for_combo
+try:
+    from balatro_gym.training.greedy_expert import direct_play_action_for_combo
+except ModuleNotFoundError:
+    def direct_play_action_for_combo(_obs, slots):
+        from balatro_gym.core.constants import encode_play_subset_action
+
+        return encode_play_subset_action(slots)
 
 
 def _requires_direct_play_block():
@@ -101,6 +108,60 @@ def test_hand_levels_follow_canonical_order_in_sim_observation():
     assert obs["hand_levels"].tolist() == expected
 
 
+def test_sim_observation_exposes_visible_state_without_leaking_face_down_identity():
+    builder = ObservationBuilder()
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        deck=[
+            Card(Rank.ACE, Suit.SPADES),
+            Card(Rank.TWO, Suit.HEARTS),
+            Card(Rank.KING, Suit.CLUBS),
+        ],
+        hand_indexes=[0, 1, 2],
+        draw_pile_indexes=[2],
+        discard_pile_indexes=[0],
+        face_down_cards=[1],
+        selected_cards=[],
+    )
+    state.get_card_state(0).enhancement = Enhancement.MULT
+    state.get_card_state(0).edition = Edition.FOIL
+    state.get_card_state(0).seal = Seal.RED
+    state.get_card_state(1).enhancement = Enhancement.GLASS
+    state.get_card_state(1).edition = Edition.POLYCHROME
+    state.get_card_state(1).seal = Seal.BLUE
+    state.get_card_state(2).is_debuffed = True
+    state.eternal_jokers = [0]
+    state.perishable_counters = {1: 4}
+    state.rental_jokers = [2]
+    state.boss_blind_rerolls_used_ante = 1
+    state.discards_used_this_round = 2
+
+    obs = builder.build_observation(state)
+
+    assert obs["hand"][0] == int(state.deck[0])
+    assert obs["hand"][1] == -1
+    assert obs["hand"][2] == int(state.deck[2])
+    assert obs["face_down_cards"].tolist()[:3] == [0, 1, 0]
+    assert obs["deck_id"] == 0
+    assert obs["stake_id"] == 0
+    assert obs["hand_enhancements"].tolist()[:3] == [Enhancement.MULT.value, 0, 0]
+    assert obs["hand_editions"].tolist()[:3] == [Edition.FOIL.value, 0, 0]
+    assert obs["hand_seals"].tolist()[:3] == [Seal.RED.value, 0, 0]
+    assert obs["hand_debuffed"].tolist()[:3] == [0, 0, 1]
+    assert obs["rank_counts"][Rank.TWO.value - 2] == 0
+    assert obs["suit_counts"][Suit.HEARTS.value] == 0
+    assert obs["discard_pile_cards"][0] == int(state.deck[0]) + 1
+    assert obs["draw_pile_counts"][int(state.deck[2])] == 1
+    assert obs["joker_eternal"].tolist()[:3] == [1, 0, 0]
+    assert obs["joker_perishable"].tolist()[:3] == [0, 1, 0]
+    assert obs["joker_perishable_rounds"].tolist()[:3] == [0, 4, 0]
+    assert obs["joker_rental"].tolist()[:3] == [0, 0, 1]
+    assert obs["boss_blind_rerolls_used_ante"] == 1
+    assert obs["discards_used_this_round"] == 2
+    assert obs["action_mask"][Action.SELECT_CARD_BASE + 1] == 1
+    assert builder.create_observation_space().contains(obs)
+
+
 def test_joker_ids_match_between_sim_and_live_contract():
     builder = ObservationBuilder()
     state = UnifiedGameState(
@@ -131,6 +192,66 @@ def test_joker_ids_match_between_sim_and_live_contract():
     live_obs = live_env._build_obs()
 
     assert sim_obs["joker_ids"][:2].tolist() == live_obs["joker_ids"][:2].tolist()
+
+
+def test_live_observation_redacts_hidden_hand_cards_and_exposes_modifiers():
+    env = _make_live_env_stub()
+    env._gs = {
+        "state": "SELECTING_HAND",
+        "round": {"chips": 0, "hands_left": 4, "discards_left": 3, "reroll_cost": 5},
+        "blinds": {"small": {"score": 300}, "big": {"score": 450}, "boss": {"score": 600, "name": "The Hook"}},
+        "hand": {
+            "cards": [
+                {
+                    "value": {"rank": "A", "suit": "S"},
+                    "modifier": {"enhancement": "MULT", "edition": "FOIL", "seal": "RED"},
+                    "state": {},
+                },
+                {
+                    "value": {"rank": "2", "suit": "H"},
+                    "modifier": {"enhancement": "GLASS", "edition": "POLYCHROME", "seal": "BLUE"},
+                    "state": {"hidden": True, "debuff": True},
+                },
+            ]
+        },
+        "jokers": {
+            "cards": [{"label": "Joker", "modifier": {"edition": "NEGATIVE", "eternal": True}}],
+            "limit": 5,
+        },
+        "consumables": {"cards": [], "limit": 2},
+        "shop": {"cards": []},
+        "packs": {"cards": []},
+        "pack": {"cards": []},
+        "cards": {"count": 50, "cards": [{"value": {"rank": "K", "suit": "C"}}]},
+        "discard": {"count": 1, "cards": [{"value": {"rank": "Q", "suit": "D"}}]},
+        "play": {"count": 1, "cards": [{"value": {"rank": "J", "suit": "C"}}]},
+        "hands": {},
+        "money": 4,
+        "ante_num": 1,
+        "round_num": 1,
+        "deck": "BLUE",
+        "stake": "BLACK",
+    }
+
+    obs = env._build_obs()
+
+    assert obs["deck_id"] == 2
+    assert obs["stake_id"] == 4
+    assert obs["hand"][0] >= 0
+    assert obs["hand"][1] == -1
+    assert obs["face_down_cards"].tolist()[:2] == [0, 1]
+    assert obs["hand_enhancements"].tolist()[:2] == [Enhancement.MULT.value, 0]
+    assert obs["hand_editions"].tolist()[:2] == [Edition.FOIL.value, 0]
+    assert obs["hand_seals"].tolist()[:2] == [Seal.RED.value, 0]
+    assert obs["rank_counts"][0] == 0
+    assert obs["suit_counts"][Suit.HEARTS.value] == 0
+    assert obs["straight_potential"] == 0.0
+    assert obs["discard_pile_cards"][0] > 0
+    assert obs["play_area_cards"][0] > 0
+    assert obs["joker_editions"][0] == Edition.NEGATIVE.value
+    assert obs["joker_eternal"][0] == 1
+    assert obs["action_mask"][Action.SELL_JOKER_BASE] == 0
+    assert env.observation_space.contains(obs)
 
 
 def test_pack_observation_keys_and_values_match_between_sim_and_stub_live_contract():
@@ -231,6 +352,39 @@ def test_sell_consumable_is_legal_in_shop_masks_and_handler():
     assert info["action"] == "sold_consumable"
     assert state.money == 5
     assert state.consumables == ["Hex"]
+
+
+def test_live_shop_contract_includes_voucher_slots_between_cards_and_packs():
+    env = _make_live_env_stub()
+    env._gs = {
+        "state": "SHOP",
+        "round": {"chips": 0, "hands_left": 4, "discards_left": 3, "reroll_cost": 5},
+        "blinds": {"small": {"score": 300}, "big": {"score": 450}, "boss": {"score": 600}},
+        "hand": {"cards": []},
+        "jokers": {"cards": [], "limit": 5},
+        "consumables": {"cards": [], "limit": 2},
+        "shop": {"cards": [{"set": "JOKER", "label": "Joker", "cost": {"buy": 2}}]},
+        "vouchers": {"cards": [{"set": "VOUCHER", "label": "Grabber", "cost": {"buy": 10}}]},
+        "packs": {"cards": [{"set": "BOOSTER", "label": "Arcana Pack", "cost": {"buy": 4}}]},
+        "pack": {"cards": []},
+        "cards": {"count": 52},
+        "hands": {},
+        "money": 10,
+        "ante_num": 1,
+        "round_num": 1,
+    }
+
+    obs = env._build_obs()
+
+    assert obs["shop_items"][:3].tolist() == [
+        SHOP_ITEM_TYPE_IDS["JOKER"],
+        SHOP_ITEM_TYPE_IDS["VOUCHER"],
+        SHOP_ITEM_TYPE_IDS["BOOSTER"],
+    ]
+    assert obs["shop_costs"][:3].tolist() == [2, 10, 4]
+    assert obs["action_mask"][Action.SHOP_BUY_BASE] == 1
+    assert obs["action_mask"][Action.SHOP_BUY_BASE + 1] == 1
+    assert obs["action_mask"][Action.SHOP_BUY_BASE + 2] == 1
 
 
 def test_live_blind_mask_exposes_only_current_selectable_slot_and_skip_legality():
