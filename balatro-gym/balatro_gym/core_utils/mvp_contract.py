@@ -8,6 +8,7 @@ from gymnasium import spaces
 
 from balatro_gym.core.constants import Action, ActionCounts, Phase, PLAY_SUBSET_SLOT_SETS
 from balatro_gym.core.consumables import is_planet_consumable_name, is_spectral_consumable_name, is_tarot_consumable_name
+from balatro_gym.core.boss_blinds import BossBlindType
 from balatro_gym.scoring.scoring_engine import HandType
 
 if TYPE_CHECKING:
@@ -312,8 +313,12 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
             for i in range(visible_hand_size):
                 if i in selected_indexes:
                     mask[Action.SELECT_CARD_BASE + i] = 1
+        forced_slot = getattr(state, "boss_forced_selected_card", None)
+        if forced_slot is not None and 0 <= int(forced_slot) < visible_hand_size:
+            mask[Action.SELECT_CARD_BASE + int(forced_slot)] = 0
         _mark_direct_play_subset_actions(mask, visible_hand_size)
-        if 0 < selected_count <= 5:
+        _clear_illegal_boss_subset_actions(mask, state, visible_hand_size)
+        if _can_play_selected_cards_against_boss(state, selected_count):
             mask[Action.PLAY_HAND] = 1
         if selected_count > 0 and state.discards_left > 0:
             mask[Action.DISCARD] = 1
@@ -661,6 +666,35 @@ def _mark_direct_play_subset_actions(mask: np.ndarray, visible_hand_size: int) -
         if slot_subset[-1] >= visible_hand_size:
             continue
         mask[Action.PLAY_SUBSET_BASE + subset_index] = 1
+
+
+def _clear_illegal_boss_subset_actions(
+    mask: np.ndarray,
+    state: UnifiedGameState,
+    visible_hand_size: int,
+) -> None:
+    forced_slot = getattr(state, "boss_forced_selected_card", None)
+    active_boss = getattr(state, "active_boss_blind", None)
+    for subset_index, slot_subset in enumerate(PLAY_SUBSET_SLOT_SETS):
+        action = Action.PLAY_SUBSET_BASE + subset_index
+        if not mask[action]:
+            continue
+        if forced_slot is not None and int(forced_slot) not in slot_subset:
+            mask[action] = 0
+            continue
+        if active_boss == BossBlindType.THE_PSYCHIC and len(slot_subset) != 5:
+            mask[action] = 0
+
+
+def _can_play_selected_cards_against_boss(state: UnifiedGameState, selected_count: int) -> bool:
+    if not (0 < selected_count <= 5):
+        return False
+    if getattr(state, "active_boss_blind", None) == BossBlindType.THE_PSYCHIC and selected_count != 5:
+        return False
+    forced_slot = getattr(state, "boss_forced_selected_card", None)
+    if forced_slot is not None and int(forced_slot) not in set(getattr(state, "selected_cards", [])):
+        return False
+    return True
 
 
 def encode_consumables(consumables: Iterable[Any], slots: int = 5) -> np.ndarray:

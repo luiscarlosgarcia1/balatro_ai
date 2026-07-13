@@ -183,6 +183,9 @@ class UnifiedScorer:
         return 11 if rank == 14 else min(int(rank or 0), 10)
 
     def _score_card_once(self, card: Any) -> Tuple[int, int, float]:
+        if self._is_card_debuffed(card):
+            return 0, 0, 1.0
+
         enhancement = self._card_enhancement(card)
         edition = self._card_edition(card)
         base_card_chips = self._base_card_chips(card, enhancement)
@@ -200,6 +203,14 @@ class UnifiedScorer:
             * EditionEffects.get_mult_multiplier(edition)
         )
         return chips, mult, x_mult
+
+    @staticmethod
+    def _is_card_debuffed(card: Any) -> bool:
+        card_state = getattr(card, "card_state", None)
+        return bool(
+            getattr(card, "is_debuffed", False)
+            or getattr(card_state, "is_debuffed", False)
+        )
 
     def _apply_individual_jokers(
         self,
@@ -255,6 +266,9 @@ class UnifiedScorer:
 
         # 1. Get base hand values from engine
         base_chips, base_mult = self.engine.get_hand_chips_mult(context.hand_type)
+        if context.game_state.get("active_boss_blind") == "THE_FLINT":
+            base_chips = int(base_chips * 0.5 + 0.5)
+            base_mult = max(1, int(base_mult * 0.5 + 0.5))
         
         # 2. Initialize scoring components
         chips = base_chips
@@ -312,6 +326,10 @@ class UnifiedScorer:
         individual_x_mult = 1.0
         
         for card in context.scoring_cards:
+            if self._is_card_debuffed(card):
+                breakdown['effects_applied'].append("Debuffed card: no card or individual joker effects")
+                continue
+
             effect = self._apply_individual_jokers(card, context, True, breakdown)
             individual_chips += effect.chips_add
             individual_mult += effect.mult_add

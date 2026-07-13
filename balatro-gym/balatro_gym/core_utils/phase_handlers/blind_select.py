@@ -226,6 +226,11 @@ class BlindSelectHandler:
         if 'joker_slots' in modifications:
             # The Plant boss disables joker slots
             self.state.disabled_joker_slots = modifications.get('disabled_slots', 0)
+
+        if 'joker_order' in modifications:
+            order = modifications['joker_order']
+            if sorted(order) == list(range(len(self.state.jokers))):
+                self.state.jokers = [self.state.jokers[i] for i in order]
         
         # Set boss blind state
         self.state.active_boss_blind = boss_type

@@ -10,7 +10,7 @@ This module handles all actions during the SHOP phase including:
 from typing import Any, Dict, List, Optional, Tuple
 
 from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
-from balatro_gym.core.boss_blinds import select_boss_blind
+from balatro_gym.core.boss_blinds import BossBlindType, select_boss_blind
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
@@ -214,6 +214,11 @@ class ShopPhaseHandler:
         sell_value = self._calculate_sell_value(sold_joker)
         self.state.money += sell_value
         self.state.jokers_sold += 1
+        if self.state.active_boss_blind == BossBlindType.THE_VERDANT:
+            self.state.boss_blind_active = False
+            self.state.active_boss_blind = None
+            for card_state in self.state.card_states.values():
+                card_state.is_debuffed = False
         
         # Sync with shop player state
         self._sync_player_state()

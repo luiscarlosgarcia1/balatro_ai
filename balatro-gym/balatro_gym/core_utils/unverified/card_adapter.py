@@ -66,6 +66,7 @@ class CardAdapter:
                 "enhancement": card_state.enhancement if card_state else Enhancement.NONE,
                 "edition": card_state.edition if card_state else Edition.NONE,
                 "seal": card_state.seal if card_state else Seal.NONE,
+                "is_debuffed": bool(card_state.is_debuffed) if card_state else False,
                 "card_state": card_state,
                 "original_card": card,
             },

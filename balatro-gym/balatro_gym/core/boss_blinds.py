@@ -369,6 +369,14 @@ class BossBlindManager:
             
         elif blind_type == BossBlindType.THE_NEEDLE:
             effects['modifications']['hands'] = 1
+
+        elif blind_type == BossBlindType.THE_AMBER:
+            joker_indexes = list(range(len(game_state.get('jokers', []))))
+            if self.rng is not None:
+                self.rng.shuffle('boss_abilities', joker_indexes)
+            else:
+                random.shuffle(joker_indexes)
+            effects['modifications']['joker_order'] = joker_indexes
             
         return effects
     
@@ -379,17 +387,7 @@ class BossBlindManager:
             
         effects = {'face_down_cards': [], 'discarded_cards': []}
         
-        if self.active_blind.blind_type == BossBlindType.THE_HOOK:
-            # Discard 2 random cards
-            if len(hand_cards) >= 2:
-                indexes = list(range(len(hand_cards)))
-                if self.rng is not None:
-                    to_discard = self.rng.sample('boss_abilities', indexes, 2)
-                else:
-                    to_discard = random.sample(indexes, 2)
-                effects['discarded_cards'] = to_discard
-                
-        elif self.active_blind.blind_type == BossBlindType.THE_WHEEL:
+        if self.active_blind.blind_type == BossBlindType.THE_WHEEL:
             # 1 in 7 cards face down
             for i, card in enumerate(hand_cards):
                 if self.rng is not None:
@@ -401,7 +399,7 @@ class BossBlindManager:
                     
         elif self.active_blind.blind_type == BossBlindType.THE_HOUSE:
             # First hand all face down
-            if self.blind_state['first_hand']:
+            if self.blind_state['first_hand'] and game_state.get('discards_used_this_round', 0) == 0:
                 effects['face_down_cards'] = list(range(len(hand_cards)))
                 
         elif self.active_blind.blind_type == BossBlindType.THE_MARK:
@@ -414,6 +412,24 @@ class BossBlindManager:
             # All face down after first hand
             if not self.blind_state['first_hand']:
                 effects['face_down_cards'] = list(range(len(hand_cards)))
+
+        elif self.active_blind.blind_type == BossBlindType.THE_CRIMSON:
+            joker_count = int(game_state.get('all_joker_count', len(game_state.get('jokers', []))))
+            if joker_count > 0:
+                if self.rng is not None:
+                    disabled = self.rng.choice('boss_abilities', list(range(joker_count)))
+                else:
+                    disabled = random.randrange(joker_count)
+                effects['disabled_joker_indexes'] = [disabled]
+
+        elif self.active_blind.blind_type == BossBlindType.THE_CERULEAN:
+            if hand_cards:
+                indexes = list(range(len(hand_cards)))
+                if self.rng is not None:
+                    forced = self.rng.choice('boss_abilities', indexes)
+                else:
+                    forced = random.choice(indexes)
+                effects['forced_selected_card'] = forced
         
         return effects
     
@@ -452,8 +468,8 @@ class BossBlindManager:
         # Debuff effects
         if self.active_blind.blind_type == BossBlindType.THE_FLINT:
             # Halve base values
-            chips = chips // 2
-            mult = mult // 2
+            chips = int(chips * 0.5 + 0.5)
+            mult = max(1, int(mult * 0.5 + 0.5))
             
         return chips, mult
     
@@ -464,13 +480,14 @@ class BossBlindManager:
             
         # Suit debuffs
         if hasattr(card, 'suit'):
-            if self.active_blind.blind_type == BossBlindType.THE_GOAD and card.suit == 'Spades':
+            suit = self._suit_name(card)
+            if self.active_blind.blind_type == BossBlindType.THE_GOAD and suit == 'Spades':
                 return True
-            elif self.active_blind.blind_type == BossBlindType.THE_WINDOW and card.suit == 'Diamonds':
+            elif self.active_blind.blind_type == BossBlindType.THE_WINDOW and suit == 'Diamonds':
                 return True
-            elif self.active_blind.blind_type == BossBlindType.THE_HEAD and card.suit == 'Hearts':
+            elif self.active_blind.blind_type == BossBlindType.THE_HEAD and suit == 'Hearts':
                 return True
-            elif self.active_blind.blind_type == BossBlindType.THE_CLUB and card.suit == 'Clubs':
+            elif self.active_blind.blind_type == BossBlindType.THE_CLUB and suit == 'Clubs':
                 return True
                 
         # Rank debuffs
@@ -496,6 +513,13 @@ class BossBlindManager:
         rank = getattr(card, "rank", 0)
         return rank.value if hasattr(rank, "value") else int(rank or 0)
 
+    @staticmethod
+    def _suit_name(card: Any) -> str:
+        suit = getattr(card, "suit", "")
+        if hasattr(suit, "name"):
+            return str(suit.name).replace("_", " ").title()
+        return str(suit).replace("_", " ").title()
+
     def _is_face_card(self, card: Any) -> bool:
         return self._rank_value(card) in {11, 12, 13}
     
@@ -515,6 +539,10 @@ class BossBlindManager:
                 card_id = getattr(card, 'id', None) or id(card)
                 self.blind_state['played_cards'].add(card_id)
                 
+        # Money penalty for The Tooth
+        if self.active_blind.blind_type == BossBlindType.THE_HOOK:
+            game_state['boss_discard_random_count'] = 2
+
         # Money penalty for The Tooth
         if self.active_blind.blind_type == BossBlindType.THE_TOOTH:
             game_state['money'] = max(0, game_state.get('money', 0) - len(played_cards))

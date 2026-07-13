@@ -2,12 +2,21 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from balatro_gym.core.balatro_game import BalatroGame
 from balatro_gym.core.boss_blinds import BOSS_BLINDS, BossBlindManager, BossBlindType, select_boss_blind
-from balatro_gym.core.constants import Action
+from balatro_gym.core.cards import Card, Enhancement, Rank, Seal, Suit
+from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core_utils.card_adapter import CardAdapter
+from balatro_gym.core_utils.mvp_contract import build_mvp_action_mask
 from balatro_gym.core_utils.blind_scaling import get_blind_amount, get_blind_chips
 from balatro_gym.core_utils.phase_handlers.blind_select import BlindSelectHandler
+from balatro_gym.core_utils.phase_handlers.play_phase import PlayPhaseHandler
 from balatro_gym.core_utils.rng import DeterministicRNG
+from balatro_gym.core_utils.round_manager import RoundManager
 from balatro_gym.core_utils.state import UnifiedGameState
+from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
+from balatro_gym.scoring.scoring_engine import HandType, ScoreEngine
+from balatro_gym.scoring.unified_scoring import ScoringContext, UnifiedScorer
 
 
 def test_blind_chips_match_balatro_default_scaling():
@@ -89,3 +98,185 @@ def test_boss_selection_uses_min_ante_showdown_and_minimum_use():
     showdown = select_boss_blind(8, rng=FirstChoiceRng(), bosses_used=showdown_used)
     assert BOSS_BLINDS[showdown].showdown is True
     assert showdown_used[showdown] == 1
+
+
+def test_suit_face_pillar_and_verdant_debuffs_use_card_enums_and_ante_state():
+    state = UnifiedGameState(
+        deck=[
+            Card(Rank.ACE, Suit.SPADES),
+            Card(Rank.KING, Suit.HEARTS),
+            Card(Rank.TWO, Suit.CLUBS),
+        ]
+    )
+    manager = BossBlindManager()
+
+    manager.activate_boss_blind(BossBlindType.THE_GOAD, state.to_dict())
+    assert manager._is_card_debuffed(state.deck[0]) is True
+    assert manager._is_card_debuffed(state.deck[1]) is False
+
+    manager.activate_boss_blind(BossBlindType.THE_PLANT, state.to_dict())
+    assert manager._is_card_debuffed(state.deck[1]) is True
+    assert manager._is_card_debuffed(state.deck[2]) is False
+
+    state.get_card_state(2).played_this_ante = True
+    scoring_card = CardAdapter.to_scoring_format(state.deck[2], 2, state)
+    manager.activate_boss_blind(BossBlindType.THE_PILLAR, state.to_dict())
+    assert manager._is_card_debuffed(scoring_card) is True
+
+    manager.activate_boss_blind(BossBlindType.THE_VERDANT, state.to_dict())
+    assert all(manager._is_card_debuffed(card) for card in state.deck)
+
+
+def test_debuffed_scoring_card_contributes_no_card_or_legacy_side_effects():
+    state = UnifiedGameState(
+        deck=[Card(Rank.ACE, Suit.SPADES), Card(Rank.ACE, Suit.HEARTS)],
+        hand_indexes=[0, 1],
+    )
+    debuffed = state.get_card_state(0)
+    debuffed.is_debuffed = True
+    debuffed.enhancement = Enhancement.GLASS
+    debuffed.seal = Seal.GOLD
+    scoring_cards = [
+        CardAdapter.to_scoring_format(state.deck[0], 0, state),
+        CardAdapter.to_scoring_format(state.deck[1], 1, state),
+    ]
+
+    score, breakdown = UnifiedScorer(ScoreEngine(), CompleteJokerEffects()).score_hand(
+        ScoringContext(
+            cards=scoring_cards,
+            scoring_cards=scoring_cards,
+            hand_type=HandType.ONE_PAIR,
+            hand_type_name="Pair",
+            game_state=state.to_dict(),
+        )
+    )
+
+    assert breakdown["card_chips"] == 11
+    assert score == 42
+
+    handler = PlayPhaseHandler(
+        state,
+        BalatroGame(),
+        ScoreEngine(),
+        UnifiedScorer(ScoreEngine(), CompleteJokerEffects()),
+        CompleteJokerEffects(),
+        SimpleNamespace(),
+        BossBlindManager(),
+        DeterministicRNG(1),
+    )
+    score_after_effects, extra_money, destroyed, _ = handler._apply_card_effects(
+        scoring_cards,
+        state.deck,
+        100,
+        "Pair",
+    )
+    assert score_after_effects == 100
+    assert extra_money == 0
+    assert destroyed == []
+    assert state.get_card_state(0).times_scored == 0
+
+
+def test_flint_halves_only_base_hand_values_with_balatro_rounding():
+    state = UnifiedGameState(active_boss_blind=BossBlindType.THE_FLINT, boss_blind_active=True)
+    score, breakdown = UnifiedScorer(ScoreEngine(), CompleteJokerEffects()).score_hand(
+        ScoringContext(
+            cards=[Card(Rank.ACE, Suit.SPADES)],
+            scoring_cards=[Card(Rank.ACE, Suit.SPADES)],
+            hand_type=HandType.HIGH_CARD,
+            hand_type_name="High Card",
+            game_state=state.to_dict(),
+        )
+    )
+
+    assert breakdown["base_chips"] == 3
+    assert breakdown["base_mult"] == 1
+    assert score == 14
+
+
+def test_psychic_and_cerulean_hide_invalid_play_actions_from_mask():
+    psychic = UnifiedGameState(
+        phase=Phase.PLAY,
+        active_boss_blind=BossBlindType.THE_PSYCHIC,
+        boss_blind_active=True,
+        deck=[Card(Rank.TWO, Suit.CLUBS)] * 5,
+        hand_indexes=list(range(5)),
+        selected_cards=[0, 1, 2, 3],
+    )
+    psychic_mask = build_mvp_action_mask(psychic)
+    assert psychic_mask[Action.PLAY_HAND] == 0
+
+    psychic.selected_cards = [0, 1, 2, 3, 4]
+    psychic_mask = build_mvp_action_mask(psychic)
+    assert psychic_mask[Action.PLAY_HAND] == 1
+
+    cerulean = UnifiedGameState(
+        phase=Phase.PLAY,
+        active_boss_blind=BossBlindType.THE_CERULEAN,
+        boss_blind_active=True,
+        deck=[Card(Rank.TWO, Suit.CLUBS)] * 5,
+        hand_indexes=list(range(5)),
+        selected_cards=[0, 1],
+        boss_forced_selected_card=2,
+    )
+    cerulean_mask = build_mvp_action_mask(cerulean)
+    assert cerulean_mask[Action.PLAY_HAND] == 0
+    assert cerulean_mask[Action.SELECT_CARD_BASE + 2] == 0
+
+
+def test_serpent_discard_forces_next_draw_to_three_cards():
+    state = UnifiedGameState(
+        deck=[Card(Rank.TWO, Suit.CLUBS) for _ in range(8)],
+        hand_indexes=[0, 1, 2, 3, 4],
+        draw_pile_indexes=[5, 6, 7],
+        selected_cards=[0],
+        discards_left=3,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_SERPENT,
+    )
+    game = BalatroGame()
+    game.deck = state.deck
+    game.hand_indexes = state.hand_indexes.copy()
+    game.draw_pile_indexes = state.draw_pile_indexes.copy()
+    game.round_discards = state.discards_left
+    manager = BossBlindManager()
+    manager.activate_boss_blind(BossBlindType.THE_SERPENT, state.to_dict())
+    handler = PlayPhaseHandler(
+        state,
+        game,
+        ScoreEngine(),
+        UnifiedScorer(ScoreEngine(), CompleteJokerEffects()),
+        CompleteJokerEffects(),
+        SimpleNamespace(),
+        manager,
+        DeterministicRNG(1),
+    )
+
+    reward, terminated, info = handler._handle_discard()
+
+    assert terminated is False
+    assert "error" not in info
+    assert len(state.hand_indexes) == 3
+
+
+def test_manacle_hand_size_restores_after_boss_cashout():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        round=3,
+        hand_size=7,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_MANACLE,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0, hand_size=7, blind_index=2)
+    boss_manager = BossBlindManager()
+    boss_manager.activate_boss_blind(BossBlindType.THE_MANACLE, state.to_dict())
+    manager = RoundManager(
+        state,
+        game,
+        SimpleNamespace(end_of_round_effects=lambda _: []),
+        boss_manager,
+    )
+
+    manager.advance_round()
+
+    assert state.hand_size == 8
+    assert game.hand_size == 8

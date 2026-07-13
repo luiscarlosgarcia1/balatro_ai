@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from balatro_gym.core.boss_blinds import select_boss_blind
+from balatro_gym.core.boss_blinds import BossBlindType, select_boss_blind
 from balatro_gym.core.boss_blinds import BossBlindManager
 from balatro_gym.core.cards import Enhancement, EnhancementEffects, Rank, Seal, SealEffects
 from balatro_gym.core.constants import Phase
@@ -71,10 +71,16 @@ class RoundManager:
 
         if self.state.boss_blind_active and self.boss_blind_manager and self.boss_blind_manager.active_blind:
             boss_reward = self.boss_blind_manager.active_blind.money_reward
+            if self.boss_blind_manager.active_blind.blind_type == BossBlindType.THE_MANACLE:
+                self.state.hand_size += 1
+                self.game.hand_size = self.state.hand_size
             self.boss_blind_manager.deactivate()
             self.state.active_boss_blind = None
             self.state.boss_blind_active = False
             self.state.face_down_cards = []
+            self.state.boss_disabled_joker_indexes = []
+            self.state.boss_forced_selected_card = None
+            self.state.disabled_joker_slots = 0
         else:
             boss_reward = 0
 

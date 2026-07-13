@@ -106,6 +106,11 @@ class PlayPhaseHandler:
         selected_cards, selected_game_cards = self._get_selected_cards()
         if not selected_cards:
             return -1.0, False, {'error': 'Invalid card selection'}
+        if (
+            self.state.boss_forced_selected_card is not None
+            and self.state.boss_forced_selected_card not in self.state.selected_cards
+        ):
+            return -1.0, False, {'error': 'Boss blind forces a selected card'}
         
         # Sync and highlight cards in game
         self._sync_and_highlight_cards()
@@ -176,6 +181,11 @@ class PlayPhaseHandler:
         
         # Clear selection
         self.state.selected_cards = []
+        if (
+            self.state.boss_forced_selected_card is not None
+            and self.state.boss_forced_selected_card < len(self.state.hand_indexes)
+        ):
+            self.state.selected_cards = [self.state.boss_forced_selected_card]
         self._reset_selection_sequence_tracking()
         
         # Calculate reward
@@ -283,6 +293,12 @@ class PlayPhaseHandler:
         self.state.cards_discarded_total += len(self.state.selected_cards)
         self.state.selected_cards = []
         self._reset_selection_sequence_tracking()
+        if (
+            self.state.boss_blind_active
+            and self.boss_blind_manager.active_blind
+            and self.boss_blind_manager.active_blind.blind_type == BossBlindType.THE_SERPENT
+        ):
+            self.state.force_draw_count = 3
         self._sync_state_from_game()
         self._prepare_next_hand()
         
@@ -317,6 +333,8 @@ class PlayPhaseHandler:
 
         # Toggle selection
         if card_idx in self.state.selected_cards:
+            if card_idx == self.state.boss_forced_selected_card:
+                return -1.0, False, {'error': 'Boss blind forces this card selected'}
             self.state.selected_cards.remove(card_idx)
         else:
             self.state.selected_cards.append(card_idx)
@@ -339,6 +357,11 @@ class PlayPhaseHandler:
 
         if selected_slots[-1] >= len(self.state.hand_indexes):
             return -1.0, False, {'error': 'Direct play subset exceeds visible hand'}
+        if (
+            self.state.boss_forced_selected_card is not None
+            and self.state.boss_forced_selected_card not in selected_slots
+        ):
+            return -1.0, False, {'error': 'Boss blind forces a selected card'}
 
         self.state.selected_cards = list(selected_slots)
         self._reset_selection_sequence_tracking()
@@ -386,6 +409,11 @@ class PlayPhaseHandler:
         
         # Clear selection
         self.state.selected_cards = []
+        if (
+            self.state.boss_forced_selected_card is not None
+            and self.state.boss_forced_selected_card < len(self.state.hand_indexes)
+        ):
+            self.state.selected_cards = [self.state.boss_forced_selected_card]
         self._reset_selection_sequence_tracking()
         
         info = {
@@ -412,6 +440,16 @@ class PlayPhaseHandler:
         # Apply face down effects
         if 'face_down_cards' in effects:
             self.state.face_down_cards = effects['face_down_cards']
+
+        self.state.boss_disabled_joker_indexes = effects.get('disabled_joker_indexes', [])
+        self.state.disabled_joker_slots = len(self.state.boss_disabled_joker_indexes)
+
+        if 'forced_selected_card' in effects:
+            forced = int(effects['forced_selected_card'])
+            self.state.boss_forced_selected_card = forced
+            self.state.selected_cards = [forced] if forced < len(self.state.hand_indexes) else []
+
+        self._sync_boss_card_visibility_and_debuffs(hand_cards)
         
         # Apply forced discards (The Hook)
         if 'discarded_cards' in effects:
@@ -420,7 +458,23 @@ class PlayPhaseHandler:
                 if idx < len(self.state.hand_indexes):
                     discarded_indexes.append(self.state.hand_indexes.pop(idx))
             self.state.discard_pile_indexes.extend(reversed(discarded_indexes))
+            if self.state.boss_forced_selected_card is not None:
+                forced = self.state.boss_forced_selected_card
+                self.state.selected_cards = [forced] if forced < len(self.state.hand_indexes) else []
+            self._sync_boss_card_visibility_and_debuffs(
+                [self.state.deck[i] for i in self.state.hand_indexes]
+            )
             self._sync_state_to_game()
+
+    def _sync_boss_card_visibility_and_debuffs(self, hand_cards: List[Card]) -> None:
+        face_down_slots = set(self.state.face_down_cards)
+        for slot, deck_idx in enumerate(self.state.hand_indexes):
+            card_state = self.state.get_card_state(deck_idx)
+            card_state.is_face_down = slot in face_down_slots
+            card_state.is_debuffed = (
+                slot < len(hand_cards)
+                and self.boss_blind_manager._is_card_debuffed(hand_cards[slot])
+            )
     
     # -------------------------------------------------------------------------
     # Helper methods
@@ -458,6 +512,10 @@ class PlayPhaseHandler:
     def _prepare_next_hand(self):
         """Apply post-draw effects to the hand already drawn by the game engine."""
         self._reset_selection_sequence_tracking()
+        if self.state.boss_discard_random_count > 0:
+            self._apply_boss_random_discards(self.state.boss_discard_random_count)
+            self.state.boss_discard_random_count = 0
+
         if self.state.boss_blind_active:
             self.apply_boss_blind_to_hand()
 
@@ -465,6 +523,17 @@ class PlayPhaseHandler:
             self._apply_forced_draw_count()
 
         self._sync_state_to_game()
+
+    def _apply_boss_random_discards(self, count: int) -> None:
+        if count <= 0 or not self.state.hand_indexes:
+            return
+        indexes = list(range(len(self.state.hand_indexes)))
+        discard_count = min(count, len(indexes))
+        to_discard = self.rng.sample('boss_abilities', indexes, discard_count)
+        discarded_indexes = []
+        for idx in sorted(to_discard, reverse=True):
+            discarded_indexes.append(self.state.hand_indexes.pop(idx))
+        self.state.discard_pile_indexes.extend(reversed(discarded_indexes))
     
     def _check_boss_blind_can_play(self, cards: List[Card], hand_type: str) -> bool:
         """Check if boss blind allows playing this hand."""
@@ -491,6 +560,7 @@ class PlayPhaseHandler:
     def _score_hand(self, selected_cards: List[Any], hand_type: HandType, 
                     hand_type_name: str) -> Tuple[int, Dict]:
         """Score the selected hand."""
+        self._refresh_selected_card_debuffs(selected_cards)
         scoring_cards = self._get_scoring_cards(selected_cards, hand_type)
         scoring_context = ScoringContext(
             cards=selected_cards,
@@ -501,6 +571,15 @@ class PlayPhaseHandler:
         )
         
         return self.unified_scorer.score_hand(scoring_context)
+
+    def _refresh_selected_card_debuffs(self, selected_cards: List[Any]) -> None:
+        if not self.state.boss_blind_active or not self.boss_blind_manager.active_blind:
+            return
+
+        for scoring_card in selected_cards:
+            card_state = getattr(scoring_card, "card_state", None)
+            if card_state is not None:
+                card_state.is_debuffed = self.boss_blind_manager._is_card_debuffed(scoring_card)
 
     def _get_scoring_cards(self, selected_cards: List[Any], hand_type: HandType) -> List[Any]:
         """Return the Balatro scoring subset for a played hand."""
@@ -617,6 +696,7 @@ class PlayPhaseHandler:
             card_state = self._state_for_scoring_card(card)
             if card_state is not None:
                 card_state.times_played += 1
+                card_state.played_this_ante = True
 
     def _state_for_scoring_card(self, scoring_card: Any) -> Optional[CardState]:
         card_state = getattr(scoring_card, "card_state", None)
@@ -642,6 +722,8 @@ class PlayPhaseHandler:
                     card_state = self.state.get_card_state(card_idx)
 
             if card_idx is not None and card_state is not None:
+                if self._is_debuffed_card_state(card_state):
+                    continue
                 
                 # Track scored card usage. Red seals repeat this card's scoring
                 # pass rather than multiplying the whole hand score.
@@ -701,6 +783,8 @@ class PlayPhaseHandler:
                                   hand_type: HandType, hand_type_name: str) -> int:
         """Apply boss blind scoring modifications."""
         if self.state.boss_blind_active and self.boss_blind_manager.active_blind:
+            if self.boss_blind_manager.active_blind.blind_type == BossBlindType.THE_FLINT:
+                return score
             base_chips, base_mult = self.engine.get_hand_chips_mult(hand_type)
             modified_chips, modified_mult = self.boss_blind_manager.modify_scoring(
                 base_chips, base_mult, cards, hand_type_name
@@ -770,6 +854,9 @@ class PlayPhaseHandler:
         if 'force_draw_count' in boss_state:
             force_draw_count = boss_state['force_draw_count']
             self.state.force_draw_count = None if force_draw_count is None else int(force_draw_count)
+
+        if 'boss_discard_random_count' in boss_state:
+            self.state.boss_discard_random_count = int(boss_state['boss_discard_random_count'])
 
         for hand_name, level in boss_state.get("hand_levels", {}).items():
             hand_key = hand_name.replace(" ", "_").upper()
@@ -965,12 +1052,18 @@ class PlayPhaseHandler:
         for idx in self.state.hand_indexes:
             if idx not in selected_hand_indexes:
                 card_state = self.state.get_card_state(idx)
+                if self._is_debuffed_card_state(card_state):
+                    continue
                 if self._enum_value(card_state.enhancement, Enhancement) == Enhancement.STEEL:
                     steel_mult *= EnhancementEffects.get_mult_multiplier(
                         Enhancement.STEEL, in_hand=True
                     )
         
         return steel_mult
+
+    @staticmethod
+    def _is_debuffed_card_state(card_state: Any) -> bool:
+        return bool(getattr(card_state, "is_debuffed", False))
     
     def _sync_state_to_game(self):
         """Sync state to game instance."""

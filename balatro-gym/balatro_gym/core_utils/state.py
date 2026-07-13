@@ -35,6 +35,7 @@ class CardState:
     is_debuffed: bool = False
     is_face_down: bool = False
     is_destroyed: bool = False
+    played_this_ante: bool = False
     
     def calculate_chip_bonus(self, base_chips: int) -> int:
         """Calculate modified chip value based on enhancements."""
@@ -71,7 +72,8 @@ class CardState:
             times_held=self.times_held,
             is_debuffed=self.is_debuffed,
             is_face_down=self.is_face_down,
-            is_destroyed=self.is_destroyed
+            is_destroyed=self.is_destroyed,
+            played_this_ante=self.played_this_ante
         )
 
 
@@ -147,6 +149,9 @@ class UnifiedGameState:
     face_down_cards: List[int] = field(default_factory=list)  # Indexes into hand_indexes
     force_draw_count: Optional[int] = None  # For The Serpent boss
     disabled_joker_slots: int = 0  # For The Plant boss
+    boss_disabled_joker_indexes: List[int] = field(default_factory=list)
+    boss_forced_selected_card: Optional[int] = None
+    boss_discard_random_count: int = 0
     
     # Special game modes/effects
     eternal_jokers: List[int] = field(default_factory=list)  # Indexes of eternal jokers
@@ -169,7 +174,11 @@ class UnifiedGameState:
             # Core state
             'deck': self.deck,
             'hand': hand_cards,
-            'jokers': [{'name': j.name, 'id': j.id} for j in self.jokers],
+            'jokers': [
+                {'name': j.name, 'id': j.id}
+                for i, j in enumerate(self.jokers)
+                if i not in self.boss_disabled_joker_indexes
+            ],
             'consumables': self.consumables,
             'vouchers': self.vouchers,
             'money': self.money,
@@ -210,6 +219,8 @@ class UnifiedGameState:
             
             # Collections info
             'joker_count': len(self.jokers),
+            'all_joker_count': len(self.jokers),
+            'boss_disabled_joker_indexes': self.boss_disabled_joker_indexes.copy(),
             'consumable_count': len(self.consumables),
             'voucher_count': len(self.vouchers),
             'unique_planet_cards_used': self.unique_planet_cards_used.copy(),
@@ -285,6 +296,9 @@ class UnifiedGameState:
             face_down_cards=self.face_down_cards.copy(),
             force_draw_count=self.force_draw_count,
             disabled_joker_slots=self.disabled_joker_slots,
+            boss_disabled_joker_indexes=self.boss_disabled_joker_indexes.copy(),
+            boss_forced_selected_card=self.boss_forced_selected_card,
+            boss_discard_random_count=self.boss_discard_random_count,
             
             # Special modes
             eternal_jokers=self.eternal_jokers.copy(),
@@ -305,10 +319,14 @@ class UnifiedGameState:
         self.last_held_card_indexes = None
         self.face_down_cards = []
         self.force_draw_count = None
+        self.boss_disabled_joker_indexes = []
+        self.boss_forced_selected_card = None
+        self.boss_discard_random_count = 0
         
         # Reset per-round card tracking
         for card_state in self.card_states.values():
             card_state.is_face_down = False
+            card_state.is_debuffed = False
     
     def reset_ante_state(self):
         """Reset state for a new ante."""
@@ -320,7 +338,13 @@ class UnifiedGameState:
         self.pending_boss_blind = None
         self.boss_blind_rerolls_used_ante = 0
         self.disabled_joker_slots = 0
+        self.boss_disabled_joker_indexes = []
+        self.boss_forced_selected_card = None
+        self.boss_discard_random_count = 0
         
+        for card_state in self.card_states.values():
+            card_state.played_this_ante = False
+
         # Update perishable counters
         expired_jokers = []
         for joker_idx, rounds_left in self.perishable_counters.items():
@@ -413,7 +437,8 @@ class UnifiedGameState:
     
     def get_active_joker_count(self) -> int:
         """Get number of active (non-disabled) joker slots."""
-        return max(0, len(self.jokers) - self.disabled_joker_slots)
+        disabled_count = max(self.disabled_joker_slots, len(self.boss_disabled_joker_indexes))
+        return max(0, len(self.jokers) - disabled_count)
     
     def get_hand_cards(self) -> List[Card]:
         """Get the actual Card objects currently in hand."""

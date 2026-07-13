@@ -926,7 +926,7 @@ def test_env_big_blind_clear_to_boss_startup_keeps_pending_boss_and_play_sync(mo
     assert env.game.round_hands == env.state.hands_left
     assert env.game.round_discards == env.state.discards_left
     assert env.game.hand_indexes == env.state.hand_indexes
-    assert len(env.state.hand_indexes) == 6
+    assert len(env.state.hand_indexes) == 8
 
 
 def test_env_round3_boss_offer_is_seed_stable_across_repeated_episodes():
@@ -977,7 +977,7 @@ def test_env_active_hook_discard_is_seed_stable_across_repeated_episodes():
         outcomes.append(tuple(env.state.hand_indexes))
 
     assert outcomes == [outcomes[0]] * 4
-    assert len(outcomes[0]) == 6
+    assert len(outcomes[0]) == 8
 
 
 def test_env_active_hook_discard_redraw_is_seed_stable_across_repeated_episodes():
@@ -1017,8 +1017,8 @@ def test_env_active_hook_discard_redraw_is_seed_stable_across_repeated_episodes(
         second_draw_hand = tuple(env.state.hand_indexes)
         boss_rolls = [entry for entry in env.rng.history if entry[0] == "boss_abilities"]
 
-        assert len(second_draw_hand) == 6
-        assert len(boss_rolls) == first_draw_roll_count + 1
+        assert len(second_draw_hand) == 8
+        assert len(boss_rolls) == first_draw_roll_count
         outcomes.append((first_draw_hand, second_draw_hand, tuple(boss_rolls)))
 
     assert outcomes == [outcomes[0]] * 4
@@ -1620,7 +1620,7 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_discard_redra
 
         assert restored_hand == continued_hand
         assert restored_face_down == continued_face_down
-        assert restored_face_down == tuple(range(len(restored_hand)))
+        assert restored_face_down == ()
 
     assert outcomes == [outcomes[0]] * 4
 
@@ -1731,6 +1731,6 @@ def test_env_active_house_mid_round_save_load_preserves_first_hand_multi_discard
 
         assert restored_hand == continued_hand
         assert restored_face_down == continued_face_down
-        assert restored_face_down == tuple(range(len(restored_hand)))
+        assert restored_face_down == ()
 
     assert outcomes == [outcomes[0]] * 4
