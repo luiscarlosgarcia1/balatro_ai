@@ -63,6 +63,8 @@ class PlayPhaseHandler:
         self.consumable_manager = consumable_manager
         self.boss_blind_manager = boss_blind_manager
         self.rng = rng
+        if self.joker_effects_engine is not None and getattr(self.joker_effects_engine, "rng", None) is None:
+            self.joker_effects_engine.rng = rng
         self.reward_calculator = RewardCalculator()
         self._reset_selection_sequence_tracking()
     
@@ -127,27 +129,17 @@ class PlayPhaseHandler:
             return -1.0, False, {'error': 'Boss blind prevents playing this hand'}
 
         self._apply_boss_blind_before_scoring(hand_type)
+        self._track_played_cards(selected_cards)
         
         # Score the hand
         base_score, breakdown = self._score_hand(selected_cards, hand_type, hand_type_name)
-        scoring_positions = self._get_scoring_card_positions(selected_cards, hand_type)
-        scoring_cards = [selected_cards[i] for i in scoring_positions]
-        scoring_game_cards = [selected_game_cards[i] for i in scoring_positions]
         
-        # Apply card effects and calculate final score
-        self._track_played_cards(selected_cards)
-        final_score, extra_money, cards_to_destroy, consumables_created = \
-            self._apply_card_effects_compat(
-                scoring_cards,
-                scoring_game_cards,
-                base_score,
-                hand_type_name,
-            )
-        extra_money += int(breakdown.get('money_gained', 0) or 0)
-        consumables_created.extend(breakdown.get('consumables_created', []))
-        
-        # Apply boss blind scoring modifications
-        final_score = self._apply_boss_blind_scoring(final_score, selected_game_cards, hand_type, hand_type_name)
+        # The scorer owns Lua-ordered card effects, retriggers, held-card effects,
+        # joker phases, boss base-value modification, and destruction hooks.
+        final_score = base_score
+        extra_money = int(breakdown.get('money_gained', 0) or 0)
+        cards_to_destroy = list(breakdown.get('cards_to_destroy', []))
+        consumables_created = list(breakdown.get('consumables_created', []))
         
         # Update game state
         self._update_state_after_play(final_score, extra_money, cards_to_destroy, consumables_created)
@@ -562,12 +554,35 @@ class PlayPhaseHandler:
         """Score the selected hand."""
         self._refresh_selected_card_debuffs(selected_cards)
         scoring_cards = self._get_scoring_cards(selected_cards, hand_type)
+        game_state = self.state.to_dict()
+        selected_slots = set(self.state.selected_cards)
+        held_cards = [
+            CardAdapter.to_scoring_format(self.state.deck[card_idx], card_idx, self.state)
+            for slot, card_idx in enumerate(self.state.hand_indexes)
+            if slot not in selected_slots and 0 <= card_idx < len(self.state.deck)
+        ]
+        game_state["held_cards"] = held_cards
+        game_state["hand"] = held_cards
+
+        score_engine = (
+            self.engine
+            if hasattr(self.engine, "get_hand_chips_mult")
+            else self.unified_scorer.engine
+        )
+        base_chips, base_mult = score_engine.get_hand_chips_mult(hand_type)
+        blind_modifier = None
+        if self.state.boss_blind_active and self.boss_blind_manager.active_blind:
+            blind_modifier = self.boss_blind_manager.modify_scoring
+
         scoring_context = ScoringContext(
             cards=selected_cards,
             scoring_cards=scoring_cards,
             hand_type=hand_type,
             hand_type_name=hand_type_name,
-            game_state=self.state.to_dict()
+            game_state=game_state,
+            base_chips=base_chips,
+            base_mult=base_mult,
+            blind_modifier=blind_modifier,
         )
         
         return self.unified_scorer.score_hand(scoring_context)

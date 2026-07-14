@@ -188,8 +188,10 @@ def test_flint_halves_only_base_hand_values_with_balatro_rounding():
         )
     )
 
-    assert breakdown["base_chips"] == 3
+    assert breakdown["base_chips"] == 5
     assert breakdown["base_mult"] == 1
+    assert breakdown["blind_modified_base_chips"] == 3
+    assert breakdown["blind_modified_base_mult"] == 1
     assert score == 14
 
 

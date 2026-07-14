@@ -15,7 +15,21 @@ from balatro_gym.core_utils.round_manager import RoundManager
 from balatro_gym.core_utils.state import CardState, UnifiedGameState
 from balatro_gym.scoring.complete_joker_effects import CompleteJokerEffects
 from balatro_gym.scoring.scoring_engine import HandType, ScoreEngine
-from balatro_gym.scoring.unified_scoring import ScoringContext, UnifiedScorer
+from balatro_gym.scoring.unified_scoring import LUA_SCORING_STAGES, ScoringContext, UnifiedScorer
+
+
+class RecordingJokerEffects:
+    def __init__(self, effects_by_phase=None):
+        self.effects_by_phase = effects_by_phase or {}
+        self.calls = []
+
+    def reset_scoring_hand_state(self, game_state):
+        self.calls.append(("reset", None))
+
+    def apply_joker_effect(self, joker, context, game_state):
+        phase = context["phase"]
+        self.calls.append((phase, getattr(joker, "name", None)))
+        return self.effects_by_phase.get(phase)
 
 
 def _make_play_handler(state):
@@ -76,7 +90,102 @@ def test_unified_scorer_applies_joker_dicts_from_unified_game_state():
 
     assert score == 80
     assert breakdown["joker_mult"] == 4
-    assert breakdown["effects_applied"] == ["Joker: +0c +4m x1.0"]
+    assert breakdown["effects_applied"] == ["Joker (scoring): +0c +4m x1.0"]
+
+
+def test_unified_scorer_invokes_lua_scoring_phases_in_order():
+    cards = [Card(Rank.ACE, Suit.SPADES)]
+    effects = RecordingJokerEffects()
+    context = ScoringContext(
+        cards=cards,
+        scoring_cards=cards,
+        hand_type=HandType.HIGH_CARD,
+        hand_type_name="High Card",
+        game_state={"jokers": ["Recorder"]},
+    )
+
+    _, breakdown = UnifiedScorer(ScoreEngine(), effects).score_hand(context)
+
+    assert breakdown["stage_order"] == list(LUA_SCORING_STAGES)
+    assert effects.calls == [
+        ("reset", None),
+        ("before_scoring", "Recorder"),
+        ("individual_scoring", "Recorder"),
+        ("held_card", "Recorder"),
+        ("joker_edition_chip_mult", "Recorder"),
+        ("scoring", "Recorder"),
+        ("joker_on_joker", "Recorder"),
+        ("joker_edition_x_mult", "Recorder"),
+        ("final_scoring_step", "Recorder"),
+        ("destroying_card", "Recorder"),
+        ("after_hand", "Recorder"),
+    ]
+
+
+def test_unified_scorer_applies_before_effects_before_blind_modification():
+    cards = [Card(Rank.ACE, Suit.SPADES)]
+    effects = RecordingJokerEffects({"before_scoring": {"mult": 3}})
+    blind_calls = []
+
+    def halve_base(chips, mult, cards, hand_type_name):
+        blind_calls.append((chips, mult, hand_type_name))
+        return int(chips * 0.5 + 0.5), max(1, int(mult * 0.5 + 0.5))
+
+    context = ScoringContext(
+        cards=cards,
+        scoring_cards=[],
+        hand_type=HandType.HIGH_CARD,
+        hand_type_name="High Card",
+        game_state={"jokers": ["Recorder"]},
+        blind_modifier=halve_base,
+    )
+
+    score, breakdown = UnifiedScorer(ScoreEngine(), effects).score_hand(context)
+
+    assert blind_calls == [(5, 1, "High Card")]
+    assert breakdown["blind_modified_base_chips"] == 3
+    assert breakdown["blind_modified_base_mult"] == 1
+    assert breakdown["final_chips"] == 3
+    assert breakdown["final_mult"] == 4
+    assert score == 12
+
+
+def test_unified_scorer_does_not_apply_after_hand_effects_to_current_score():
+    cards = [Card(Rank.ACE, Suit.SPADES)]
+    effects = RecordingJokerEffects({"after_hand": {"mult": 99, "money": 2}})
+    context = ScoringContext(
+        cards=cards,
+        scoring_cards=[],
+        hand_type=HandType.HIGH_CARD,
+        hand_type_name="High Card",
+        game_state={"jokers": ["Recorder"], "money": 0},
+    )
+
+    score, breakdown = UnifiedScorer(ScoreEngine(), effects).score_hand(context)
+
+    assert score == 5
+    assert breakdown["final_mult"] == 1
+    assert breakdown["joker_mult"] == 99
+    assert breakdown["money_gained"] == 2
+
+
+def test_unified_scorer_applies_held_steel_in_held_card_stage():
+    cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+    state = UnifiedGameState(deck=cards, hand_indexes=[0, 1], selected_cards=[0])
+    state.get_card_state(1).enhancement = Enhancement.STEEL
+    scoring_card = CardAdapter.to_scoring_format(cards[0], 0, state)
+    held_card = CardAdapter.to_scoring_format(cards[1], 1, state)
+
+    score, breakdown = _score_hand(
+        [scoring_card],
+        [scoring_card],
+        HandType.HIGH_CARD,
+        "High Card",
+        {"jokers": [], "held_cards": [held_card]},
+    )
+
+    assert score == 24
+    assert "Held card (Steel): x1.5" in breakdown["effects_applied"]
 
 
 def test_play_phase_pair_scores_pair_cards_not_kickers():
@@ -240,15 +349,6 @@ def test_modifier_logic_accepts_consumable_enum_family_by_name():
 
     assert score == 1143
     assert breakdown["card_retriggers"] == 1
-
-    _, extra_money, _, _ = _make_play_handler(state)._apply_card_effects(
-        scoring_cards,
-        [cards[0]],
-        score,
-        "High Card",
-    )
-
-    assert extra_money == 0
     assert state.get_card_state(0).times_scored == 2
 
 
