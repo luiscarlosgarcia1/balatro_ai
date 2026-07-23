@@ -98,7 +98,7 @@ class ObservationBuilder:
             "fool_replayable_consumable": encode_fool_replayable_consumable(state),
             "hand_levels": encode_hand_levels(state.hand_levels),
             "phase": np.int8(state.phase),
-            "action_mask": build_mvp_action_mask(state, shop=shop),
+            "action_mask": self._action_mask(state, shop),
             "hands_played": np.int32(state.hands_played_total),
             "best_hand_this_ante": np.int32(state.best_hand_this_ante),
             "boss_blind_active": np.int8(1 if state.boss_blind_active else 0),
@@ -155,6 +155,12 @@ class ObservationBuilder:
             )
 
         return obs
+
+    def _action_mask(self, state: UnifiedGameState, shop=None) -> np.ndarray:
+        mask = build_mvp_action_mask(state, shop=shop)
+        if state.won and state.phase != Phase.ROUND_EVAL:
+            return np.zeros_like(mask)
+        return mask
 
     def _zone_card_ids(self, state: UnifiedGameState, indexes: list[int], slots: int) -> np.ndarray:
         values = np.zeros(slots, dtype=np.int16)

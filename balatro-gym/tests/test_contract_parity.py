@@ -962,7 +962,10 @@ def test_env_failed_blind_enters_explicit_game_over_phase():
     assert info["failed"] is True
     assert info["transition_to"] == "game_over"
     assert obs["phase"] == Phase.GAME_OVER
+    assert obs["action_mask"].sum() == 0
     assert env.state.game_over is True
+    assert env.state.round_eval_cashout == 0
+    assert env.state.money == 4
     assert env.game.round_hands == env.state.hands_left
     assert env.game.round_discards == env.state.discards_left
     assert env.game.hand_indexes == env.state.hand_indexes

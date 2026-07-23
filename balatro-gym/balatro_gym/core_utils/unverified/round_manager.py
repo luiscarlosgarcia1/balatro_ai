@@ -39,6 +39,10 @@ class RoundManager:
 
     def enter_round_eval(self) -> None:
         """Apply end-of-round effects and expose the round evaluation phase."""
+        if self.state.hands_left <= 0 and self.state.round_chips_scored < self.state.chips_needed:
+            self.game_over()
+            return
+
         completed_round = self.state.round
         completed_round_discards_used = self.state.discards_used_this_round
         end_effects = self.joker_effects_engine.end_of_round_effects(self.state.to_dict())
@@ -61,17 +65,15 @@ class RoundManager:
 
         gold_money = 0
         held_card_indexes = self.state.last_held_card_indexes
-        if held_card_indexes is None:
-            held_card_indexes = self.state.hand_indexes
-
-        for idx in held_card_indexes:
-            card_state = self.state.card_states.get(idx)
-            enhancement = self._enum_value(
-                card_state.enhancement if card_state else Enhancement.NONE,
-                Enhancement,
-            )
-            if enhancement == Enhancement.GOLD:
-                gold_money += EnhancementEffects.get_gold_value(enhancement)
+        if held_card_indexes is not None:
+            for idx in held_card_indexes:
+                card_state = self.state.card_states.get(idx)
+                enhancement = self._enum_value(
+                    card_state.enhancement if card_state else Enhancement.NONE,
+                    Enhancement,
+                )
+                if enhancement == Enhancement.GOLD:
+                    gold_money += EnhancementEffects.get_gold_value(enhancement)
         self.state.money += gold_money
         self._create_planets_from_held_blue_seals()
 
@@ -92,7 +94,7 @@ class RoundManager:
         else:
             boss_reward = 0
 
-        self.state.won = (
+        self.state.won = self.state.won or (
             int(self.state.ante) == int(self.state.win_ante)
             and int(completed_round) == 3
         )
@@ -141,6 +143,7 @@ class RoundManager:
         self.state.money += self.state.round_eval_cashout
         self.state.round_eval_cashout = 0
         self.state.round_eval_completed_round = None
+        self.state.round_chips_scored = 0
         self.state.hands_left = self._base_round_hands()
         self.state.discards_left = self._base_round_discards()
         self.state.selected_cards = []
@@ -189,7 +192,7 @@ class RoundManager:
 
         held_card_indexes = self.state.last_held_card_indexes
         if held_card_indexes is None:
-            held_card_indexes = self.state.hand_indexes
+            return
 
         for idx in held_card_indexes:
             if len(self.state.consumables) >= self.state.consumable_slots:
@@ -222,15 +225,18 @@ class RoundManager:
 
     def _interest_payout(self) -> int:
         """Return interest based on current money and economy modifiers."""
-        interest_units = self.state.money // 5
-        interest_cap = self._interest_cap()
-        base_interest = min(interest_units, interest_cap)
-        to_the_moon_count = sum(1 for joker in self.state.jokers if joker.name == "To the Moon")
-        return base_interest * (1 + to_the_moon_count)
+        if getattr(self.state, "no_interest", False):
+            return 0
+
+        interest_amount = 1 + sum(1 for joker in self.state.jokers if joker.name == "To the Moon")
+        interest_cap_units = self._interest_cap_dollars() // 5
+        return interest_amount * min(self.state.money // 5, interest_cap_units)
 
     def _remaining_hand_payout(self) -> int:
-        """Return the default $1-per-hand cashout row."""
-        return self.state.hands_left
+        """Return remaining-hands cashout unless a modifier disables it."""
+        if self.state.no_extra_hand_money or self.state.hands_left <= 0:
+            return 0
+        return self.state.hands_left * (self.state.money_per_hand or 1)
 
     def _remaining_discard_payout(self) -> int:
         """Return discard cashout only when a modifier enables it."""
@@ -260,10 +266,10 @@ class RoundManager:
                 return self.state.discards_left * 2
         return 0
 
-    def _interest_cap(self) -> int:
-        """Return the per-round interest cap after voucher upgrades."""
+    def _interest_cap_dollars(self) -> int:
+        """Return the dollar threshold cap used for end-of-round interest."""
         if "Money Tree" in self.state.vouchers:
-            return 20
+            return 100
         if "Seed Money" in self.state.vouchers:
-            return 10
-        return 5
+            return 50
+        return 25

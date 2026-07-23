@@ -110,7 +110,10 @@ class UnifiedGameState:
     hands_left: int = 4
     discards_left: int = 3
     hand_size: int = 8
+    money_per_hand: Optional[int] = None
     money_per_discard: Optional[int] = None
+    no_extra_hand_money: bool = False
+    no_interest: bool = False
     
     # Collections
     jokers: List[JokerInfo] = field(default_factory=list)
@@ -203,7 +206,10 @@ class UnifiedGameState:
             'hands_left': self.hands_left,
             'discards_left': self.discards_left,
             'hand_size': self.hand_size,
+            'money_per_hand': self.money_per_hand,
             'money_per_discard': self.money_per_discard,
+            'no_extra_hand_money': self.no_extra_hand_money,
+            'no_interest': self.no_interest,
             'joker_slots': self.joker_slots,
             'consumable_slots': self.consumable_slots,
             'last_tarot_planet_consumable': self.last_tarot_planet_consumable,
@@ -269,7 +275,10 @@ class UnifiedGameState:
             hands_left=self.hands_left,
             discards_left=self.discards_left,
             hand_size=self.hand_size,
+            money_per_hand=self.money_per_hand,
             money_per_discard=self.money_per_discard,
+            no_extra_hand_money=self.no_extra_hand_money,
+            no_interest=self.no_interest,
             
             # Collections - JokerInfo objects are immutable
             jokers=self.jokers.copy(),
