@@ -839,9 +839,18 @@ def test_env_full_round_flow_keeps_next_blind_pointer_in_sync():
     assert terminated is False
     assert truncated is False
     assert info["beat_blind"] is True
-    assert obs["phase"] == Phase.SHOP
+    assert info["transition_to"] == "round_eval"
+    assert obs["phase"] == Phase.ROUND_EVAL
     assert env.state.round == 2
     assert env.game.blind_index == 1
+    assert obs["action_mask"][Action.SHOP_END] == 1
+
+    obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
+
+    assert terminated is False
+    assert truncated is False
+    assert info["action"] == "cash_out"
+    assert obs["phase"] == Phase.SHOP
 
     obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
 
@@ -888,6 +897,7 @@ def test_env_big_blind_clear_to_boss_startup_keeps_pending_boss_and_play_sync(mo
     env.step(Action.SELECT_CARD_BASE)
     env.step(Action.PLAY_HAND)
     env.step(Action.SHOP_END)
+    env.step(Action.SHOP_END)
     env.step(Action.SELECT_BLIND_BASE + 1)
     env.step(Action.SELECT_CARD_BASE)
     obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
@@ -896,10 +906,18 @@ def test_env_big_blind_clear_to_boss_startup_keeps_pending_boss_and_play_sync(mo
     assert terminated is False
     assert truncated is False
     assert info["beat_blind"] is True
-    assert obs["phase"] == Phase.SHOP
+    assert info["transition_to"] == "round_eval"
+    assert obs["phase"] == Phase.ROUND_EVAL
     assert env.state.round == 3
     assert env.state.pending_boss_blind == BossBlindType.THE_HOOK
     assert env.game.blind_index == 2
+
+    obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
+
+    assert terminated is False
+    assert truncated is False
+    assert info["action"] == "cash_out"
+    assert obs["phase"] == Phase.SHOP
 
     obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
 
@@ -923,10 +941,50 @@ def test_env_big_blind_clear_to_boss_startup_keeps_pending_boss_and_play_sync(mo
     assert env.state.active_boss_blind == BossBlindType.THE_HOOK
     assert env.state.boss_blind_active is True
     assert env.game.blind_index == 2
+
+
+def test_env_failed_blind_enters_explicit_game_over_phase():
+    env = BalatroEnv(seed=123)
+    env.step(Action.SELECT_BLIND_BASE)
+    env.state.hands_left = 1
+    env.game.round_hands = 1
+
+    def _force_miss_blind(self, selected_cards, hand_type, hand_type_name):
+        return 0, {}
+
+    env.play_handler._score_hand = MethodType(_force_miss_blind, env.play_handler)
+
+    env.step(Action.SELECT_CARD_BASE)
+    obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+
+    assert terminated is True
+    assert truncated is False
+    assert info["failed"] is True
+    assert info["transition_to"] == "game_over"
+    assert obs["phase"] == Phase.GAME_OVER
+    assert env.state.game_over is True
     assert env.game.round_hands == env.state.hands_left
     assert env.game.round_discards == env.state.discards_left
     assert env.game.hand_indexes == env.state.hand_indexes
     assert len(env.state.hand_indexes) == 8
+
+
+def test_env_winning_round_eval_cashout_terminates_episode():
+    env = BalatroEnv(seed=123)
+    env.state.phase = Phase.ROUND_EVAL
+    env.state.won = True
+    env.state.round_eval_cashout = 12
+    env.state.money = 20
+
+    obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
+
+    assert reward == 0.0
+    assert terminated is True
+    assert truncated is False
+    assert info["action"] == "cash_out"
+    assert info["won"] is True
+    assert obs["phase"] == Phase.SHOP
+    assert obs["money"] == 32
 
 
 def test_env_round3_boss_offer_is_seed_stable_across_repeated_episodes():
@@ -948,9 +1006,11 @@ def test_env_round3_boss_offer_is_seed_stable_across_repeated_episodes():
         env.step(Action.SELECT_CARD_BASE)
         env.step(Action.PLAY_HAND)
         env.step(Action.SHOP_END)
+        env.step(Action.SHOP_END)
         env.step(Action.SELECT_BLIND_BASE + 1)
         env.step(Action.SELECT_CARD_BASE)
         env.step(Action.PLAY_HAND)
+        env.step(Action.SHOP_END)
         env.step(Action.SHOP_END)
 
         assert env.state.phase == Phase.BLIND_SELECT

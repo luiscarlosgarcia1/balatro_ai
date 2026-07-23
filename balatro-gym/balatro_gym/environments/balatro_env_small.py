@@ -19,6 +19,7 @@ from balatro_gym.core_utils.rng import DeterministicRNG
 from balatro_gym.core_utils.state import UnifiedGameState
 
 from balatro_gym.core.constants import Phase
+from balatro_gym.core.constants import Action
 from balatro_gym.core.cards import Card, Suit, Rank
 from balatro_gym.core.balatro_game import BalatroGame
 from balatro_gym.scoring.scoring_engine import ScoreEngine
@@ -165,6 +166,15 @@ class BalatroEnv(gym.Env):
             Tuple of (observation, reward, terminated, truncated, info)
         """
         # Check for termination conditions
+        if self.state.phase == Phase.GAME_OVER:
+            return self.obs_builder.build_observation(self.state), 0.0, True, False, {
+                'terminated': 'game_over'
+            }
+        if self.state.won and self.state.phase != Phase.ROUND_EVAL:
+            return self.obs_builder.build_observation(self.state), 0.0, True, False, {
+                'terminated': 'won'
+            }
+
         if self.state.ante > 100:
             return self.obs_builder.build_observation(self.state), 0.0, True, False, {
                 'terminated': 'max_ante_reached'
@@ -192,6 +202,10 @@ class BalatroEnv(gym.Env):
             reward, terminated, info = self.blind_select_handler.step(action)
         elif self.state.phase == Phase.PACK_OPEN:
             reward, terminated, info = self.pack_open_handler.step(action)
+        elif self.state.phase == Phase.ROUND_EVAL:
+            reward, terminated, info = self._handle_round_eval(action)
+        elif self.state.phase == Phase.GAME_OVER:
+            reward, terminated, info = 0.0, True, {'terminated': 'game_over'}
         else:
             raise ValueError(f"Unknown phase: {self.state.phase}")
         
@@ -372,6 +386,30 @@ class BalatroEnv(gym.Env):
         ):
             self.shop_handler.invalidate_shop()
             self.shop_handler.generate_shop()
+
+    def _handle_round_eval(self, action: int) -> Tuple[float, bool, Dict]:
+        """Cash out a completed blind and enter SHOP."""
+        if action != Action.SHOP_END:
+            return -1.0, False, {'error': 'Invalid round eval action'}
+
+        from balatro_gym.core_utils.round_manager import RoundManager
+
+        cashout = self.state.round_eval_cashout
+        round_manager = RoundManager(
+            self.state,
+            self.game,
+            self.joker_effects_engine,
+            self.boss_blind_manager,
+            self.rng,
+        )
+        round_manager.cash_out()
+        terminated = bool(self.state.won)
+        return 0.0, terminated, {
+            'action': 'cash_out',
+            'cashout': cashout,
+            'transition_to': 'shop',
+            'won': self.state.won,
+        }
 
     def _start_play_phase(self) -> None:
         """Enter PLAY with a fresh hand and synced round counters."""

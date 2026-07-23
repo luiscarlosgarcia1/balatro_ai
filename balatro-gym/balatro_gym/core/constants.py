@@ -39,6 +39,8 @@ class Phase(IntEnum):
     SHOP = 1
     BLIND_SELECT = 2
     PACK_OPEN = 3
+    ROUND_EVAL = 4
+    GAME_OVER = 5
 
 
 @unique

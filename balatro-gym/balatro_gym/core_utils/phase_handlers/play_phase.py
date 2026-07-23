@@ -221,15 +221,26 @@ class PlayPhaseHandler:
                 self.boss_blind_manager,
                 self.rng,
             )
-            round_manager.advance_round()
+            round_manager.enter_round_eval()
             info['beat_blind'] = True
+            info['transition_to'] = 'round_eval'
         elif self.state.hands_left <= 0:
             # Failed the blind
             reward = max(-20.0, reward + self.BLIND_FAILURE_OUTCOME_PENALTY)
             reward_info['blind_outcome'] = self.BLIND_FAILURE_OUTCOME_PENALTY
             reward_info['total_reward'] = reward
+            from balatro_gym.core_utils.round_manager import RoundManager
+            round_manager = RoundManager(
+                self.state,
+                self.game,
+                self.joker_effects_engine,
+                self.boss_blind_manager,
+                self.rng,
+            )
+            round_manager.game_over()
             terminated = True
             info['failed'] = True
+            info['transition_to'] = 'game_over'
         else:
             # Continue playing
             reward_info['blind_outcome'] = 0.0

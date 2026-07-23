@@ -94,6 +94,11 @@ class UnifiedGameState:
     chips_scored: int = 0  # Total career chips scored
     round_chips_scored: int = 0  # Chips scored in current round only
     money: int = 4
+    win_ante: int = 8
+    won: bool = False
+    game_over: bool = False
+    round_eval_cashout: int = 0
+    round_eval_completed_round: Optional[int] = None
     
     # Cards and hands
     deck: List[Card] = field(default_factory=list)
@@ -182,6 +187,11 @@ class UnifiedGameState:
             'consumables': self.consumables,
             'vouchers': self.vouchers,
             'money': self.money,
+            'win_ante': self.win_ante,
+            'won': self.won,
+            'game_over': self.game_over,
+            'round_eval_cashout': self.round_eval_cashout,
+            'round_eval_completed_round': self.round_eval_completed_round,
             'ante': self.ante,
             'round': self.round,
             'phase': self.phase.value,
@@ -243,6 +253,11 @@ class UnifiedGameState:
             chips_scored=self.chips_scored,
             round_chips_scored=self.round_chips_scored,
             money=self.money,
+            win_ante=self.win_ante,
+            won=self.won,
+            game_over=self.game_over,
+            round_eval_cashout=self.round_eval_cashout,
+            round_eval_completed_round=self.round_eval_completed_round,
             
             # Cards - need to copy the list but Card objects are immutable
             deck=self.deck.copy() if self.deck else [],

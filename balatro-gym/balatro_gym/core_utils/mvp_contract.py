@@ -273,7 +273,7 @@ def create_mvp_observation_space() -> spaces.Dict:
             "pack_choices_remaining": spaces.Box(0, ActionCounts.SELECT_FROM_PACK_COUNT, (), dtype=np.int8),
             "fool_replayable_consumable": spaces.Box(0, 100, (), dtype=np.int16),
             "hand_levels": spaces.Box(0, 15, (12,), dtype=np.int8),
-            "phase": spaces.Box(0, 3, (), dtype=np.int8),
+            "phase": spaces.Box(0, max(int(phase) for phase in Phase), (), dtype=np.int8),
             "action_mask": spaces.MultiBinary(ActionCounts.ACTION_SPACE_SIZE),
             "hands_played": spaces.Box(0, 10000, (), dtype=np.int32),
             "best_hand_this_ante": spaces.Box(0, 10_000_000, (), dtype=np.int32),
@@ -347,6 +347,10 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
             mask[Action.SELL_CONSUMABLE_BASE + i] = 1
         return mask
 
+    if phase == Phase.ROUND_EVAL:
+        mask[Action.SHOP_END] = 1
+        return mask
+
     if phase == Phase.BLIND_SELECT:
         visible_slot = max(0, min(ActionCounts.SELECT_BLIND_COUNT - 1, int(state.round) - 1))
         mask[Action.SELECT_BLIND_BASE + visible_slot] = 1
@@ -380,6 +384,9 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
 
         if pack_contents:
             mask[Action.SKIP_PACK] = 1
+        return mask
+
+    if phase == Phase.GAME_OVER:
         return mask
 
     return mask
@@ -616,6 +623,10 @@ def build_action_mask(
             mask[Action.SELL_CONSUMABLE_BASE + i] = 1
         return mask
 
+    if phase == Phase.ROUND_EVAL:
+        mask[Action.SHOP_END] = 1
+        return mask
+
     if phase == Phase.BLIND_SELECT:
         for slot in kwargs["blind_selectable_slots"]:
             slot_index = int(slot)
@@ -652,6 +663,9 @@ def build_action_mask(
                     mask[Action.SELECT_FROM_PACK_BASE + i] = 1
         if pack_size > 0:
             mask[Action.SKIP_PACK] = 1
+        return mask
+
+    if phase == Phase.GAME_OVER:
         return mask
 
     return mask

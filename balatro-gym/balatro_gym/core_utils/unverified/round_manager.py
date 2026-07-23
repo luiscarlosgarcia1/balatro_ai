@@ -32,7 +32,13 @@ class RoundManager:
         self.rng = rng
 
     def advance_round(self) -> None:
-        """Apply end-of-round effects and move to the next blind/shop."""
+        """Compatibility wrapper: enter round eval, then cash out."""
+        self.enter_round_eval()
+        if self.state.phase == Phase.ROUND_EVAL:
+            self.cash_out()
+
+    def enter_round_eval(self) -> None:
+        """Apply end-of-round effects and expose the round evaluation phase."""
         completed_round = self.state.round
         completed_round_discards_used = self.state.discards_used_this_round
         end_effects = self.joker_effects_engine.end_of_round_effects(self.state.to_dict())
@@ -70,8 +76,10 @@ class RoundManager:
         self._create_planets_from_held_blue_seals()
 
         if self.state.boss_blind_active and self.boss_blind_manager and self.boss_blind_manager.active_blind:
-            boss_reward = self.boss_blind_manager.active_blind.money_reward
-            if self.boss_blind_manager.active_blind.blind_type == BossBlindType.THE_MANACLE:
+            active_blind = self.boss_blind_manager.active_blind
+            boss_reward = active_blind.money_reward
+            active_blind_type = getattr(active_blind, "blind_type", self.state.active_boss_blind)
+            if active_blind_type == BossBlindType.THE_MANACLE:
                 self.state.hand_size += 1
                 self.game.hand_size = self.state.hand_size
             self.boss_blind_manager.deactivate()
@@ -83,6 +91,11 @@ class RoundManager:
             self.state.disabled_joker_slots = 0
         else:
             boss_reward = 0
+
+        self.state.won = (
+            int(self.state.ante) == int(self.state.win_ante)
+            and int(completed_round) == 3
+        )
 
         self.state.round_chips_scored = 0
         self.state.best_hand_this_ante = 0
@@ -107,17 +120,40 @@ class RoundManager:
                 except TypeError:
                     self.state.pending_boss_blind = select_boss_blind(self.state.ante, rng=self.rng)
 
-        self.state.money += self._cashout_amount(completed_round, boss_reward, completed_round_discards_used)
+        self.state.round_eval_cashout = self._cashout_amount(
+            completed_round,
+            boss_reward,
+            completed_round_discards_used,
+        )
+        self.state.round_eval_completed_round = completed_round
         if completed_round == 3:
             self.state.increase_rocket_payouts()
-        self.state.hands_left = self._base_round_hands()
-        self.state.discards_left = self._base_round_discards()
-        self.state.phase = Phase.SHOP
+        self.state.phase = Phase.ROUND_EVAL
 
         if hasattr(self.game, "blind_index"):
             self.game.blind_index = max(0, min(2, int(self.state.round) - 1))
+
+    def cash_out(self) -> None:
+        """Pay the staged round evaluation dollars and enter the shop."""
+        if self.state.phase != Phase.ROUND_EVAL:
+            return
+
+        self.state.money += self.state.round_eval_cashout
+        self.state.round_eval_cashout = 0
+        self.state.round_eval_completed_round = None
+        self.state.hands_left = self._base_round_hands()
+        self.state.discards_left = self._base_round_discards()
+        self.state.selected_cards = []
+        self.state.phase = Phase.SHOP
+
         self.game.round_hands = self.state.hands_left
         self.game.round_discards = self.state.discards_left
+
+    def game_over(self) -> None:
+        """Enter the terminal game-over phase after a failed blind."""
+        self.state.game_over = True
+        self.state.phase = Phase.GAME_OVER
+        self.state.selected_cards = []
 
     def _base_round_hands(self) -> int:
         """Return the persistent hands-per-round baseline after voucher effects."""

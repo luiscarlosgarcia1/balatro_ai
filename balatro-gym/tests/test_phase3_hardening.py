@@ -335,7 +335,7 @@ def test_play_handler_adds_terminal_bonus_when_blind_is_cleared(monkeypatch):
     monkeypatch.setattr(handler, "_apply_card_effects", lambda *args, **kwargs: (40, 0, [], []))
     monkeypatch.setattr(handler, "_apply_boss_blind_scoring", lambda score, *args, **kwargs: score)
     monkeypatch.setattr(handler, "_consume_played_hand", lambda: None)
-    monkeypatch.setattr(RoundManager, "advance_round", lambda self: None)
+    monkeypatch.setattr(RoundManager, "enter_round_eval", lambda self: None)
     handler.reward_calculator = SimpleNamespace(calculate_play_reward=lambda **_: {"total_reward": 1.0})
 
     reward, terminated, info = handler.step(Action.PLAY_HAND)
