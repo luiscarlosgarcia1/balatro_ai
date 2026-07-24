@@ -85,6 +85,7 @@ class BalatroEnv(gym.Env):
         self.pack_open_handler = None
         
         # Initialize environment
+        self._terminal_outcome: Optional[str] = None
         self.reset()
 
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> Tuple[Dict, Dict]:
@@ -103,6 +104,7 @@ class BalatroEnv(gym.Env):
         
         # Reset state
         self.state = UnifiedGameState()
+        self._terminal_outcome = None
         
         # Initialize core game systems
         self.engine = ScoreEngine()
@@ -166,11 +168,11 @@ class BalatroEnv(gym.Env):
             Tuple of (observation, reward, terminated, truncated, info)
         """
         # Check for termination conditions
-        if self.state.phase == Phase.GAME_OVER:
+        if self._terminal_outcome == 'game_over' or self.state.phase == Phase.GAME_OVER:
             return self.obs_builder.build_observation(self.state), 0.0, True, False, {
                 'terminated': 'game_over'
             }
-        if self.state.won and self.state.phase != Phase.ROUND_EVAL:
+        if self._terminal_outcome == 'won':
             return self.obs_builder.build_observation(self.state), 0.0, True, False, {
                 'terminated': 'won'
             }
@@ -210,6 +212,7 @@ class BalatroEnv(gym.Env):
             raise ValueError(f"Unknown phase: {self.state.phase}")
         
         self._handle_phase_transition(previous_phase)
+        self._update_terminal_outcome(terminated, info)
         
         # Build observation
         observation = self.obs_builder.build_observation(self.state)
@@ -402,14 +405,25 @@ class BalatroEnv(gym.Env):
             self.boss_blind_manager,
             self.rng,
         )
-        round_manager.cash_out()
-        terminated = bool(self.state.won)
+        outcome = round_manager.cash_out()
+        terminated = outcome == 'won'
         return 0.0, terminated, {
             'action': 'cash_out',
             'cashout': cashout,
             'transition_to': 'shop',
             'won': self.state.won,
+            'round_outcome': outcome,
+            'terminal_outcome': outcome if outcome == 'won' else None,
         }
+
+    def _update_terminal_outcome(self, terminated: bool, info: Dict) -> None:
+        """Track explicit terminal outcomes emitted by round/phase handlers."""
+        terminal_outcome = info.get('terminal_outcome')
+        if terminal_outcome in {'won', 'game_over'}:
+            self._terminal_outcome = terminal_outcome
+            return
+        if terminated and (self.state.game_over or self.state.phase == Phase.GAME_OVER):
+            self._terminal_outcome = 'game_over'
 
     def _start_play_phase(self) -> None:
         """Enter PLAY with a fresh hand and synced round counters."""

@@ -206,6 +206,8 @@ class PlayPhaseHandler:
         }
         info.update(self._progress_info())
         
+        from balatro_gym.core_utils.round_manager import RoundManager
+
         # Check end conditions
         terminated = False
         if self.state.round_chips_scored >= self.state.chips_needed:
@@ -213,7 +215,6 @@ class PlayPhaseHandler:
             reward = min(100.0, reward + self.BLIND_CLEAR_OUTCOME_BONUS)
             reward_info['blind_outcome'] = self.BLIND_CLEAR_OUTCOME_BONUS
             reward_info['total_reward'] = reward
-            from balatro_gym.core_utils.round_manager import RoundManager
             round_manager = RoundManager(
                 self.state,
                 self.game,
@@ -221,15 +222,14 @@ class PlayPhaseHandler:
                 self.boss_blind_manager,
                 self.rng,
             )
-            round_manager.enter_round_eval()
+            outcome = round_manager.enter_round_eval()
+            if outcome is None:
+                outcome = 'round_eval' if self.state.phase == Phase.ROUND_EVAL else 'noop'
             info['beat_blind'] = True
             info['transition_to'] = 'round_eval'
+            info['round_outcome'] = outcome
         elif self.state.hands_left <= 0:
             # Failed the blind
-            reward = max(-20.0, reward + self.BLIND_FAILURE_OUTCOME_PENALTY)
-            reward_info['blind_outcome'] = self.BLIND_FAILURE_OUTCOME_PENALTY
-            reward_info['total_reward'] = reward
-            from balatro_gym.core_utils.round_manager import RoundManager
             round_manager = RoundManager(
                 self.state,
                 self.game,
@@ -237,10 +237,27 @@ class PlayPhaseHandler:
                 self.boss_blind_manager,
                 self.rng,
             )
-            round_manager.game_over()
-            terminated = True
-            info['failed'] = True
-            info['transition_to'] = 'game_over'
+            outcome = round_manager.enter_round_eval()
+            if outcome is None:
+                if self.state.phase == Phase.GAME_OVER:
+                    outcome = 'game_over'
+                elif self.state.phase == Phase.ROUND_EVAL:
+                    outcome = 'round_eval'
+                else:
+                    outcome = 'noop'
+            info['round_outcome'] = outcome
+            if outcome == 'game_over':
+                reward = max(-20.0, reward + self.BLIND_FAILURE_OUTCOME_PENALTY)
+                reward_info['blind_outcome'] = self.BLIND_FAILURE_OUTCOME_PENALTY
+                reward_info['total_reward'] = reward
+                terminated = True
+                info['failed'] = True
+                info['transition_to'] = 'game_over'
+                info['terminal_outcome'] = 'game_over'
+            else:
+                reward_info['blind_outcome'] = 0.0
+                info['saved'] = True
+                info['transition_to'] = 'round_eval'
         else:
             # Continue playing
             reward_info['blind_outcome'] = 0.0

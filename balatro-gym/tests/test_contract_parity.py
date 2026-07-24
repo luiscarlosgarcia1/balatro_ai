@@ -972,6 +972,144 @@ def test_env_failed_blind_enters_explicit_game_over_phase():
     assert len(env.state.hand_indexes) == 8
 
 
+def test_env_saved_failed_blind_reaches_round_eval_and_cashes_out_without_blind_reward():
+    env = BalatroEnv(seed=123)
+    env.step(Action.SELECT_BLIND_BASE)
+    env.state.hands_left = 1
+    env.game.round_hands = 1
+    env.state.money = 10
+    env.play_handler.joker_effects_engine.end_of_round_effects = lambda _: [{"saved": True}]
+
+    def _force_miss_blind(self, selected_cards, hand_type, hand_type_name):
+        return 0, {}
+
+    env.play_handler._score_hand = MethodType(_force_miss_blind, env.play_handler)
+
+    env.step(Action.SELECT_CARD_BASE)
+    obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+
+    assert terminated is False
+    assert truncated is False
+    assert info["saved"] is True
+    assert info["transition_to"] == "round_eval"
+    assert info["round_outcome"] == "round_eval"
+    assert obs["phase"] == Phase.ROUND_EVAL
+    assert env.state.game_over is False
+    assert env.state.round_eval_cashout == 2
+
+    obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
+
+    assert reward == 0.0
+    assert terminated is False
+    assert truncated is False
+    assert info["action"] == "cash_out"
+    assert info["round_outcome"] == "shop"
+    assert obs["phase"] == Phase.SHOP
+    assert obs["money"] == 12
+
+
+def test_play_reward_shaping_does_not_change_blind_clear_domain_outcome():
+    def _run_blind_clear(play_reward: float):
+        env = BalatroEnv(seed=123)
+        env.step(Action.SELECT_BLIND_BASE)
+        env.state.hands_left = 1
+        env.game.round_hands = 1
+        env.play_handler.reward_calculator = SimpleNamespace(
+            calculate_play_reward=lambda **_: {"total_reward": play_reward}
+        )
+
+        def _force_clear_blind(self, selected_cards, hand_type, hand_type_name):
+            return env.state.chips_needed, {}
+
+        env.play_handler._score_hand = MethodType(_force_clear_blind, env.play_handler)
+
+        env.step(Action.SELECT_CARD_BASE)
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+        snapshot = {
+            "phase": obs["phase"],
+            "round_eval_cashout": env.state.round_eval_cashout,
+            "round": env.state.round,
+            "ante": env.state.ante,
+            "pending_boss_blind": env.state.pending_boss_blind,
+            "won": env.state.won,
+            "game_over": env.state.game_over,
+            "transition_to": info["transition_to"],
+            "round_outcome": info["round_outcome"],
+            "terminated": terminated,
+            "truncated": truncated,
+        }
+        return snapshot, reward
+
+    low_snapshot, low_reward = _run_blind_clear(-20.0)
+    high_snapshot, high_reward = _run_blind_clear(75.0)
+
+    assert low_snapshot == high_snapshot
+    assert low_snapshot == {
+        "phase": Phase.ROUND_EVAL,
+        "round_eval_cashout": 3,
+        "round": 2,
+        "ante": 1,
+        "pending_boss_blind": None,
+        "won": False,
+        "game_over": False,
+        "transition_to": "round_eval",
+        "round_outcome": "round_eval",
+        "terminated": False,
+        "truncated": False,
+    }
+    assert low_reward != high_reward
+
+
+def test_play_reward_shaping_does_not_change_blind_fail_domain_outcome():
+    def _run_blind_fail(play_reward: float):
+        env = BalatroEnv(seed=123)
+        env.step(Action.SELECT_BLIND_BASE)
+        env.state.hands_left = 1
+        env.game.round_hands = 1
+        env.play_handler.reward_calculator = SimpleNamespace(
+            calculate_play_reward=lambda **_: {"total_reward": play_reward}
+        )
+
+        def _force_miss_blind(self, selected_cards, hand_type, hand_type_name):
+            return 0, {}
+
+        env.play_handler._score_hand = MethodType(_force_miss_blind, env.play_handler)
+
+        env.step(Action.SELECT_CARD_BASE)
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+        snapshot = {
+            "phase": obs["phase"],
+            "round_eval_cashout": env.state.round_eval_cashout,
+            "money": env.state.money,
+            "won": env.state.won,
+            "game_over": env.state.game_over,
+            "transition_to": info["transition_to"],
+            "round_outcome": info["round_outcome"],
+            "terminal_outcome": info["terminal_outcome"],
+            "terminated": terminated,
+            "truncated": truncated,
+        }
+        return snapshot, reward
+
+    low_snapshot, low_reward = _run_blind_fail(-20.0)
+    high_snapshot, high_reward = _run_blind_fail(75.0)
+
+    assert low_snapshot == high_snapshot
+    assert low_snapshot == {
+        "phase": Phase.GAME_OVER,
+        "round_eval_cashout": 0,
+        "money": 4,
+        "won": False,
+        "game_over": True,
+        "transition_to": "game_over",
+        "round_outcome": "game_over",
+        "terminal_outcome": "game_over",
+        "terminated": True,
+        "truncated": False,
+    }
+    assert low_reward != high_reward
+
+
 def test_env_winning_round_eval_cashout_terminates_episode():
     env = BalatroEnv(seed=123)
     env.state.phase = Phase.ROUND_EVAL
@@ -988,6 +1126,100 @@ def test_env_winning_round_eval_cashout_terminates_episode():
     assert info["won"] is True
     assert obs["phase"] == Phase.SHOP
     assert obs["money"] == 32
+
+
+def test_play_reward_shaping_does_not_change_final_boss_win_and_cashout_semantics():
+    def _run_final_boss_clear(play_reward: float):
+        env = BalatroEnv(seed=123)
+        env.step(Action.SELECT_BLIND_BASE)
+        env.state.ante = 8
+        env.state.win_ante = 8
+        env.state.round = 3
+        env.state.hands_left = 1
+        env.state.chips_needed = 300
+        env.state.round_chips_scored = 0
+        env.state.boss_blind_active = True
+        env.state.active_boss_blind = BossBlindType.THE_HOOK
+        env.boss_blind_manager.active_blind = SimpleNamespace(
+            blind_type=BossBlindType.THE_HOOK,
+            money_reward=5,
+        )
+        env.boss_blind_manager.blind_state = {
+            "played_hand_types": set(),
+            "played_cards": set(),
+            "first_hand": True,
+            "hands_played": 0,
+            "cards_required": 5,
+            "disabled_joker_slots": 0,
+            "face_down_cards": set(),
+        }
+        env.play_handler.reward_calculator = SimpleNamespace(
+            calculate_play_reward=lambda **_: {"total_reward": play_reward}
+        )
+
+        def _force_clear_blind(self, selected_cards, hand_type, hand_type_name):
+            return env.state.chips_needed, {}
+
+        env.play_handler._score_hand = MethodType(_force_clear_blind, env.play_handler)
+
+        env.step(Action.SELECT_CARD_BASE)
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+        pre_cashout = {
+            "phase": obs["phase"],
+            "round_eval_cashout": env.state.round_eval_cashout,
+            "round": env.state.round,
+            "ante": env.state.ante,
+            "won": env.state.won,
+            "game_over": env.state.game_over,
+            "transition_to": info["transition_to"],
+            "round_outcome": info["round_outcome"],
+            "terminated": terminated,
+            "truncated": truncated,
+        }
+        cashout = env.state.round_eval_cashout
+        obs, reward, terminated, truncated, info = env.step(Action.SHOP_END)
+        post_cashout = {
+            "phase": obs["phase"],
+            "money": env.state.money,
+            "round_eval_cashout": env.state.round_eval_cashout,
+            "won": env.state.won,
+            "transition_to": info["transition_to"],
+            "round_outcome": info["round_outcome"],
+            "terminated": terminated,
+            "truncated": truncated,
+        }
+        return pre_cashout, post_cashout, cashout, reward
+
+    low_pre, low_post, low_cashout, low_reward = _run_final_boss_clear(-20.0)
+    high_pre, high_post, high_cashout, high_reward = _run_final_boss_clear(75.0)
+
+    assert low_pre == high_pre
+    assert low_pre == {
+        "phase": Phase.ROUND_EVAL,
+        "round_eval_cashout": 5,
+        "round": 1,
+        "ante": 9,
+        "won": True,
+        "game_over": False,
+        "transition_to": "round_eval",
+        "round_outcome": "round_eval",
+        "terminated": False,
+        "truncated": False,
+    }
+    assert low_post == high_post
+    assert low_post == {
+        "phase": Phase.SHOP,
+        "money": 9,
+        "round_eval_cashout": 0,
+        "won": True,
+        "transition_to": "shop",
+        "round_outcome": "won",
+        "terminated": True,
+        "truncated": False,
+    }
+    assert low_cashout == high_cashout == 5
+    assert low_reward == high_reward == 0.0
+
 
 
 def test_env_round3_boss_offer_is_seed_stable_across_repeated_episodes():

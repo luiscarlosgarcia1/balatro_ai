@@ -17,6 +17,8 @@ def test_round_manager_enter_round_eval_stages_cashout_without_paying():
         round=2,
         money=37,
         hands_left=2,
+        round_chips_scored=450,
+        chips_needed=450,
         vouchers=["Seed Money"],
         jokers=[JokerInfo(84, "To the Moon", 5, "Extra interest")],
     )
@@ -24,8 +26,9 @@ def test_round_manager_enter_round_eval_stages_cashout_without_paying():
     joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
     manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
 
-    manager.enter_round_eval()
+    outcome = manager.enter_round_eval()
 
+    assert outcome == "round_eval"
     assert state.phase == Phase.ROUND_EVAL
     assert state.money == 37
     assert state.round_eval_cashout == 20
@@ -46,14 +49,38 @@ def test_round_manager_failed_exhausted_blind_enters_game_over_without_cashout()
     joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
     manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
 
-    manager.enter_round_eval()
-    manager.cash_out()
+    outcome = manager.enter_round_eval()
+    cash_outcome = manager.cash_out()
 
+    assert outcome == "game_over"
+    assert cash_outcome == "noop"
     assert state.phase == Phase.GAME_OVER
     assert state.game_over is True
     assert state.money == 12
     assert state.round_eval_cashout == 0
     assert state.round == 1
+
+
+def test_round_manager_saved_failed_blind_reaches_round_eval_instead_of_game_over():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        round=1,
+        money=12,
+        hands_left=0,
+        round_chips_scored=299,
+        chips_needed=300,
+        no_interest=True,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [{"saved": True}])
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.game_over is False
+    assert state.round_eval_cashout == 0
 
 
 def test_round_manager_cash_out_pays_staged_eval_and_enters_shop():
@@ -70,8 +97,9 @@ def test_round_manager_cash_out_pays_staged_eval_and_enters_shop():
     joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
     manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
 
-    manager.cash_out()
+    outcome = manager.cash_out()
 
+    assert outcome == "shop"
     assert state.phase == Phase.SHOP
     assert state.money == 57
     assert state.round_eval_cashout == 0
@@ -224,6 +252,8 @@ def test_round_manager_final_boss_sets_won_during_round_eval():
         round=3,
         money=24,
         hands_left=1,
+        round_chips_scored=1200,
+        chips_needed=1200,
         boss_blind_active=True,
         active_boss_blind=BossBlindType.THE_HOOK,
     )
@@ -239,6 +269,30 @@ def test_round_manager_final_boss_sets_won_during_round_eval():
     assert state.game_over is False
     assert state.ante == 9
     assert state.round == 1
+
+
+def test_round_manager_round_three_clear_without_boss_does_not_set_won():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=8,
+        win_ante=8,
+        round=3,
+        money=24,
+        hands_left=1,
+        round_chips_scored=600,
+        chips_needed=600,
+        boss_blind_active=False,
+        active_boss_blind=None,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=None)
+
+    manager.enter_round_eval()
+
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.won is False
+    assert state.game_over is False
 
 
 def test_env_ante_8_boss_win_terminates_after_real_cashout():
@@ -279,6 +333,8 @@ def test_env_ante_8_boss_win_terminates_after_real_cashout():
     assert info["action"] == "cash_out"
     assert info["cashout"] == staged_cashout
     assert info["won"] is True
+    assert info["round_outcome"] == "won"
+    assert env._terminal_outcome == "won"
     assert obs["phase"] == Phase.SHOP
     assert obs["money"] == 24 + staged_cashout
     assert obs["action_mask"].sum() == 0
