@@ -42,6 +42,13 @@ def test_blind_chips_match_balatro_default_scaling():
     assert get_blind_chips(2, "boss", ante_scaling=2) == 3200
 
 
+def test_blind_amount_matches_lua_high_ante_rounding_curve():
+    # Matches balatro_unpacked/functions/misc_functions.lua:get_blind_amount
+    assert get_blind_amount(11) == 7_200_000
+    assert get_blind_amount(12) == 300_000_000
+    assert get_blind_amount(13) == 47_000_000_000
+
+
 def test_boss_threshold_uses_absolute_boss_multiplier():
     state = UnifiedGameState(ante=2, round=3)
     game = SimpleNamespace(blinds=[0, 0, 0], blind_index=2)

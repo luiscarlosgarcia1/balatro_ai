@@ -1,3 +1,5 @@
-from balatro_gym.core_utils.unverified.renderer import ConsoleRenderer
+"""Explicitly provisional text renderer exports."""
 
-__all__ = ["ConsoleRenderer"]
+from balatro_gym.core_utils.provisional_renderer import ProvisionalConsoleRenderer
+
+__all__ = ["ProvisionalConsoleRenderer"]

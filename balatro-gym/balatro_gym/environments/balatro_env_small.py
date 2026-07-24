@@ -224,8 +224,11 @@ class BalatroEnv(gym.Env):
         if self.render_mode != "human":
             return
         
-        from balatro_gym.core_utils.renderer import ConsoleRenderer
-        renderer = ConsoleRenderer()
+        from balatro_gym.core_utils.provisional_renderer import (
+            ProvisionalConsoleRenderer,
+        )
+
+        renderer = ProvisionalConsoleRenderer()
         renderer.render(self.state, self.boss_blind_manager)
 
     def close(self):

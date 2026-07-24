@@ -1,11 +1,27 @@
 from types import SimpleNamespace
 
-from balatro_gym.core_utils.unverified.reward_calculator import RewardCalculator
+from balatro_gym.core_utils.provisional_reward_shaping import (
+    ProvisionalRewardCalculator,
+)
+from balatro_gym.core_utils.reward_calculator import RewardCalculator
 from balatro_gym.scoring.scoring_engine import HandType
 
 
 def _card(rank_value: int):
     return SimpleNamespace(rank=SimpleNamespace(value=rank_value))
+
+
+def test_reward_calculator_public_boundary_wraps_provisional_reward_shaping():
+    calculator = RewardCalculator()
+
+    assert calculator.__class__.__module__ == "balatro_gym.core_utils.reward_calculator"
+    assert isinstance(calculator, ProvisionalRewardCalculator)
+
+
+def test_reward_calculator_unverified_import_is_legacy_compatibility_shim():
+    from balatro_gym.core_utils.unverified.reward_calculator import RewardCalculator as LegacyRewardCalculator
+
+    assert LegacyRewardCalculator.__module__ == "balatro_gym.core_utils.provisional_reward_shaping"
 
 
 def test_reward_calculator_penalizes_low_progress_single_card_high_card():
