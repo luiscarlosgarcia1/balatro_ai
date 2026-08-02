@@ -97,6 +97,8 @@ class CompleteJokerEffects:
             return self._before_scoring_effects(joker_name, context, game_state)
         if phase == "individual_scoring":
             return self._individual_scoring_effects(joker_name, context, game_state)
+        if phase == "held_card":
+            return self._held_card_effects(joker_name, context, game_state)
         if phase == "scoring":
             return self._scoring_effects(joker_name, context, game_state)
         if phase == "discard":
@@ -112,6 +114,45 @@ class CompleteJokerEffects:
         if phase == "using_consumeable":
             return self._consumeable_effects(joker_name)
         return None
+
+    def get_retrigger_count(
+        self,
+        joker: Any,
+        context: Dict[str, Any],
+        game_state: Dict[str, Any],
+    ) -> int:
+        joker_name = self._joker_name(joker)
+        if not joker_name or joker_name not in self._SUPPORTED_NAMES:
+            return 0
+
+        phase = context.get("phase", "")
+        card = context.get("card")
+        if card is None:
+            return 0
+
+        if phase == "played_card":
+            rank = self._rank(card)
+            if joker_name == "Hanging Chad" and context.get("is_first_scoring_card"):
+                return 2
+            if joker_name == "Hack" and rank in {2, 3, 4, 5}:
+                return 1
+            if joker_name in {"Sock & Buskin", "Sock and Buskin"} and self._is_face(card, game_state):
+                return 1
+            if joker_name == "Dusk" and game_state.get("hands_left") == 0:
+                return 1
+            if joker_name == "Seltzer":
+                state = self.joker_states.get(self._active_joker_key or joker_name, {})
+                return 1 if state.get("rounds", 10) > 0 else 0
+            return 0
+
+        if phase == "held_card":
+            if not context.get("effects_present"):
+                return 0
+            if joker_name == "Mime":
+                return 1
+            return 0
+
+        return 0
 
     def _before_scoring_effects(
         self,
@@ -216,6 +257,37 @@ class CompleteJokerEffects:
             return {"message": f"x{state['x_mult']}"}
         return None
 
+    def _held_card_effects(
+        self,
+        joker_name: str,
+        context: Dict[str, Any],
+        game_state: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        card = context.get("card")
+        if card is None:
+            return None
+
+        if joker_name == "Shoot the Moon" and self._rank(card) == 12:
+            return {"mult": 13}
+
+        if joker_name == "Baron" and self._rank(card) == 13:
+            return {"x_mult": 1.5}
+
+        if joker_name == "Raised Fist":
+            held_cards = game_state.get("held_cards") or game_state.get("hand", [])
+            candidate_cards = [
+                held_card
+                for held_card in held_cards
+                if self._enhancement(held_card) != "Stone"
+            ]
+            if not candidate_cards:
+                return None
+            lowest = min(candidate_cards, key=self._rank)
+            if lowest is card:
+                return {"mult": 2 * min(self._rank(card), 10)}
+
+        return None
+
     def _scoring_effects(
         self,
         joker_name: str,
@@ -248,16 +320,6 @@ class CompleteJokerEffects:
             return {"x_mult": 2}
         if joker_name == "Flower Pot" and len({self._suit(card) for card in scoring_cards}) >= 4:
             return {"x_mult": 3}
-        if joker_name == "Baron":
-            kings = sum(1 for card in game_state.get("hand", []) if self._rank(card) == 13)
-            return {"x_mult": 1.5 ** kings} if kings else None
-        if joker_name == "Shoot the Moon":
-            queens = sum(1 for card in game_state.get("hand", []) if self._rank(card) == 12)
-            return {"mult": 13 * queens} if queens else None
-        if joker_name == "Raised Fist":
-            held = game_state.get("hand", [])
-            if held:
-                return {"mult": 2 * min(self._rank(card) for card in held)}
         if joker_name in {"Green Joker", "Ride the Bus"}:
             value = self._state(joker_name, mult=0)["mult"]
             return {"mult": value} if value else None

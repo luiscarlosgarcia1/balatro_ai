@@ -32,6 +32,26 @@ class RecordingJokerEffects:
         return self.effects_by_phase.get(phase)
 
 
+class ScriptedJokerEffects:
+    def __init__(self, script):
+        self.script = script
+        self.calls = []
+
+    def reset_scoring_hand_state(self, game_state):
+        self.calls.append(("reset", None, None, None))
+
+    def apply_joker_effect(self, joker, context, game_state):
+        phase = context["phase"]
+        card = context.get("card") or context.get("other_card")
+        card_index = getattr(getattr(card, "card_state", None), "card_index", None)
+        times_scored = getattr(getattr(card, "card_state", None), "times_scored", None)
+        self.calls.append((phase, getattr(joker, "name", None), card_index, times_scored))
+        effect = self.script(phase, joker, context, game_state)
+        if effect and isinstance(effect, dict) and effect.get("message"):
+            game_state.setdefault("_test_trace", []).append(effect["message"])
+        return effect
+
+
 def _make_play_handler(state):
     scorer = UnifiedScorer(ScoreEngine(), CompleteJokerEffects())
     return PlayPhaseHandler(
@@ -69,6 +89,18 @@ def _score_hand(cards, scoring_cards, hand_type, hand_type_name, game_state):
     )
 
     return UnifiedScorer(ScoreEngine(), CompleteJokerEffects()).score_hand(context)
+
+
+def _score_hand_with_effects(cards, scoring_cards, hand_type, hand_type_name, game_state, effects):
+    context = ScoringContext(
+        cards=cards,
+        scoring_cards=scoring_cards,
+        hand_type=hand_type,
+        hand_type_name=hand_type_name,
+        game_state=game_state,
+    )
+
+    return UnifiedScorer(ScoreEngine(), effects).score_hand(context)
 
 
 def test_unified_scorer_applies_joker_dicts_from_unified_game_state():
@@ -186,6 +218,235 @@ def test_unified_scorer_applies_held_steel_in_held_card_stage():
 
     assert score == 24
     assert "Held card (Steel): x1.5" in breakdown["effects_applied"]
+
+
+def test_unified_scorer_snapshots_played_card_repetitions_and_resolves_repeats_before_next_card():
+    cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+    state = UnifiedGameState(deck=cards, hand_indexes=[0, 1], selected_cards=[0, 1])
+    scoring_cards = [
+        CardAdapter.to_scoring_format(cards[0], 0, state),
+        CardAdapter.to_scoring_format(cards[1], 1, state),
+    ]
+
+    def script(phase, joker, context, game_state):
+        if phase != "individual_scoring":
+            return None
+        card = context["card"]
+        card_index = card.card_state.card_index
+        if card_index == 0:
+            return {
+                "mult": 10 * card.card_state.times_scored,
+                "retriggers": 2 if card.card_state.times_scored == 1 else 7,
+                "message": f"played-{card_index}-pass-{card.card_state.times_scored}",
+            }
+        return {
+            "mult": 40,
+            "message": f"played-{card_index}-pass-{card.card_state.times_scored}",
+        }
+
+    effects = ScriptedJokerEffects(script)
+    game_state = {"jokers": ["Recorder"]}
+
+    _, breakdown = _score_hand_with_effects(
+        scoring_cards,
+        scoring_cards,
+        HandType.HIGH_CARD,
+        "High Card",
+        game_state,
+        effects,
+    )
+
+    assert effects.calls == [
+        ("reset", None, None, None),
+        ("before_scoring", "Recorder", None, None),
+        ("individual_scoring", "Recorder", 0, 1),
+        ("individual_scoring", "Recorder", 0, 2),
+        ("individual_scoring", "Recorder", 0, 3),
+        ("individual_scoring", "Recorder", 1, 1),
+        ("held_card", "Recorder", None, None),
+        ("joker_edition_chip_mult", "Recorder", None, None),
+        ("scoring", "Recorder", None, None),
+        ("joker_on_joker", "Recorder", None, None),
+        ("joker_edition_x_mult", "Recorder", None, None),
+        ("final_scoring_step", "Recorder", None, None),
+        ("destroying_card", "Recorder", None, None),
+        ("destroying_card", "Recorder", None, None),
+        ("after_hand", "Recorder", None, None),
+    ]
+    assert game_state["_test_trace"] == [
+        "played-0-pass-1",
+        "played-0-pass-2",
+        "played-0-pass-3",
+        "played-1-pass-1",
+    ]
+    assert breakdown["card_retriggers"] == 2
+    assert scoring_cards[0].card_state.times_scored == 3
+    assert scoring_cards[1].card_state.times_scored == 1
+    assert [
+        (entry["stage"], entry["event"], entry.get("card_index"), entry.get("repetition_index"))
+        for entry in breakdown["scoring_trace"]
+        if entry["stage"] in {"repetitions", "scoring_card_effects"}
+        and entry["event"] in {"repetition_discovery", "playing_card_base_enhancement"}
+    ][:5] == [
+        ("scoring_card_effects", "playing_card_base_enhancement", 0, 0),
+        ("repetitions", "repetition_discovery", 0, 0),
+        ("repetitions", "playing_card_base_enhancement", 0, 1),
+        ("repetitions", "playing_card_base_enhancement", 0, 2),
+        ("scoring_card_effects", "playing_card_base_enhancement", 1, 0),
+    ]
+
+
+def test_unified_scorer_scores_held_cards_after_played_cards_and_retriggers_only_effectful_first_passes():
+    cards = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.KING, Suit.HEARTS),
+        Card(Rank.TWO, Suit.CLUBS),
+    ]
+    state = UnifiedGameState(deck=cards, hand_indexes=[0, 1, 2], selected_cards=[0])
+    state.get_card_state(1).enhancement = Enhancement.STEEL
+    scoring_card = CardAdapter.to_scoring_format(cards[0], 0, state)
+    held_steel = CardAdapter.to_scoring_format(cards[1], 1, state)
+    held_blank = CardAdapter.to_scoring_format(cards[2], 2, state)
+
+    score, breakdown = _score_hand(
+        [scoring_card],
+        [scoring_card],
+        HandType.HIGH_CARD,
+        "High Card",
+        {
+            "jokers": [{"name": "Mime"}],
+            "held_cards": [held_steel, held_blank],
+            "hand": [held_steel, held_blank],
+        },
+    )
+
+    assert score == 36
+    assert breakdown["final_chips"] == 16
+    assert breakdown["final_mult"] == 1
+    assert breakdown["final_x_mult"] == 2.25
+    assert breakdown["effects_applied"].count("Held card (Steel): x1.5") == 2
+
+
+def test_unified_scorer_does_not_retrigger_held_cards_without_a_first_pass_effect():
+    cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.TWO, Suit.CLUBS)]
+    state = UnifiedGameState(deck=cards, hand_indexes=[0, 1], selected_cards=[0])
+    scoring_card = CardAdapter.to_scoring_format(cards[0], 0, state)
+    held_blank = CardAdapter.to_scoring_format(cards[1], 1, state)
+
+    score, breakdown = _score_hand(
+        [scoring_card],
+        [scoring_card],
+        HandType.HIGH_CARD,
+        "High Card",
+        {
+            "jokers": [{"name": "Mime"}],
+            "held_cards": [held_blank],
+            "hand": [held_blank],
+        },
+    )
+
+    assert score == 16
+    assert breakdown["final_x_mult"] == 1.0
+    assert "Held card (Steel): x1.5" not in breakdown["effects_applied"]
+
+
+def test_unified_scorer_orders_joker_edition_and_main_phases_like_lua():
+    cards = [Card(Rank.ACE, Suit.SPADES)]
+    scoring_cards = cards
+
+    def script(phase, joker, context, game_state):
+        return {
+            "joker_edition_chip_mult": {
+                "chips": 10,
+                "mult": 1,
+                "message": "edition-chip-mult",
+            },
+            "scoring": {
+                "chips": 20,
+                "mult": 2,
+                "x_mult": 2.0,
+                "message": "joker-main",
+            },
+            "joker_on_joker": {
+                "chips": 30,
+                "mult": 3,
+                "x_mult": 3.0,
+                "message": "joker-on-joker",
+            },
+            "joker_edition_x_mult": {
+                "x_mult": 4.0,
+                "message": "edition-x-mult",
+            },
+        }.get(phase)
+
+    effects = ScriptedJokerEffects(script)
+    game_state = {"jokers": ["Recorder"]}
+
+    score, breakdown = _score_hand_with_effects(
+        cards,
+        scoring_cards,
+        HandType.HIGH_CARD,
+        "High Card",
+        game_state,
+        effects,
+    )
+
+    assert game_state["_test_trace"] == [
+        "edition-chip-mult",
+        "joker-main",
+        "joker-on-joker",
+        "edition-x-mult",
+    ]
+    assert breakdown["effects_applied"][-4:] == [
+        "Recorder (joker edition chip mult): +10c +1m x1.0",
+        "Recorder (scoring): +20c +2m x2.0",
+        "Recorder (joker on joker): +30c +3m x3.0",
+        "Recorder (joker edition x mult): +0c +0m x4.0",
+    ]
+    assert breakdown["final_chips"] == 76
+    assert breakdown["final_mult"] == 7
+    assert breakdown["final_x_mult"] == 24.0
+    assert score == 12768
+
+
+def test_unified_scorer_runs_destruction_after_final_scoring_and_before_after_hand():
+    cards = [Card(Rank.ACE, Suit.SPADES)]
+
+    def script(phase, joker, context, game_state):
+        return {
+            "final_scoring_step": {"mult": 4, "message": "final-step"},
+            "destroying_card": {"mult": 8, "message": "destroying-card"},
+            "after_hand": {"mult": 16, "money": 2, "message": "after-hand"},
+        }.get(phase)
+
+    effects = ScriptedJokerEffects(script)
+    game_state = {"jokers": ["Recorder"], "money": 0}
+
+    score, breakdown = _score_hand_with_effects(
+        cards,
+        cards,
+        HandType.HIGH_CARD,
+        "High Card",
+        game_state,
+        effects,
+    )
+
+    assert game_state["_test_trace"] == [
+        "final-step",
+        "destroying-card",
+        "after-hand",
+    ]
+    assert breakdown["effects_applied"][-3:] == [
+        "Recorder (final scoring step): +0c +4m x1.0",
+        "Recorder (destroying card): +0c +8m x1.0",
+        "Recorder (after hand): +0c +16m x1.0",
+    ]
+    assert breakdown["final_mult"] == 5
+    assert breakdown["joker_mult"] == 28
+    assert breakdown["money_gained"] == 2
+    assert score == 80
+    assert [entry["applies_to_score"] for entry in breakdown["scoring_trace"] if entry["stage"] == "destruction_hooks"] == [False]
+    assert [entry["applies_to_score"] for entry in breakdown["scoring_trace"] if entry["stage"] == "after_hand_effects"] == [False]
 
 
 def test_play_phase_pair_scores_pair_cards_not_kickers():
