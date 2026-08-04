@@ -158,8 +158,11 @@ class UnifiedGameState:
     force_draw_count: Optional[int] = None  # For The Serpent boss
     disabled_joker_slots: int = 0  # For The Plant boss
     boss_disabled_joker_indexes: List[int] = field(default_factory=list)
+    hidden_joker_indexes: List[int] = field(default_factory=list)
     boss_forced_selected_card: Optional[int] = None
     boss_discard_random_count: int = 0
+    boss_played_hand_types: List[str] = field(default_factory=list)
+    boss_round_ox_target_hand: Optional[HandType] = None
     
     # Special game modes/effects
     eternal_jokers: List[int] = field(default_factory=list)  # Indexes of eternal jokers
@@ -183,9 +186,13 @@ class UnifiedGameState:
             'deck': self.deck,
             'hand': hand_cards,
             'jokers': [
-                {'name': j.name, 'id': j.id}
+                {
+                    'name': j.name,
+                    'id': j.id,
+                    'disabled': i in self.boss_disabled_joker_indexes,
+                    'hidden': i in self.hidden_joker_indexes,
+                }
                 for i, j in enumerate(self.jokers)
-                if i not in self.boss_disabled_joker_indexes
             ],
             'consumables': self.consumables,
             'vouchers': self.vouchers,
@@ -232,6 +239,13 @@ class UnifiedGameState:
             'pending_boss_blind': self.pending_boss_blind.name if self.pending_boss_blind else None,
             'bosses_used': {boss.name: count for boss, count in self.bosses_used.items()},
             'face_down_cards': self.face_down_cards,
+            'hidden_joker_indexes': self.hidden_joker_indexes.copy(),
+            'boss_played_hand_types': self.boss_played_hand_types.copy(),
+            'boss_round_ox_target_hand': (
+                self.boss_round_ox_target_hand.name.replace('_', ' ').title()
+                if self.boss_round_ox_target_hand is not None
+                else None
+            ),
             
             # Collections info
             'joker_count': len(self.jokers),
@@ -321,8 +335,11 @@ class UnifiedGameState:
             force_draw_count=self.force_draw_count,
             disabled_joker_slots=self.disabled_joker_slots,
             boss_disabled_joker_indexes=self.boss_disabled_joker_indexes.copy(),
+            hidden_joker_indexes=self.hidden_joker_indexes.copy(),
             boss_forced_selected_card=self.boss_forced_selected_card,
             boss_discard_random_count=self.boss_discard_random_count,
+            boss_played_hand_types=self.boss_played_hand_types.copy(),
+            boss_round_ox_target_hand=self.boss_round_ox_target_hand,
             
             # Special modes
             eternal_jokers=self.eternal_jokers.copy(),
@@ -344,8 +361,11 @@ class UnifiedGameState:
         self.face_down_cards = []
         self.force_draw_count = None
         self.boss_disabled_joker_indexes = []
+        self.hidden_joker_indexes = []
         self.boss_forced_selected_card = None
         self.boss_discard_random_count = 0
+        self.boss_played_hand_types = []
+        self.boss_round_ox_target_hand = None
         
         # Reset per-round card tracking
         for card_state in self.card_states.values():
@@ -363,8 +383,11 @@ class UnifiedGameState:
         self.boss_blind_rerolls_used_ante = 0
         self.disabled_joker_slots = 0
         self.boss_disabled_joker_indexes = []
+        self.hidden_joker_indexes = []
         self.boss_forced_selected_card = None
         self.boss_discard_random_count = 0
+        self.boss_played_hand_types = []
+        self.boss_round_ox_target_hand = None
         
         for card_state in self.card_states.values():
             card_state.played_this_ante = False
@@ -458,6 +481,24 @@ class UnifiedGameState:
         for joker_idx, joker in enumerate(self.jokers):
             if joker.name == "Rocket":
                 self.rocket_payouts[joker_idx] = self.get_rocket_payout(joker_idx) + increase
+
+    def reorder_jokers(self, order: List[int]) -> None:
+        """Reorder jokers and remap all joker-indexed side tables to match."""
+        if sorted(order) != list(range(len(self.jokers))):
+            return
+
+        self.jokers = [self.jokers[i] for i in order]
+        old_to_new = {old_index: new_index for new_index, old_index in enumerate(order)}
+
+        self.eternal_jokers = self._remap_joker_index_list(self.eternal_jokers, old_to_new)
+        self.rental_jokers = self._remap_joker_index_list(self.rental_jokers, old_to_new)
+        self.boss_disabled_joker_indexes = self._remap_joker_index_list(
+            self.boss_disabled_joker_indexes,
+            old_to_new,
+        )
+        self.hidden_joker_indexes = self._remap_joker_index_list(self.hidden_joker_indexes, old_to_new)
+        self.perishable_counters = self._remap_joker_index_dict(self.perishable_counters, old_to_new)
+        self.rocket_payouts = self._remap_joker_index_dict(self.rocket_payouts, old_to_new)
     
     def get_active_joker_count(self) -> int:
         """Get number of active (non-disabled) joker slots."""
@@ -481,3 +522,27 @@ class UnifiedGameState:
                 if 0 <= deck_idx < len(self.deck):
                     cards.append(self.deck[deck_idx])
         return cards
+
+    @staticmethod
+    def _remap_joker_index_list(indexes: List[int], old_to_new: Dict[int, int]) -> List[int]:
+        remapped = []
+        for raw_index in indexes:
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                continue
+            if index in old_to_new:
+                remapped.append(old_to_new[index])
+        return sorted(remapped)
+
+    @staticmethod
+    def _remap_joker_index_dict(values: Dict[int, Any], old_to_new: Dict[int, int]) -> Dict[int, Any]:
+        remapped: Dict[int, Any] = {}
+        for raw_index, value in values.items():
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                continue
+            if index in old_to_new:
+                remapped[old_to_new[index]] = value
+        return remapped

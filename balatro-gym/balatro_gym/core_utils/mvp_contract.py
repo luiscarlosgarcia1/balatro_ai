@@ -7,6 +7,8 @@ import numpy as np
 from gymnasium import spaces
 
 from balatro_gym.core.constants import Action, ActionCounts, Phase, PLAY_SUBSET_SLOT_SETS
+from balatro_gym.core.balatro_game import BalatroGame
+from balatro_gym.core.cards import Enhancement
 from balatro_gym.core.consumables import is_planet_consumable_name, is_spectral_consumable_name, is_tarot_consumable_name
 from balatro_gym.core.boss_blinds import BossBlindType
 from balatro_gym.scoring.scoring_engine import HandType
@@ -325,6 +327,10 @@ def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarr
         for i in range(min(ActionCounts.USE_CONSUMABLE_COUNT, len(state.consumables))):
             if can_use_consumable_in_play(state, str(state.consumables[i])):
                 mask[Action.USE_CONSUMABLE_BASE + i] = 1
+        eternal_jokers = set(getattr(state, "eternal_jokers", []))
+        for i in range(min(ActionCounts.SELL_JOKER_COUNT, len(state.jokers))):
+            if i not in eternal_jokers:
+                mask[Action.SELL_JOKER_BASE + i] = 1
         return mask
 
     if phase == Phase.SHOP:
@@ -605,6 +611,11 @@ def build_action_mask(
             mask[Action.DISCARD] = 1
         for i in range(min(ActionCounts.USE_CONSUMABLE_COUNT, consumable_count)):
             mask[Action.USE_CONSUMABLE_BASE + i] = 1
+        joker_sellable = kwargs.get("joker_sellable")
+        joker_count = int(kwargs.get("joker_count", 0))
+        for i in range(min(ActionCounts.SELL_JOKER_COUNT, joker_count)):
+            if joker_sellable is None or i >= len(joker_sellable) or bool(joker_sellable[i]):
+                mask[Action.SELL_JOKER_BASE + i] = 1
         return mask
 
     if phase == Phase.SHOP:
@@ -687,6 +698,8 @@ def _clear_illegal_boss_subset_actions(
     state: UnifiedGameState,
     visible_hand_size: int,
 ) -> None:
+    if not getattr(state, "boss_blind_active", False):
+        return
     forced_slot = getattr(state, "boss_forced_selected_card", None)
     active_boss = getattr(state, "active_boss_blind", None)
     for subset_index, slot_subset in enumerate(PLAY_SUBSET_SLOT_SETS):
@@ -698,17 +711,63 @@ def _clear_illegal_boss_subset_actions(
             continue
         if active_boss == BossBlindType.THE_PSYCHIC and len(slot_subset) != 5:
             mask[action] = 0
+            continue
+        if not _is_play_allowed_for_slots(state, slot_subset):
+            mask[action] = 0
 
 
 def _can_play_selected_cards_against_boss(state: UnifiedGameState, selected_count: int) -> bool:
     if not (0 < selected_count <= 5):
         return False
+    if not getattr(state, "boss_blind_active", False):
+        return True
     if getattr(state, "active_boss_blind", None) == BossBlindType.THE_PSYCHIC and selected_count != 5:
         return False
     forced_slot = getattr(state, "boss_forced_selected_card", None)
     if forced_slot is not None and int(forced_slot) not in set(getattr(state, "selected_cards", [])):
         return False
-    return True
+    return _is_play_allowed_for_slots(state, tuple(int(slot) for slot in getattr(state, "selected_cards", [])))
+
+
+def _is_play_allowed_for_slots(state: UnifiedGameState, selected_slots: tuple[int, ...]) -> bool:
+    if not getattr(state, "boss_blind_active", False):
+        return True
+    active_boss = getattr(state, "active_boss_blind", None)
+    if active_boss not in {BossBlindType.THE_EYE, BossBlindType.THE_MOUTH}:
+        return True
+
+    hand_type_name = _classify_slot_hand_type_name(state, selected_slots)
+    if hand_type_name is None:
+        return False
+
+    if active_boss == BossBlindType.THE_EYE:
+        played_hand_types = set(getattr(state, "boss_played_hand_types", []) or [])
+        return hand_type_name not in played_hand_types
+
+    locked_hand_type = getattr(state, "last_hand_played", None)
+    return not locked_hand_type or hand_type_name == locked_hand_type
+
+
+def _classify_slot_hand_type_name(state: UnifiedGameState, selected_slots: tuple[int, ...]) -> str | None:
+    hand_cards = []
+    non_stone_cards = []
+    for slot in selected_slots:
+        if not (0 <= int(slot) < len(state.hand_indexes)):
+            return None
+        card_idx = state.hand_indexes[int(slot)]
+        if not (0 <= card_idx < len(state.deck)):
+            return None
+        card = state.deck[card_idx]
+        hand_cards.append(card)
+        card_state = state.get_card_state(card_idx)
+        if getattr(card_state, "enhancement", Enhancement.NONE) != Enhancement.STONE:
+            non_stone_cards.append(card)
+
+    cards_for_classification = non_stone_cards or hand_cards
+    if not cards_for_classification:
+        return None
+    hand_type, _ = BalatroGame()._classify_hand(cards_for_classification)
+    return MVP_HAND_LEVEL_LABELS.get(hand_type, hand_type.name.replace("_", " ").title())
 
 
 def encode_consumables(consumables: Iterable[Any], slots: int = 5) -> np.ndarray:

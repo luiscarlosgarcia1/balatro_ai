@@ -505,7 +505,7 @@ class CompleteJokerEffects:
 
     def end_of_round_effects(self, game_state: Dict[str, Any]) -> List[Dict[str, Any]]:
         effects: List[Dict[str, Any]] = []
-        for joker_index, joker_name in enumerate(self._joker_names(game_state)):
+        for joker_index, joker_name in self._active_jokers(game_state):
             self._active_joker_key = self._round_state_key(joker_index, joker_name)
             if joker_name == "Popcorn":
                 state = self._state(joker_name, mult=20)
@@ -536,7 +536,7 @@ class CompleteJokerEffects:
 
     def reset_scoring_hand_state(self, game_state: Dict[str, Any]) -> None:
         """Reset per-play flags for jokers that trigger once per scored hand."""
-        for joker_index, joker_name in enumerate(self._joker_names(game_state)):
+        for joker_index, joker_name in self._active_jokers(game_state):
             if joker_name not in {"Photograph", "Hanging Chad"}:
                 continue
             for key in (self._round_state_key(joker_index, joker_name), joker_name):
@@ -583,11 +583,19 @@ class CompleteJokerEffects:
         name = getattr(joker, "name", None)
         return name if isinstance(name, str) else None
 
-    def _joker_names(self, game_state: Dict[str, Any]) -> Iterable[str]:
-        for joker in game_state.get("jokers", []):
+    @staticmethod
+    def _joker_disabled(joker: Any) -> bool:
+        if isinstance(joker, dict):
+            return bool(joker.get("disabled", False))
+        return bool(getattr(joker, "disabled", False))
+
+    def _active_jokers(self, game_state: Dict[str, Any]) -> Iterable[tuple[int, str]]:
+        for joker_index, joker in enumerate(game_state.get("jokers", [])):
+            if self._joker_disabled(joker):
+                continue
             name = self._joker_name(joker)
             if name:
-                yield name
+                yield joker_index, name
 
     @staticmethod
     def _rank(card: Any) -> int:

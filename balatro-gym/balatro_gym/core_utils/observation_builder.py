@@ -65,10 +65,22 @@ class ObservationBuilder:
             "hand_seals": self._hand_modifier_array(state, "seal"),
             "hand_debuffed": self._hand_state_flag_array(state, "is_debuffed"),
             "joker_editions": self._joker_editions(state),
-            "joker_eternal": self._indexed_binary_array(state.eternal_jokers, slots=10),
-            "joker_perishable": self._indexed_binary_array(state.perishable_counters.keys(), slots=10),
-            "joker_rental": self._indexed_binary_array(state.rental_jokers, slots=10),
-            "joker_perishable_rounds": self._indexed_value_array(state.perishable_counters, slots=10, dtype=np.int8),
+            "joker_eternal": self._mask_hidden_joker_slots(
+                self._indexed_binary_array(state.eternal_jokers, slots=10),
+                state,
+            ),
+            "joker_perishable": self._mask_hidden_joker_slots(
+                self._indexed_binary_array(state.perishable_counters.keys(), slots=10),
+                state,
+            ),
+            "joker_rental": self._mask_hidden_joker_slots(
+                self._indexed_binary_array(state.rental_jokers, slots=10),
+                state,
+            ),
+            "joker_perishable_rounds": self._mask_hidden_joker_slots(
+                self._indexed_value_array(state.perishable_counters, slots=10, dtype=np.int8),
+                state,
+            ),
             "blind_tag_ids": self._blind_tag_ids(state),
             "selected_cards": np.array([1 if i in state.selected_cards else 0 for i in range(8)], dtype=np.int8),
             "chips_scored": np.int64(state.chips_scored),
@@ -82,7 +94,7 @@ class ObservationBuilder:
             "hands_left": np.int8(state.hands_left),
             "discards_left": np.int8(state.discards_left),
             "joker_count": np.int8(len(state.jokers)),
-            "joker_ids": encode_joker_ids(state.jokers),
+            "joker_ids": self._joker_ids(state),
             "joker_slots": np.int8(state.joker_slots),
             "consumable_count": np.int8(len(state.consumables)),
             "consumables": encode_consumable_ids(state.consumables),
@@ -200,9 +212,30 @@ class ObservationBuilder:
 
     def _joker_editions(self, state: UnifiedGameState) -> np.ndarray:
         values = np.zeros(10, dtype=np.int8)
+        hidden_indexes = set(state.hidden_joker_indexes)
         for i, joker in enumerate(state.jokers[:10]):
+            if i in hidden_indexes:
+                continue
             values[i] = encode_card_modifier_value(joker, "edition")
         return values
+
+    def _joker_ids(self, state: UnifiedGameState) -> np.ndarray:
+        visible_jokers = []
+        hidden_indexes = set(state.hidden_joker_indexes)
+        for i, joker in enumerate(state.jokers[:10]):
+            visible_jokers.append(None if i in hidden_indexes else joker)
+        return encode_joker_ids(visible_jokers)
+
+    def _mask_hidden_joker_slots(self, values: np.ndarray, state: UnifiedGameState) -> np.ndarray:
+        hidden_indexes = set(state.hidden_joker_indexes)
+        if not hidden_indexes:
+            return values
+
+        masked = values.copy()
+        for index in hidden_indexes:
+            if 0 <= index < len(masked):
+                masked[index] = 0
+        return masked
 
     def _indexed_binary_array(self, indexes, slots: int) -> np.ndarray:
         values = np.zeros(slots, dtype=np.int8)

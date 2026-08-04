@@ -77,6 +77,26 @@ def test_popcorn_decays_at_end_of_round_and_eventually_destroys():
     assert any(effect.get("destroy_joker_index") == 0 for effect in effects)
 
 
+def test_end_of_round_effects_preserve_original_joker_slot_indexes_when_boss_disables_a_slot():
+    engine = CompleteJokerEffects()
+    game_state = {
+        "jokers": [
+            {"name": "Joker", "disabled": False},
+            {"name": "Jolly Joker", "disabled": True},
+            {"name": "Popcorn", "disabled": False},
+        ]
+    }
+
+    for _ in range(4):
+        effects = engine.end_of_round_effects(game_state)
+        assert {"destroy_joker": "Popcorn"} not in effects
+
+    effects = engine.end_of_round_effects(game_state)
+
+    assert any(effect.get("destroy_joker") == "Popcorn" for effect in effects)
+    assert any(effect.get("destroy_joker_index") == 2 for effect in effects)
+
+
 def test_ice_cream_decays_after_each_scored_hand():
     engine = CompleteJokerEffects()
     game_state = {"jokers": [_joker("Ice Cream")]}

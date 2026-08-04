@@ -12,7 +12,7 @@ from enum import IntEnum
 from typing import Literal
 
 from balatro_gym.core.balatro_game import BalatroGame
-from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType, select_boss_blind
+from balatro_gym.core.boss_blinds import BOSS_BLINDS, BossBlindManager, BossBlindType, select_boss_blind
 from balatro_gym.core.cards import Enhancement, EnhancementEffects, Rank, Seal, SealEffects
 from balatro_gym.core.constants import Phase
 from balatro_gym.core_utils.rng import DeterministicRNG
@@ -91,7 +91,13 @@ class RoundManager:
                         self.state.remove_joker(idx)
                         break
 
+        boss_round_type = self.state.active_boss_blind
+
         if failed_blind and not any(effect.get("saved") for effect in end_effects):
+            if boss_round_type is not None:
+                self._disable_active_boss_blind(
+                    restore_round_resources=boss_round_type == BossBlindType.THE_MANACLE
+                )
             return self.game_over()
 
         gold_money = 0
@@ -108,28 +114,16 @@ class RoundManager:
         self.state.money += gold_money
         self._create_planets_from_held_blue_seals()
 
-        if self.state.boss_blind_active and self.boss_blind_manager and self.boss_blind_manager.active_blind:
-            active_blind = self.boss_blind_manager.active_blind
-            boss_reward = active_blind.money_reward
-            active_blind_type = getattr(active_blind, "blind_type", self.state.active_boss_blind)
-            if active_blind_type == BossBlindType.THE_MANACLE:
-                self.state.hand_size += 1
-                self.game.hand_size = self.state.hand_size
-            self.boss_blind_manager.deactivate()
-            self.state.active_boss_blind = None
-            self.state.boss_blind_active = False
-            self.state.face_down_cards = []
-            self.state.boss_disabled_joker_indexes = []
-            self.state.boss_forced_selected_card = None
-            self.state.disabled_joker_slots = 0
+        cleared_boss_blind = False
+        if boss_round_type is not None:
+            cleared_boss_blind = blind_cleared
+            boss_reward = BOSS_BLINDS[boss_round_type].money_reward if blind_cleared else 0
+            self._disable_active_boss_blind(
+                restore_round_resources=boss_round_type == BossBlindType.THE_MANACLE
+            )
         else:
             boss_reward = 0
 
-        cleared_boss_blind = bool(
-            self.state.boss_blind_active
-            or self.state.active_boss_blind is not None
-            or boss_reward > 0
-        )
         self.state.game_over = False
         self.state.won = self.state.won or (
             int(self.state.ante) == int(self.state.win_ante)
@@ -195,6 +189,34 @@ class RoundManager:
         self.state.phase = Phase.GAME_OVER
         self.state.selected_cards = []
         return "game_over"
+
+    def _disable_active_boss_blind(self, *, restore_round_resources: bool = False) -> None:
+        """Use shared boss cleanup when available, otherwise fall back to legacy reset."""
+        if not self.boss_blind_manager:
+            return
+
+        disable = getattr(self.boss_blind_manager, "disable_boss_blind", None)
+        if callable(disable):
+            disable(
+                self.state,
+                self.game,
+                restore_round_resources=restore_round_resources,
+                draw_restored_manacle_card=False,
+                restore_chip_thresholds=False,
+            )
+            return
+
+        deactivate = getattr(self.boss_blind_manager, "deactivate", None)
+        if callable(deactivate):
+            deactivate()
+
+        self.state.active_boss_blind = None
+        self.state.boss_blind_active = False
+        self.state.face_down_cards = []
+        self.state.boss_disabled_joker_indexes = []
+        self.state.hidden_joker_indexes = []
+        self.state.boss_forced_selected_card = None
+        self.state.disabled_joker_slots = 0
 
     def _base_round_hands(self) -> int:
         """Return the persistent hands-per-round baseline after voucher effects."""

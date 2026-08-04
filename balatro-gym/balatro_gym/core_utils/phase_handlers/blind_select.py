@@ -86,6 +86,9 @@ class BlindSelectHandler:
             'chips_needed': self.state.chips_needed
         }
         
+        # Reset round-specific state
+        self.state.reset_round_state()
+
         # Initialize reward
         reward = 0.0
         
@@ -99,9 +102,6 @@ class BlindSelectHandler:
         if hasattr(self.game, 'blinds') and hasattr(self.game, 'blind_index'):
             self.game.blind_index = expected_blind_type
             self.game.blinds[self.game.blind_index] = self.state.chips_needed
-        
-        # Reset round-specific state
-        self.state.reset_round_state()
         
         # Apply any blind selection joker effects
         selection_effects = self._apply_selection_effects(blind_name)
@@ -204,6 +204,7 @@ class BlindSelectHandler:
         
         # Apply chip multiplier
         self.state.chips_needed = int(base_chips * effects['chip_mult'])
+        self.boss_blind_manager.blind_state['base_chips'] = int(base_chips)
         
         # Apply game modifications
         modifications = effects.get('modifications', {})
@@ -229,9 +230,14 @@ class BlindSelectHandler:
 
         if 'joker_order' in modifications:
             order = modifications['joker_order']
-            if sorted(order) == list(range(len(self.state.jokers))):
-                self.state.jokers = [self.state.jokers[i] for i in order]
-        
+            self.state.reorder_jokers(order)
+
+        if 'hidden_joker_indexes' in modifications:
+            hidden_indexes = [int(index) for index in modifications['hidden_joker_indexes']]
+            self.state.hidden_joker_indexes = [
+                index for index in hidden_indexes if 0 <= index < len(self.state.jokers)
+            ]
+
         # Set boss blind state
         self.state.active_boss_blind = boss_type
         self.state.pending_boss_blind = None

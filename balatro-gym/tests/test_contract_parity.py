@@ -20,15 +20,16 @@ except ModuleNotFoundError:
     httpx.post = lambda *args, **kwargs: None
     sys.modules["httpx"] = httpx
 
-from balatro_gym.core.constants import Action, Phase
+from balatro_gym.core.constants import Action, Phase, encode_play_subset_action
 from balatro_gym.core.cards import Card, Enhancement, Edition, Rank, Seal, Suit
 from balatro_gym.core.boss_blinds import BossBlindType
-from balatro_gym.core.jokers import JokerInfo
+from balatro_gym.core.jokers import JOKER_LIBRARY, JokerInfo
 from balatro_gym.core_utils.blind_scaling import get_blind_chips
 from balatro_gym.core_utils.mvp_contract import (
     SHOP_ITEM_TYPE_IDS,
     build_mvp_action_mask,
     encode_consumable_id,
+    encode_joker_ids,
     encode_pack_item_types,
 )
 from balatro_gym.core_utils.action_handler import ActionHandler
@@ -69,6 +70,8 @@ def _make_live_env_stub() -> BalatroLiveEnv:
     env.max_episode_steps = 1000
     env.render_mode = None
     env.observation_space = env._create_observation_space()
+    env.state = SimpleNamespace()
+    env.obs_builder = SimpleNamespace(build_observation=lambda _state: env._build_obs())
     return env
 
 
@@ -162,6 +165,20 @@ def test_sim_observation_exposes_visible_state_without_leaking_face_down_identit
     assert builder.create_observation_space().contains(obs)
 
 
+def test_sim_observation_exposes_play_phase_joker_sell_actions_for_non_eternal_jokers():
+    builder = ObservationBuilder()
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        jokers=[JokerInfo(1, "Joker", 2, "+4 Mult")],
+        deck=[Card(Rank.ACE, Suit.SPADES)],
+        hand_indexes=[0],
+    )
+
+    obs = builder.build_observation(state)
+
+    assert obs["action_mask"][Action.SELL_JOKER_BASE] == 1
+
+
 def test_joker_ids_match_between_sim_and_live_contract():
     builder = ObservationBuilder()
     state = UnifiedGameState(
@@ -192,6 +209,43 @@ def test_joker_ids_match_between_sim_and_live_contract():
     live_obs = live_env._build_obs()
 
     assert sim_obs["joker_ids"][:2].tolist() == live_obs["joker_ids"][:2].tolist()
+
+
+def test_sim_observation_redacts_hidden_joker_ids_while_amber_acorn_is_active():
+    jokers = [
+        JokerInfo(74, "Rocket", 6, "$ each round +2 boss"),
+        JokerInfo(6, "Jolly Joker", 3, "+8 Mult if Pair"),
+        JokerInfo(1, "Joker", 2, "+4 Mult"),
+    ]
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        jokers=jokers,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_AMBER,
+        hidden_joker_indexes=[0, 1, 2],
+    )
+    state.eternal_jokers = [0]
+    state.perishable_counters = {1: 4}
+    state.rental_jokers = [2]
+
+    hidden_obs = ObservationBuilder().build_observation(state)
+
+    assert hidden_obs["joker_count"] == 3
+    assert hidden_obs["joker_ids"][:3].tolist() == [0, 0, 0]
+    assert hidden_obs["joker_editions"][:3].tolist() == [0, 0, 0]
+    assert hidden_obs["joker_eternal"][:3].tolist() == [0, 0, 0]
+    assert hidden_obs["joker_perishable"][:3].tolist() == [0, 0, 0]
+    assert hidden_obs["joker_rental"][:3].tolist() == [0, 0, 0]
+    assert hidden_obs["joker_perishable_rounds"][:3].tolist() == [0, 0, 0]
+
+    state.hidden_joker_indexes = []
+    visible_obs = ObservationBuilder().build_observation(state)
+
+    assert visible_obs["joker_ids"][:3].tolist() == encode_joker_ids(jokers)[:3].tolist()
+    assert visible_obs["joker_eternal"][:3].tolist() == [1, 0, 0]
+    assert visible_obs["joker_perishable"][:3].tolist() == [0, 1, 0]
+    assert visible_obs["joker_rental"][:3].tolist() == [0, 0, 1]
+    assert visible_obs["joker_perishable_rounds"][:3].tolist() == [0, 4, 0]
 
 
 def test_live_observation_redacts_hidden_hand_cards_and_exposes_modifiers():
@@ -233,7 +287,7 @@ def test_live_observation_redacts_hidden_hand_cards_and_exposes_modifiers():
         "stake": "BLACK",
     }
 
-    obs = env._build_obs()
+    obs = env.obs_builder.build_observation(env.state)
 
     assert obs["deck_id"] == 2
     assert obs["stake_id"] == 4
@@ -374,7 +428,7 @@ def test_live_shop_contract_includes_voucher_slots_between_cards_and_packs():
         "round_num": 1,
     }
 
-    obs = env._build_obs()
+    obs = env.obs_builder.build_observation(env.state)
 
     assert obs["shop_items"][:3].tolist() == [
         SHOP_ITEM_TYPE_IDS["JOKER"],
@@ -451,6 +505,159 @@ def test_play_mask_allows_backing_out_of_full_selection():
     assert mask[Action.DISCARD] == 0
     assert mask[Action.SELECT_CARD_BASE + 0] == 1
     assert mask[Action.SELECT_CARD_BASE + 4] == 1
+
+
+def test_env_play_mask_exposes_joker_sell_and_step_disables_luchador_boss():
+    env = BalatroEnv(seed=123)
+    luchador = next(j for j in JOKER_LIBRARY if j.name == "Luchador")
+    env.state.phase = Phase.PLAY
+    env.state.jokers = [luchador]
+    env.state.deck = [Card(Rank.ACE, Suit.SPADES)]
+    env.state.hand_indexes = [0]
+    env.state.draw_pile_indexes = []
+    env.state.discard_pile_indexes = []
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_CERULEAN
+    env.state.boss_forced_selected_card = 0
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+    env.game.draw_pile_indexes = []
+    env.game.discard_pile_indexes = []
+    env.game.round_discards = env.state.discards_left
+    env.game.round_hands = env.state.hands_left
+    env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_CERULEAN, env.state.to_dict())
+
+    obs = env.obs_builder.build_observation(env.state)
+
+    assert obs["action_mask"][Action.SELL_JOKER_BASE] == 1
+
+    obs, reward, terminated, truncated, info = env.step(Action.SELL_JOKER_BASE)
+
+    assert reward >= 0.0
+    assert terminated is False
+    assert truncated is False
+    assert info["joker_sold"] == "Luchador"
+    assert info["luchador_effect"] == "Boss blind disabled this round"
+    assert env.state.boss_blind_active is False
+    assert env.state.active_boss_blind == BossBlindType.THE_CERULEAN
+    assert env.boss_blind_manager.active_blind is None
+    assert obs["boss_blind_active"] == 0
+    assert obs["boss_blind_type"] == BossBlindType.THE_CERULEAN.value
+    assert obs["action_mask"][Action.SELL_JOKER_BASE] == 0
+
+
+def test_env_mid_round_luchador_save_load_preserves_boss_round_identity_without_debuff():
+    env = BalatroEnv(seed=123)
+    luchador = next(j for j in JOKER_LIBRARY if j.name == "Luchador")
+    env.state.phase = Phase.PLAY
+    env.state.jokers = [luchador]
+    env.state.deck = [Card(Rank.ACE, Suit.SPADES)]
+    env.state.hand_indexes = [0]
+    env.state.draw_pile_indexes = []
+    env.state.discard_pile_indexes = []
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_CERULEAN
+    env.state.boss_forced_selected_card = 0
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+    env.game.draw_pile_indexes = []
+    env.game.discard_pile_indexes = []
+    env.game.round_discards = env.state.discards_left
+    env.game.round_hands = env.state.hands_left
+    env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_CERULEAN, env.state.to_dict())
+
+    env.step(Action.SELL_JOKER_BASE)
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+    obs = restored.obs_builder.build_observation(restored.state)
+
+    assert restored.state.boss_blind_active is False
+    assert restored.state.active_boss_blind == BossBlindType.THE_CERULEAN
+    assert restored.boss_blind_manager.active_blind is None
+    assert obs["boss_blind_active"] == 0
+    assert obs["boss_blind_type"] == BossBlindType.THE_CERULEAN.value
+
+
+def test_env_active_eye_save_load_preserves_repeat_hand_legality_state():
+    env = BalatroEnv(seed=123)
+    env.state.phase = Phase.PLAY
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_EYE
+    env.state.boss_played_hand_types = ["Pair"]
+    env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_EYE, env.state.to_dict())
+    env.boss_blind_manager.blind_state["played_hand_types"] = {"Pair"}
+    env.state.deck = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.ACE, Suit.HEARTS),
+        Card(Rank.KING, Suit.CLUBS),
+    ]
+    env.state.hand_indexes = [0, 1, 2]
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    mask = restored.obs_builder.build_observation(restored.state)["action_mask"]
+    assert mask[encode_play_subset_action((0, 1))] == 0
+    assert restored.boss_blind_manager.blind_state["played_hand_types"] == {"Pair"}
+
+
+def test_env_active_mouth_save_load_preserves_locked_hand_type_legality_state():
+    env = BalatroEnv(seed=123)
+    env.state.phase = Phase.PLAY
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_MOUTH
+    env.state.last_hand_played = "Pair"
+    env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_MOUTH, env.state.to_dict())
+    env.boss_blind_manager.blind_state["played_hand_types"] = {"Pair"}
+    env.state.deck = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.KING, Suit.HEARTS),
+        Card(Rank.QUEEN, Suit.CLUBS),
+    ]
+    env.state.hand_indexes = [0, 1, 2]
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    mask = restored.obs_builder.build_observation(restored.state)["action_mask"]
+    assert mask[encode_play_subset_action((0,))] == 0
+    assert restored.state.last_hand_played == "Pair"
+
+
+def test_env_active_psychic_save_load_preserves_five_card_legality_mask():
+    env = BalatroEnv(seed=123)
+    env.state.phase = Phase.PLAY
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_PSYCHIC
+    env.state.deck = [Card(Rank.ACE, Suit.SPADES)] * 5
+    env.state.hand_indexes = list(range(5))
+    env.state.selected_cards = [0, 1, 2, 3]
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+    env.game.highlighted_indexes = env.state.selected_cards.copy()
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    mask = restored.obs_builder.build_observation(restored.state)["action_mask"]
+    assert mask[Action.PLAY_HAND] == 0
+
+    restored.state.selected_cards = [0, 1, 2, 3, 4]
+    restored.game.highlighted_indexes = restored.state.selected_cards.copy()
+    mask = restored.obs_builder.build_observation(restored.state)["action_mask"]
+    assert mask[Action.PLAY_HAND] == 1
 
 
 def test_play_mask_exposes_direct_subset_play_actions_for_legal_subsets():
@@ -1128,6 +1335,26 @@ def test_env_winning_round_eval_cashout_terminates_episode():
     assert obs["money"] == 32
 
 
+def test_env_save_load_preserves_terminal_win_outcome():
+    env = BalatroEnv(seed=123)
+    env.state.phase = Phase.SHOP
+    env.state.won = True
+    env._terminal_outcome = "won"
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    obs, reward, terminated, truncated, info = restored.step(Action.SHOP_END)
+
+    assert reward == 0.0
+    assert terminated is True
+    assert truncated is False
+    assert info["terminated"] == "won"
+    assert obs["phase"] == Phase.SHOP
+
+
 def test_play_reward_shaping_does_not_change_final_boss_win_and_cashout_semantics():
     def _run_final_boss_clear(play_reward: float):
         env = BalatroEnv(seed=123)
@@ -1256,7 +1483,7 @@ def test_env_round3_boss_offer_is_seed_stable_across_repeated_episodes():
     assert len(set(offers)) == 1
 
 
-def test_env_active_hook_discard_is_seed_stable_across_repeated_episodes():
+def test_env_active_hook_draw_state_stays_unchanged_until_press_play():
     outcomes = []
 
     for _ in range(4):
@@ -1269,27 +1496,269 @@ def test_env_active_hook_discard_is_seed_stable_across_repeated_episodes():
         env.game.hand_indexes = env.state.hand_indexes.copy()
 
         env.play_handler.apply_boss_blind_to_hand()
-        outcomes.append(tuple(env.state.hand_indexes))
+        outcomes.append(
+            (
+                tuple(env.state.hand_indexes),
+                tuple(entry for entry in env.rng.history if entry[0] == "boss_abilities"),
+            )
+        )
 
     assert outcomes == [outcomes[0]] * 4
-    assert len(outcomes[0]) == 8
 
 
-def test_env_active_hook_discard_redraw_is_seed_stable_across_repeated_episodes():
+def test_env_boss_save_state_deep_copies_mutable_blind_state_sets():
+    env = BalatroEnv(seed=123)
+    env.state.round = 3
+    env.state.phase = Phase.BLIND_SELECT
+    env.state.pending_boss_blind = BossBlindType.THE_PILLAR
+
+    obs, reward, terminated, truncated, info = env.step(Action.SELECT_BLIND_BASE + 2)
+
+    assert reward > 0.0
+    assert terminated is False
+    assert truncated is False
+    assert info["boss_blind"] == "The Pillar"
+    assert obs["phase"] == Phase.PLAY
+    assert env.state.active_boss_blind == BossBlindType.THE_PILLAR
+
+    env.boss_blind_manager.blind_state["played_cards"].add(1)
+    saved = env.save_state()
+
+    env.boss_blind_manager.blind_state["played_cards"].add(2)
+    env.boss_blind_manager.blind_state["played_hand_types"].add("Pair")
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    assert restored.state.active_boss_blind == BossBlindType.THE_PILLAR
+    assert restored.boss_blind_manager.blind_state["played_cards"] == {1}
+    assert restored.boss_blind_manager.blind_state["played_hand_types"] == set()
+
+
+def test_env_active_pillar_save_load_preserves_played_this_ante_debuff_state():
+    env = BalatroEnv(seed=123)
+    env.state.round = 3
+    env.state.phase = Phase.PLAY
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_PILLAR
+    env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_PILLAR, env.state.to_dict())
+    env.state.deck = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.KING, Suit.HEARTS),
+    ]
+    env.state.hand_indexes = [0, 1]
+    env.state.draw_pile_indexes = []
+    env.state.discard_pile_indexes = []
+    env.state.get_card_state(0).played_this_ante = True
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+    env.game.draw_pile_indexes = []
+    env.game.discard_pile_indexes = []
+    env.play_handler.apply_boss_blind_to_hand()
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    assert restored.state.get_card_state(0).played_this_ante is True
+    assert restored.state.get_card_state(0).is_debuffed is True
+    obs = restored.obs_builder.build_observation(restored.state)
+    assert obs["hand_debuffed"][:2].tolist() == [1, 0]
+
+
+def test_env_active_verdant_save_load_preserves_full_hand_debuff_state():
+    env = BalatroEnv(seed=123)
+    env.state.round = 3
+    env.state.phase = Phase.PLAY
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = BossBlindType.THE_VERDANT
+    env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_VERDANT, env.state.to_dict())
+    env.state.deck = [
+        Card(Rank.ACE, Suit.SPADES),
+        Card(Rank.KING, Suit.HEARTS),
+        Card(Rank.QUEEN, Suit.CLUBS),
+    ]
+    env.state.hand_indexes = [0, 1, 2]
+    env.state.draw_pile_indexes = []
+    env.state.discard_pile_indexes = []
+    env.game.deck = env.state.deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+    env.game.draw_pile_indexes = []
+    env.game.discard_pile_indexes = []
+    env.play_handler.apply_boss_blind_to_hand()
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    obs = restored.obs_builder.build_observation(restored.state)
+    assert restored.state.boss_blind_active is True
+    assert restored.state.active_boss_blind == BossBlindType.THE_VERDANT
+    assert obs["hand_debuffed"][:3].tolist() == [1, 1, 1]
+
+
+@pytest.mark.parametrize(
+    ("boss_blind", "deck", "expected_debuffs"),
+    [
+        (
+            BossBlindType.THE_GOAD,
+            [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)],
+            [1, 0],
+        ),
+        (
+            BossBlindType.THE_WINDOW,
+            [Card(Rank.ACE, Suit.DIAMONDS), Card(Rank.KING, Suit.HEARTS)],
+            [1, 0],
+        ),
+        (
+            BossBlindType.THE_HEAD,
+            [Card(Rank.ACE, Suit.HEARTS), Card(Rank.KING, Suit.SPADES)],
+            [1, 0],
+        ),
+        (
+            BossBlindType.THE_CLUB,
+            [Card(Rank.ACE, Suit.CLUBS), Card(Rank.KING, Suit.SPADES)],
+            [1, 0],
+        ),
+        (
+            BossBlindType.THE_PLANT,
+            [Card(Rank.KING, Suit.SPADES), Card(Rank.TEN, Suit.HEARTS)],
+            [1, 0],
+        ),
+    ],
+)
+def test_env_suit_and_face_debuff_bosses_save_load_preserve_hand_debuff_state(
+    boss_blind,
+    deck,
+    expected_debuffs,
+):
+    env = BalatroEnv(seed=123)
+    env.state.round = 3
+    env.state.phase = Phase.PLAY
+    env.state.boss_blind_active = True
+    env.state.active_boss_blind = boss_blind
+    env.boss_blind_manager.activate_boss_blind(boss_blind, env.state.to_dict())
+    env.state.deck = deck.copy()
+    env.state.hand_indexes = list(range(len(deck)))
+    env.state.draw_pile_indexes = []
+    env.state.discard_pile_indexes = []
+    env.game.deck = deck.copy()
+    env.game.hand_indexes = env.state.hand_indexes.copy()
+    env.game.draw_pile_indexes = []
+    env.game.discard_pile_indexes = []
+    env.play_handler.apply_boss_blind_to_hand()
+
+    saved = env.save_state()
+
+    restored = BalatroEnv(seed=999)
+    restored.load_state(saved)
+
+    obs = restored.obs_builder.build_observation(restored.state)
+    assert obs["hand_debuffed"][: len(expected_debuffs)].tolist() == expected_debuffs
+
+
+def test_env_active_mark_mid_round_save_load_preserves_face_down_face_cards():
     outcomes = []
 
     for _ in range(4):
         env = BalatroEnv(seed=123)
-        env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_HOOK, env.state.to_dict())
-        env.state.phase = Phase.PLAY
-        env.state.boss_blind_active = True
-        env.state.active_boss_blind = BossBlindType.THE_HOOK
-        env.state.hand_indexes = list(range(8))
-        env.game.hand_indexes = env.state.hand_indexes.copy()
+        env.state.round = 3
+        env.state.phase = Phase.BLIND_SELECT
+        env.state.pending_boss_blind = BossBlindType.THE_MARK
+        custom_deck = [
+            Card(Rank.KING, Suit.SPADES),
+            Card(Rank.TEN, Suit.HEARTS),
+            Card(Rank.JACK, Suit.CLUBS),
+            Card(Rank.THREE, Suit.DIAMONDS),
+            Card(Rank.QUEEN, Suit.HEARTS),
+            Card(Rank.FOUR, Suit.CLUBS),
+            Card(Rank.FIVE, Suit.SPADES),
+            Card(Rank.SIX, Suit.DIAMONDS),
+        ]
+        env.state.deck = custom_deck.copy()
+        env.state.hand_indexes = []
+        env.state.draw_pile_indexes = list(range(len(custom_deck)))
+        env.state.discard_pile_indexes = []
+        env.game.deck = custom_deck.copy()
+        env.game.hand_indexes = []
+        env.game.draw_pile_indexes = list(range(len(custom_deck)))
+        env.game.discard_pile_indexes = []
 
-        env.play_handler.apply_boss_blind_to_hand()
-        first_draw_hand = tuple(env.state.hand_indexes)
-        first_draw_roll_count = len([entry for entry in env.rng.history if entry[0] == "boss_abilities"])
+        obs, reward, terminated, truncated, info = env.step(Action.SELECT_BLIND_BASE + 2)
+
+        assert reward > 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["boss_blind"] == "The Mark"
+        assert obs["phase"] == Phase.PLAY
+        assert env.state.active_boss_blind == BossBlindType.THE_MARK
+        assert env.state.boss_blind_active is True
+
+        saved_hand = tuple(env.state.hand_indexes)
+        saved_face_down = tuple(env.state.face_down_cards)
+        saved = env.save_state()
+
+        assert saved_face_down == (0, 2, 4)
+
+        restored = BalatroEnv(seed=999)
+        restored.load_state(saved)
+
+        assert tuple(restored.state.hand_indexes) == saved_hand
+        assert tuple(restored.state.face_down_cards) == saved_face_down
+        assert restored.state.active_boss_blind == BossBlindType.THE_MARK
+        assert restored.state.boss_blind_active is True
+        assert restored.game.hand_indexes == list(saved_hand)
+
+        outcomes.append(
+            (
+                saved_hand,
+                saved_face_down,
+                tuple(env.state.hand_indexes),
+                tuple(env.state.face_down_cards),
+                tuple(restored.state.hand_indexes),
+                tuple(restored.state.face_down_cards),
+            )
+        )
+
+    assert outcomes == [outcomes[0]] * 4
+
+
+def test_env_active_crimson_first_draw_disables_one_joker_and_post_play_disable_persists_across_save_load():
+    outcomes = []
+
+    for _ in range(4):
+        env = BalatroEnv(seed=123)
+        env.state.round = 3
+        env.state.phase = Phase.BLIND_SELECT
+        env.state.pending_boss_blind = BossBlindType.THE_CRIMSON
+        env.state.jokers = [
+            next(j for j in JOKER_LIBRARY if j.name == "Joker"),
+            next(j for j in JOKER_LIBRARY if j.name == "Jolly Joker"),
+            next(j for j in JOKER_LIBRARY if j.name == "Rocket"),
+        ]
+
+        obs, reward, terminated, truncated, info = env.step(Action.SELECT_BLIND_BASE + 2)
+
+        assert reward > 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["boss_blind"] == "Crimson Heart"
+        assert obs["phase"] == Phase.PLAY
+        assert env.state.active_boss_blind == BossBlindType.THE_CRIMSON
+        assert env.state.boss_blind_active is True
+        assert env.state.disabled_joker_slots == 1
+        assert len(env.state.boss_disabled_joker_indexes) == 1
+
+        def _low_score(self, selected_cards, hand_type, hand_type_name):
+            return 1, {}
+
+        def _skip_card_effects(self, selected_cards, selected_game_cards, base_score):
+            return base_score, 0, [], []
+
+        env.play_handler._score_hand = MethodType(_low_score, env.play_handler)
+        env.play_handler._apply_card_effects = MethodType(_skip_card_effects, env.play_handler)
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
@@ -1298,28 +1767,81 @@ def test_env_active_hook_discard_redraw_is_seed_stable_across_repeated_episodes(
         assert truncated is False
         assert info["selected_cards"] == [0]
 
-        obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
 
         assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
-        assert info["cards_discarded"] == 1
+        assert env.state.disabled_joker_slots == 1
+        assert len(env.state.boss_disabled_joker_indexes) == 1
+
+        saved = env.save_state()
+        saved_disabled = tuple(env.state.boss_disabled_joker_indexes)
+
+        restored = BalatroEnv(seed=999)
+        restored.load_state(saved)
+
+        assert restored.state.active_boss_blind == BossBlindType.THE_CRIMSON
+        assert restored.state.boss_blind_active is True
+        assert restored.state.disabled_joker_slots == 1
+        assert tuple(restored.state.boss_disabled_joker_indexes) == saved_disabled
+        outcomes.append(saved_disabled)
+
+    assert outcomes == [outcomes[0]] * 4
+
+
+def test_env_active_hook_press_play_is_seed_stable_across_repeated_episodes():
+    outcomes = []
+
+    for _ in range(4):
+        env = BalatroEnv(seed=123)
+        env.boss_blind_manager.activate_boss_blind(BossBlindType.THE_HOOK, env.state.to_dict())
+        env.state.phase = Phase.PLAY
+        env.state.boss_blind_active = True
+        env.state.active_boss_blind = BossBlindType.THE_HOOK
+        env.state.hand_indexes = list(range(8))
+        env.game.hand_indexes = env.state.hand_indexes.copy()
+
+        def _low_score(self, selected_cards, hand_type, hand_type_name):
+            return 1, {}
+
+        def _skip_card_effects(self, selected_cards, selected_game_cards, base_score):
+            return base_score, 0, [], []
+
+        env.play_handler._score_hand = MethodType(_low_score, env.play_handler)
+        env.play_handler._apply_card_effects = MethodType(_skip_card_effects, env.play_handler)
+
+        first_hand = tuple(env.state.hand_indexes)
+
+        _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
+
+        assert reward == 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["selected_cards"] == [0]
+
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+
+        assert np.isfinite(reward)
+        assert terminated is False
+        assert truncated is False
+        assert obs["phase"] == Phase.PLAY
+        assert info["cards_played"] == 1
         assert env.state.boss_blind_active is True
         assert env.state.active_boss_blind == BossBlindType.THE_HOOK
-        assert env.state.discards_left == 2
 
         second_draw_hand = tuple(env.state.hand_indexes)
         boss_rolls = [entry for entry in env.rng.history if entry[0] == "boss_abilities"]
 
         assert len(second_draw_hand) == 8
-        assert len(boss_rolls) == first_draw_roll_count
-        outcomes.append((first_draw_hand, second_draw_hand, tuple(boss_rolls)))
+        assert boss_rolls
+        outcomes.append((first_hand, second_draw_hand, tuple(boss_rolls)))
 
     assert outcomes == [outcomes[0]] * 4
 
 
-def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redraw():
+def test_env_active_hook_mid_round_save_load_preserves_seed_stable_press_play():
     outcomes = []
 
     for _ in range(4):
@@ -1331,9 +1853,17 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
         env.state.hand_indexes = list(range(8))
         env.game.hand_indexes = env.state.hand_indexes.copy()
 
-        env.play_handler.apply_boss_blind_to_hand()
         saved = env.save_state()
         saved_hand = tuple(env.state.hand_indexes)
+
+        def _low_score(self, selected_cards, hand_type, hand_type_name):
+            return 1, {}
+
+        def _skip_card_effects(self, selected_cards, selected_game_cards, base_score):
+            return base_score, 0, [], []
+
+        env.play_handler._score_hand = MethodType(_low_score, env.play_handler)
+        env.play_handler._apply_card_effects = MethodType(_skip_card_effects, env.play_handler)
 
         _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
 
@@ -1342,13 +1872,13 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
         assert truncated is False
         assert info["selected_cards"] == [0]
 
-        obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
 
         assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
-        assert info["cards_discarded"] == 1
+        assert info["cards_played"] == 1
 
         continued_hand = tuple(env.state.hand_indexes)
 
@@ -1361,6 +1891,9 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
         assert restored.game.hand_indexes == list(saved_hand)
         assert restored.game.round_discards == restored.state.discards_left
 
+        restored.play_handler._score_hand = MethodType(_low_score, restored.play_handler)
+        restored.play_handler._apply_card_effects = MethodType(_skip_card_effects, restored.play_handler)
+
         _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
 
         assert reward == 0.0
@@ -1368,13 +1901,13 @@ def test_env_active_hook_mid_round_save_load_preserves_seed_stable_discard_redra
         assert truncated is False
         assert info["selected_cards"] == [0]
 
-        obs, reward, terminated, truncated, info = restored.step(Action.DISCARD)
+        obs, reward, terminated, truncated, info = restored.step(Action.PLAY_HAND)
 
         assert np.isfinite(reward)
         assert terminated is False
         assert truncated is False
         assert obs["phase"] == Phase.PLAY
-        assert info["cards_discarded"] == 1
+        assert info["cards_played"] == 1
         assert restored.state.boss_blind_active is True
         assert restored.state.active_boss_blind == BossBlindType.THE_HOOK
 
@@ -1713,6 +2246,120 @@ def test_env_active_fish_mid_round_save_load_preserves_face_down_redraw_state():
 
         assert restored_hand == continued_hand
         assert restored_face_down == continued_face_down
+
+    assert outcomes == [outcomes[0]] * 4
+
+
+def test_env_active_serpent_mid_round_save_load_preserves_post_first_action_three_card_draw_rule():
+    outcomes = []
+
+    for _ in range(4):
+        env = BalatroEnv(seed=123)
+        env.state.round = 3
+        env.state.phase = Phase.BLIND_SELECT
+        env.state.pending_boss_blind = BossBlindType.THE_SERPENT
+
+        def _low_score(self, selected_cards, hand_type, hand_type_name):
+            return 1, {}
+
+        def _skip_card_effects(self, selected_cards, selected_game_cards, base_score):
+            return base_score, 0, [], []
+
+        env.play_handler._score_hand = MethodType(_low_score, env.play_handler)
+        env.play_handler._apply_card_effects = MethodType(_skip_card_effects, env.play_handler)
+
+        obs, reward, terminated, truncated, info = env.step(Action.SELECT_BLIND_BASE + 2)
+
+        assert reward > 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["blind_type"] == "boss"
+        assert info["boss_blind"] == "The Serpent"
+        assert obs["phase"] == Phase.PLAY
+        assert env.state.active_boss_blind == BossBlindType.THE_SERPENT
+        assert env.state.boss_blind_active is True
+
+        _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
+
+        assert reward == 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["selected_cards"] == [0]
+
+        obs, reward, terminated, truncated, info = env.step(Action.PLAY_HAND)
+
+        assert np.isfinite(reward)
+        assert terminated is False
+        assert truncated is False
+        assert obs["phase"] == Phase.PLAY
+        assert info["cards_played"] == 1
+        assert env.state.active_boss_blind == BossBlindType.THE_SERPENT
+        assert env.state.boss_blind_active is True
+
+        saved = env.save_state()
+        saved_hand = tuple(env.state.hand_indexes)
+        saved_draw_pile = tuple(env.state.draw_pile_indexes)
+
+        _, reward, terminated, truncated, info = env.step(Action.SELECT_CARD_BASE)
+
+        assert reward == 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["selected_cards"] == [0]
+
+        obs, reward, terminated, truncated, info = env.step(Action.DISCARD)
+
+        assert np.isfinite(reward)
+        assert terminated is False
+        assert truncated is False
+        assert obs["phase"] == Phase.PLAY
+        assert info["cards_discarded"] == 1
+
+        continued_hand = tuple(env.state.hand_indexes)
+        continued_draw_pile = tuple(env.state.draw_pile_indexes)
+
+        restored = BalatroEnv(seed=999)
+        restored.load_state(saved)
+
+        assert tuple(restored.state.hand_indexes) == saved_hand
+        assert tuple(restored.state.draw_pile_indexes) == saved_draw_pile
+        assert restored.state.boss_blind_active is True
+        assert restored.state.active_boss_blind == BossBlindType.THE_SERPENT
+        assert restored.game.hand_indexes == list(saved_hand)
+        assert restored.game.draw_pile_indexes == list(saved_draw_pile)
+
+        _, reward, terminated, truncated, info = restored.step(Action.SELECT_CARD_BASE)
+
+        assert reward == 0.0
+        assert terminated is False
+        assert truncated is False
+        assert info["selected_cards"] == [0]
+
+        obs, reward, terminated, truncated, info = restored.step(Action.DISCARD)
+
+        assert np.isfinite(reward)
+        assert terminated is False
+        assert truncated is False
+        assert obs["phase"] == Phase.PLAY
+        assert info["cards_discarded"] == 1
+        assert restored.state.boss_blind_active is True
+        assert restored.state.active_boss_blind == BossBlindType.THE_SERPENT
+
+        restored_hand = tuple(restored.state.hand_indexes)
+        restored_draw_pile = tuple(restored.state.draw_pile_indexes)
+        outcomes.append(
+            (
+                saved_hand,
+                saved_draw_pile,
+                continued_hand,
+                continued_draw_pile,
+                restored_hand,
+                restored_draw_pile,
+            )
+        )
+
+        assert restored_hand == continued_hand
+        assert restored_draw_pile == continued_draw_pile
 
     assert outcomes == [outcomes[0]] * 4
 

@@ -4,6 +4,8 @@ This is the main entry point for the Balatro gym environment. It coordinates
 between all the different subsystems and provides the gym.Env interface.
 """
 
+from copy import deepcopy
+
 import numpy as np
 from typing import Dict, Optional, Any, Tuple
 import gymnasium as gym
@@ -139,7 +141,12 @@ class BalatroEnv(gym.Env):
             self.rng
         )
         
-        self.shop_handler = ShopPhaseHandler(self.state, self.rng)
+        self.shop_handler = ShopPhaseHandler(
+            self.state,
+            self.rng,
+            boss_blind_manager=self.boss_blind_manager,
+            game=self.game,
+        )
         
         self.blind_select_handler = BlindSelectHandler(
             self.state, self.game, self.boss_blind_manager, 
@@ -243,6 +250,7 @@ class BalatroEnv(gym.Env):
         """
         return {
             'state': self.state.copy(),
+            'terminal_outcome': self._terminal_outcome,
             'rng_state': self.rng.get_state(),
             'engine_state': {
                 'hand_levels': self.engine.hand_levels.copy(),
@@ -258,7 +266,7 @@ class BalatroEnv(gym.Env):
             },
             'boss_blind_state': {
                 'active_blind': self.boss_blind_manager.active_blind,
-                'blind_state': self.boss_blind_manager.blind_state.copy() 
+                'blind_state': deepcopy(self.boss_blind_manager.blind_state)
                     if self.boss_blind_manager.blind_state else {}
             }
         }
@@ -270,6 +278,7 @@ class BalatroEnv(gym.Env):
             saved_state: State dictionary from save_state()
         """
         self.state = saved_state['state'].copy()
+        self._terminal_outcome = saved_state.get('terminal_outcome')
         self.rng.set_state(saved_state['rng_state'])
         
         # Restore engine state
@@ -301,7 +310,9 @@ class BalatroEnv(gym.Env):
         # Restore boss blind state
         if 'boss_blind_state' in saved_state:
             self.boss_blind_manager.active_blind = saved_state['boss_blind_state']['active_blind']
-            self.boss_blind_manager.blind_state = saved_state['boss_blind_state']['blind_state'].copy()
+            self.boss_blind_manager.blind_state = deepcopy(
+                saved_state['boss_blind_state']['blind_state']
+            )
         
         # Update phase handlers with restored state
         self._update_phase_handlers()

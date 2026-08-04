@@ -10,9 +10,10 @@ This module handles all actions during the SHOP phase including:
 from typing import Any, Dict, List, Optional, Tuple
 
 from balatro_gym.core.cards import Card, Edition, Enhancement, Rank, Seal, Suit
-from balatro_gym.core.boss_blinds import BossBlindType, select_boss_blind
+from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType, select_boss_blind
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core_utils.rng import DeterministicRNG
+from balatro_gym.core_utils.joker_sale import sell_joker
 from balatro_gym.core_utils.state import UnifiedGameState
 from balatro_gym.core.shop import Shop, ShopAction, PlayerState, ItemType
 from balatro_gym.core.jokers import JOKER_LIBRARY
@@ -22,7 +23,13 @@ from balatro_gym.scoring.scoring_engine import HandType
 class ShopPhaseHandler:
     """Handles all actions during the SHOP phase."""
     
-    def __init__(self, state: UnifiedGameState, rng: DeterministicRNG):
+    def __init__(
+        self,
+        state: UnifiedGameState,
+        rng: DeterministicRNG,
+        boss_blind_manager: BossBlindManager | None = None,
+        game: Any | None = None,
+    ):
         """Initialize the shop phase handler.
         
         Args:
@@ -31,6 +38,8 @@ class ShopPhaseHandler:
         """
         self.state = state
         self.rng = rng
+        self.boss_blind_manager = boss_blind_manager
+        self.game = game
         self.shop: Optional[Shop] = None
         self.pack_open_handler = None
     
@@ -200,34 +209,22 @@ class ShopPhaseHandler:
         
         if not (0 <= joker_idx < len(self.state.jokers)):
             return -1.0, False, {'error': 'Invalid joker index'}
-        
-        # Check if joker is eternal
-        if joker_idx in self.state.eternal_jokers:
-            return -1.0, False, {'error': 'Cannot sell eternal jokers'}
-        
-        # Remove and sell joker
-        sold_joker = self.state.remove_joker(joker_idx)
-        if sold_joker is None:
-            return -1.0, False, {'error': 'Failed to remove joker'}
-        
-        # Calculate sell value
-        sell_value = self._calculate_sell_value(sold_joker)
-        self.state.money += sell_value
-        self.state.jokers_sold += 1
-        if self.state.active_boss_blind == BossBlindType.THE_VERDANT:
-            self.state.boss_blind_active = False
-            self.state.active_boss_blind = None
-            for card_state in self.state.card_states.values():
-                card_state.is_debuffed = False
+
+        try:
+            sold_joker, sell_value, sale_effects = sell_joker(
+                self.state,
+                joker_idx,
+                boss_blind_manager=self.boss_blind_manager,
+                game=self.game,
+            )
+        except ValueError as exc:
+            return -1.0, False, {'error': str(exc)}
         
         # Sync with shop player state
         self._sync_player_state()
         
         # Calculate reward (small positive to allow strategic selling)
         reward = sell_value / 10.0
-        
-        # Special joker sale effects
-        sale_effects = self._apply_joker_sale_effects(sold_joker)
         
         info = {
             'action': 'sold_joker',
@@ -481,37 +478,6 @@ class ShopPhaseHandler:
             HandType.FLUSH_FIVE: 'Flush Five',
         }
         return hand_name_map.get(hand_type, hand_type.name.replace('_', ' ').title())
-    
-    def _calculate_sell_value(self, joker) -> int:
-        """Calculate the sell value of a joker."""
-        base_value = max(3, joker.base_cost // 2)
-        
-        # Some jokers might have special sell values
-        special_sell_values = {
-            'Egg': 5,  # Egg gains value over time
-            'Gift Card': 0,  # Gift cards can't be sold
-        }
-        
-        if joker.name in special_sell_values:
-            return special_sell_values[joker.name]
-        
-        return base_value
-
-    def _apply_joker_sale_effects(self, joker) -> Dict:
-        """Apply any special effects from selling specific jokers."""
-        effects = {}
-        
-        # Some jokers have effects when sold
-        if joker.name == 'Luchador':
-            # Luchador disables itself when sold
-            effects['luchador_effect'] = 'Boss blind disabled this round'
-        elif joker.name == 'Swashbuckler':
-            # Swashbuckler gives extra sell value based on jokers sold
-            bonus = self.state.jokers_sold
-            self.state.money += bonus
-            effects['swashbuckler_bonus'] = bonus
-        
-        return effects
     
     def _get_voucher_effect(self, voucher_name: str) -> str:
         """Get description of voucher effect."""

@@ -1058,7 +1058,7 @@ def test_boss_reroll_state_resets_after_boss_round_advances_ante():
     assert state.boss_blind_rerolls_used_ante == 0
 
 
-def test_boss_hook_draw_discards_use_seeded_boss_ability_rng():
+def test_boss_hook_press_play_discards_use_seeded_boss_ability_rng():
     hand_cards = [
         Card(Rank.ACE, Suit.SPADES),
         Card(Rank.KING, Suit.HEARTS),
@@ -1073,7 +1073,7 @@ def test_boss_hook_draw_discards_use_seeded_boss_ability_rng():
         rng = DeterministicRNG(321)
         manager = BossBlindManager(rng)
         manager.activate_boss_blind(BossBlindType.THE_HOOK, {})
-        effects = manager.on_hand_drawn(hand_cards, {})
+        effects = manager.on_press_play(hand_cards, [0], {"money": 0})
         discard_sequences.append(tuple(effects["discarded_cards"]))
         rng_histories.append(rng.history.copy())
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from balatro_gym.core.boss_blinds import BossBlindType
+from balatro_gym.core.boss_blinds import BossBlindManager, BossBlindType
 from balatro_gym.core.cards import Card, Enhancement, Rank, Seal, Suit
 from balatro_gym.core.constants import Action, Phase
 from balatro_gym.core.jokers import JokerInfo
@@ -81,6 +81,66 @@ def test_round_manager_saved_failed_blind_reaches_round_eval_instead_of_game_ove
     assert state.phase == Phase.ROUND_EVAL
     assert state.game_over is False
     assert state.round_eval_cashout == 0
+
+
+def test_round_manager_saved_failed_final_boss_does_not_mark_run_as_won():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=8,
+        win_ante=8,
+        round=3,
+        money=12,
+        hands_left=0,
+        discards_left=0,
+        round_chips_scored=299,
+        chips_needed=300,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_HOOK,
+        no_interest=True,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [{"saved": True}])
+    boss_manager = SimpleNamespace(
+        active_blind=SimpleNamespace(money_reward=5),
+        disable_boss_blind=lambda *_args, **_kwargs: None,
+    )
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_manager)
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.game_over is False
+    assert state.won is False
+    assert state.round_eval_cashout == 0
+
+
+def test_round_manager_disabled_boss_effect_still_counts_as_boss_round_for_reward_and_win():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=8,
+        win_ante=8,
+        round=3,
+        money=0,
+        hands_left=0,
+        discards_left=0,
+        round_chips_scored=300,
+        chips_needed=300,
+        boss_blind_active=False,
+        active_boss_blind=BossBlindType.THE_CERULEAN,
+        no_interest=True,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=BossBlindManager())
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.won is True
+    assert state.round_eval_cashout == 8
+    assert state.active_boss_blind is None
 
 
 def test_round_manager_cash_out_pays_staged_eval_and_enters_shop():
@@ -292,7 +352,160 @@ def test_round_manager_round_three_clear_without_boss_does_not_set_won():
 
     assert state.phase == Phase.ROUND_EVAL
     assert state.won is False
+
+
+def test_round_manager_water_boss_cashout_does_not_restore_discard_payout_row():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        round=3,
+        money=0,
+        hands_left=0,
+        discards_left=0,
+        money_per_discard=2,
+        round_chips_scored=300,
+        chips_needed=300,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_WATER,
+        no_interest=True,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    boss_manager = BossBlindManager()
+    boss_manager.activate_boss_blind(BossBlindType.THE_WATER, {"discards_left": 3})
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_manager)
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.round_eval_cashout == 5
     assert state.game_over is False
+
+
+def test_round_manager_water_boss_cashout_keeps_exhausted_discards_until_cashout():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=2,
+        round=3,
+        money=0,
+        hands_left=0,
+        discards_left=3,
+        money_per_discard=2,
+        no_interest=True,
+        round_chips_scored=600,
+        chips_needed=600,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_WATER,
+    )
+    game = SimpleNamespace(round_hands=0, round_discards=0)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    boss_blind_manager = BossBlindManager()
+    boss_blind_manager.activate_boss_blind(BossBlindType.THE_WATER, state.to_dict())
+    state.discards_left = 0
+    game.round_discards = 0
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_blind_manager)
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.boss_blind_active is False
+    assert state.active_boss_blind is None
+    assert state.round_eval_cashout == 5
+    assert game.round_discards == 0
+
+
+def test_round_manager_needle_boss_cashout_keeps_exhausted_hands_until_cashout():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=2,
+        round=3,
+        money=0,
+        hands_left=1,
+        discards_left=3,
+        no_interest=True,
+        round_chips_scored=600,
+        chips_needed=600,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_NEEDLE,
+    )
+    game = SimpleNamespace(round_hands=1, round_discards=3)
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    boss_blind_manager = BossBlindManager()
+    boss_blind_manager.activate_boss_blind(BossBlindType.THE_NEEDLE, state.to_dict())
+    state.hands_left = 0
+    game.round_hands = 0
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_blind_manager)
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.boss_blind_active is False
+    assert state.active_boss_blind is None
+    assert state.round_eval_cashout == 5
+    assert game.round_hands == 0
+
+
+def test_round_manager_manacle_boss_cashout_restores_hand_size_without_drawing_extra_card():
+    state = UnifiedGameState(
+        phase=Phase.PLAY,
+        ante=2,
+        round=3,
+        hand_size=7,
+        hand_indexes=[0, 1, 2, 3, 4, 5, 6],
+        draw_pile_indexes=[7],
+        hands_left=1,
+        discards_left=3,
+        round_chips_scored=600,
+        chips_needed=600,
+        boss_blind_active=True,
+        active_boss_blind=BossBlindType.THE_MANACLE,
+    )
+    game = SimpleNamespace(round_hands=1, round_discards=3, hand_size=7, hand_indexes=state.hand_indexes.copy(), draw_pile_indexes=state.draw_pile_indexes.copy())
+    joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+    boss_blind_manager = BossBlindManager()
+    boss_blind_manager.activate_boss_blind(BossBlindType.THE_MANACLE, state.to_dict())
+    manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_blind_manager)
+
+    outcome = manager.enter_round_eval()
+
+    assert outcome == "round_eval"
+    assert state.phase == Phase.ROUND_EVAL
+    assert state.hand_size == 8
+    assert game.hand_size == 8
+    assert game.hand_indexes == [0, 1, 2, 3, 4, 5, 6]
+    assert game.draw_pile_indexes == [7]
+
+
+def test_round_manager_wall_and_violet_keep_boss_chip_threshold_through_round_eval_cleanup():
+    for blind_type, boss_threshold in (
+        (BossBlindType.THE_WALL, 800),
+        (BossBlindType.THE_VIOLET, 1200),
+    ):
+        state = UnifiedGameState(
+            phase=Phase.PLAY,
+            ante=2,
+            round=3,
+            chips_needed=boss_threshold,
+            hands_left=1,
+            round_chips_scored=boss_threshold,
+            boss_blind_active=True,
+            active_boss_blind=blind_type,
+        )
+        game = SimpleNamespace(round_hands=1, round_discards=3, blinds=[0, 0, boss_threshold], blind_index=2)
+        joker_effects = SimpleNamespace(end_of_round_effects=lambda _: [])
+        boss_blind_manager = BossBlindManager()
+        boss_blind_manager.activate_boss_blind(blind_type, state.to_dict())
+        boss_blind_manager.blind_state["base_chips"] = boss_threshold // (2 if blind_type == BossBlindType.THE_WALL else 3)
+        manager = RoundManager(state, game, joker_effects, boss_blind_manager=boss_blind_manager)
+
+        outcome = manager.enter_round_eval()
+
+        assert outcome == "round_eval"
+        assert state.phase == Phase.ROUND_EVAL
+        assert state.chips_needed == boss_threshold
+        assert game.blinds[2] == boss_threshold
 
 
 def test_env_ante_8_boss_win_terminates_after_real_cashout():

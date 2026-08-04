@@ -156,14 +156,24 @@ class UnifiedScorer:
         name = getattr(joker_entry, 'name', None)
         return name if isinstance(name, str) else None
 
+    @staticmethod
+    def _joker_disabled(joker_entry: Any) -> bool:
+        if isinstance(joker_entry, dict):
+            return bool(joker_entry.get("disabled", False))
+        return bool(getattr(joker_entry, "disabled", False))
+
     def _iter_joker_names(self, game_state: Dict[str, Any]):
         for joker_entry in game_state.get('jokers', []):
+            if self._joker_disabled(joker_entry):
+                continue
             joker_name = self._joker_name(joker_entry)
             if joker_name:
                 yield joker_name
 
     def _iter_jokers(self, game_state: Dict[str, Any]):
         for joker_index, joker_entry in enumerate(game_state.get('jokers', [])):
+            if self._joker_disabled(joker_entry):
+                continue
             joker_name = self._joker_name(joker_entry)
             if joker_name:
                 yield joker_index, joker_name
@@ -481,7 +491,10 @@ class UnifiedScorer:
                 context.hand_type_name,
             )
 
-        if context.game_state.get("active_boss_blind") == "THE_FLINT":
+        if (
+            context.game_state.get("boss_blind_active")
+            and context.game_state.get("active_boss_blind") == "THE_FLINT"
+        ):
             return int(base_chips * 0.5 + 0.5), max(1, int(base_mult * 0.5 + 0.5))
 
         return base_chips, base_mult

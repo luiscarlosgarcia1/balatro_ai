@@ -42,7 +42,7 @@ class BossBlindType(IntEnum):
     THE_ARM = auto()       # Decrease level of played poker hand
     THE_VIOLET = auto()    # All cards are debuffed
     THE_VERDANT = auto()   # Required cards scale up by 1 per hand until 7
-    THE_AMBER = auto()     # -1 active joker slot
+    THE_AMBER = auto()     # Flips and shuffles all Jokers
     THE_CRIMSON = auto()   # All Heart cards are flipped
     THE_CERULEAN = auto()  # All cards in deck are flipped
 
@@ -348,10 +348,15 @@ class BossBlindManager:
             'played_hand_types': set(),
             'played_cards': set(),
             'first_hand': True,
+            'prepped': False,
             'hands_played': 0,
             'cards_required': 5,  # For The Verdant
             'disabled_joker_slots': 0,
             'face_down_cards': set(),
+            'forced_card_ref': None,
+            'original_discards': int(game_state.get('discards_left', 0) or 0),
+            'original_hands': int(game_state.get('hands_left', 0) or 0),
+            'original_hand_size': int(game_state.get('hand_size', 0) or 0),
         }
         
         effects = {
@@ -371,12 +376,12 @@ class BossBlindManager:
             effects['modifications']['hands'] = 1
 
         elif blind_type == BossBlindType.THE_AMBER:
-            joker_indexes = list(range(len(game_state.get('jokers', []))))
-            if self.rng is not None:
-                self.rng.shuffle('boss_abilities', joker_indexes)
-            else:
-                random.shuffle(joker_indexes)
+            joker_indexes = self._shuffle_amber_jokers(len(game_state.get('jokers', [])))
             effects['modifications']['joker_order'] = joker_indexes
+            effects['modifications']['hidden_joker_indexes'] = list(range(len(joker_indexes)))
+        elif blind_type == BossBlindType.THE_CRIMSON:
+            # Crimson consumes an already-armed prep state on the first hand draw.
+            self.blind_state['prepped'] = True
             
         return effects
     
@@ -388,13 +393,14 @@ class BossBlindManager:
         effects = {'face_down_cards': [], 'discarded_cards': []}
         
         if self.active_blind.blind_type == BossBlindType.THE_WHEEL:
-            # 1 in 7 cards face down
+            # Balatro scales Wheel by the run's normal probability layer.
+            flip_chance = self._normal_probability(game_state) / 7
             for i, card in enumerate(hand_cards):
                 if self.rng is not None:
                     roll = self.rng.get_float('boss_abilities')
                 else:
                     roll = random.random()
-                if roll < 1/7:
+                if roll < flip_chance:
                     effects['face_down_cards'].append(i)
                     
         elif self.active_blind.blind_type == BossBlindType.THE_HOUSE:
@@ -409,28 +415,85 @@ class BossBlindManager:
                     effects['face_down_cards'].append(i)
                     
         elif self.active_blind.blind_type == BossBlindType.THE_FISH:
-            # All face down after first hand
-            if not self.blind_state['first_hand']:
+            # All face down on the draw after a hand is played.
+            if self.blind_state.get('prepped'):
                 effects['face_down_cards'] = list(range(len(hand_cards)))
+                self.blind_state['prepped'] = False
 
         elif self.active_blind.blind_type == BossBlindType.THE_CRIMSON:
             joker_count = int(game_state.get('all_joker_count', len(game_state.get('jokers', []))))
-            if joker_count > 0:
+            if self.blind_state.get('prepped') and joker_count > 0:
+                joker_entries = list(game_state.get('jokers', []) or [])
+                candidate_indexes = [
+                    index
+                    for index, joker in enumerate(joker_entries[:joker_count])
+                    if not (
+                        bool(joker.get('disabled', False))
+                        if isinstance(joker, dict)
+                        else bool(getattr(joker, 'disabled', False))
+                    )
+                ]
+                if joker_count < 2 or not candidate_indexes:
+                    candidate_indexes = list(range(joker_count))
                 if self.rng is not None:
-                    disabled = self.rng.choice('boss_abilities', list(range(joker_count)))
+                    disabled = self.rng.choice('boss_abilities', candidate_indexes)
                 else:
-                    disabled = random.randrange(joker_count)
+                    disabled = random.choice(candidate_indexes)
                 effects['disabled_joker_indexes'] = [disabled]
+            self.blind_state['prepped'] = False
 
         elif self.active_blind.blind_type == BossBlindType.THE_CERULEAN:
             if hand_cards:
-                indexes = list(range(len(hand_cards)))
-                if self.rng is not None:
-                    forced = self.rng.choice('boss_abilities', indexes)
-                else:
-                    forced = random.choice(indexes)
+                forced = None
+                forced_ref = self.blind_state.get('forced_card_ref')
+                if forced_ref is not None:
+                    for i, card in enumerate(hand_cards):
+                        if id(card) == forced_ref:
+                            forced = i
+                            break
+                if forced is None:
+                    indexes = list(range(len(hand_cards)))
+                    if self.rng is not None:
+                        forced = self.rng.choice('boss_abilities', indexes)
+                    else:
+                        forced = random.choice(indexes)
+                    self.blind_state['forced_card_ref'] = id(hand_cards[forced])
                 effects['forced_selected_card'] = forced
         
+        return effects
+
+    def on_press_play(
+        self,
+        hand_cards: List[Any],
+        selected_indexes: List[int],
+        game_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Apply effects that trigger when the player presses play."""
+        if not self.active_blind:
+            return {}
+
+        effects: Dict[str, Any] = {}
+        blind_type = self.active_blind.blind_type
+        if blind_type == BossBlindType.THE_FISH:
+            self.blind_state['prepped'] = True
+            return effects
+        if blind_type == BossBlindType.THE_CRIMSON:
+            self.blind_state['prepped'] = True
+            return effects
+        if blind_type == BossBlindType.THE_TOOTH:
+            effects['money'] = max(0, int(game_state.get('money', 0)) - len(selected_indexes))
+            return effects
+        if blind_type == BossBlindType.THE_HOOK and hand_cards:
+            indexes = list(range(len(hand_cards)))
+            discard_count = min(2, len(indexes))
+            if discard_count <= 0:
+                return effects
+
+            if self.rng is not None:
+                discarded_cards = self.rng.sample('boss_abilities', indexes, discard_count)
+            else:
+                discarded_cards = random.sample(indexes, discard_count)
+            effects['discarded_cards'] = discarded_cards
         return effects
     
     def can_play_hand(self, selected_cards: List[Any], hand_type: str) -> Tuple[bool, str]:
@@ -522,6 +585,24 @@ class BossBlindManager:
 
     def _is_face_card(self, card: Any) -> bool:
         return self._rank_value(card) in {11, 12, 13}
+
+    @staticmethod
+    def _normal_probability(game_state: Dict[str, Any]) -> float:
+        """Return the run's normal probability multiplier for boss chance effects."""
+        jokers = list(game_state.get("jokers", []) or [])
+        multiplier = 1.0
+        for joker in jokers:
+            if isinstance(joker, dict):
+                joker_name = joker.get("name")
+                disabled = bool(joker.get("disabled", False))
+            else:
+                joker_name = getattr(joker, "name", joker)
+                disabled = bool(getattr(joker, "disabled", False))
+            if disabled:
+                continue
+            if joker_name == "Oops! All 6s":
+                multiplier *= 2.0
+        return multiplier
     
     def on_hand_scored(self, played_cards: List[Any], hand_type: str, game_state: Dict):
         """Update state after hand is scored"""
@@ -530,6 +611,7 @@ class BossBlindManager:
             
         # Update played hand types
         self.blind_state['played_hand_types'].add(hand_type)
+        game_state['boss_played_hand_types'] = sorted(self.blind_state['played_hand_types'])
         self.blind_state['first_hand'] = False
         self.blind_state['hands_played'] += 1
         
@@ -539,30 +621,107 @@ class BossBlindManager:
                 card_id = getattr(card, 'id', None) or id(card)
                 self.blind_state['played_cards'].add(card_id)
                 
-        # Money penalty for The Tooth
-        if self.active_blind.blind_type == BossBlindType.THE_HOOK:
-            game_state['boss_discard_random_count'] = 2
-
-        # Money penalty for The Tooth
-        if self.active_blind.blind_type == BossBlindType.THE_TOOTH:
-            game_state['money'] = max(0, game_state.get('money', 0) - len(played_cards))
-
-        if self.active_blind.blind_type == BossBlindType.THE_OX:
-            hand_counts = game_state.get('hand_play_counts', {})
-            if hand_counts:
-                max_count = max(hand_counts.values())
-                most_played = {hand for hand, count in hand_counts.items() if count == max_count}
-                if hand_type in most_played:
-                    game_state['money'] = 0
-
-        # Special draw for The Serpent
-        if self.active_blind.blind_type == BossBlindType.THE_SERPENT:
-            # Force draw exactly 3 cards next hand
-            game_state['force_draw_count'] = 3
-    
     def get_disabled_joker_count(self) -> int:
         """Get number of disabled joker slots"""
         return self.blind_state.get('disabled_joker_slots', 0)
+
+    def _shuffle_amber_jokers(self, joker_count: int) -> List[int]:
+        """Mirror Amber Acorn's three deterministic Lua-side shuffles."""
+        joker_indexes = list(range(joker_count))
+        if joker_count <= 1:
+            return joker_indexes
+
+        for _ in range(3):
+            if self.rng is not None:
+                self.rng.shuffle('boss_abilities', joker_indexes)
+            else:
+                random.shuffle(joker_indexes)
+        return joker_indexes
+
+    def clear_cerulean_forced_selection(self, state: Any | None = None) -> None:
+        """Forget Cerulean's forced-card identity before a discard redraw."""
+        self.blind_state['forced_card_ref'] = None
+        if state is not None:
+            state.boss_forced_selected_card = None
+
+    def disable_boss_blind(
+        self,
+        state: Any,
+        game: Any | None = None,
+        *,
+        restore_round_resources: bool = True,
+        preserve_boss_round_identity: bool = False,
+        draw_restored_manacle_card: bool = True,
+        restore_chip_thresholds: bool = True,
+    ) -> None:
+        """Disable the active boss blind and revert modeled stateful effects."""
+        blind = self.active_blind
+        blind_type = getattr(blind, "blind_type", getattr(state, "active_boss_blind", None))
+        if blind_type is None:
+            return
+
+        original_discards = int(self.blind_state.get('original_discards', getattr(state, 'discards_left', 0)) or 0)
+        original_hands = int(self.blind_state.get('original_hands', getattr(state, 'hands_left', 0)) or 0)
+        original_hand_size = int(self.blind_state.get('original_hand_size', getattr(state, 'hand_size', 0)) or 0)
+        base_chips = self.blind_state.get('base_chips')
+
+        if blind_type == BossBlindType.THE_WATER and restore_round_resources:
+            state.discards_left = original_discards
+            if game is not None and hasattr(game, 'round_discards'):
+                game.round_discards = original_discards
+
+        if blind_type == BossBlindType.THE_NEEDLE and restore_round_resources:
+            state.hands_left = original_hands
+            if game is not None and hasattr(game, 'round_hands'):
+                game.round_hands = original_hands
+
+        if blind_type == BossBlindType.THE_MANACLE and restore_round_resources:
+            restored_hand_size = max(1, int(getattr(state, 'hand_size', 0) or 0) + 1)
+
+            state.hand_size = restored_hand_size
+            if game is not None and hasattr(game, 'hand_size'):
+                game.hand_size = restored_hand_size
+            if (
+                draw_restored_manacle_card
+                and len(getattr(state, 'hand_indexes', [])) < state.hand_size
+                and getattr(state, 'draw_pile_indexes', [])
+            ):
+                cards_to_draw = min(state.hand_size - len(state.hand_indexes), len(state.draw_pile_indexes))
+                for _ in range(cards_to_draw):
+                    state.hand_indexes.append(state.draw_pile_indexes.pop(0))
+                if game is not None and hasattr(game, 'hand_indexes'):
+                    game.hand_indexes = state.hand_indexes.copy()
+                    if hasattr(game, 'draw_pile_indexes'):
+                        game.draw_pile_indexes = state.draw_pile_indexes.copy()
+
+        if (
+            restore_chip_thresholds
+            and base_chips is not None
+            and blind_type in {BossBlindType.THE_WALL, BossBlindType.THE_VIOLET}
+        ):
+            state.chips_needed = int(base_chips)
+            if game is not None and hasattr(game, 'blinds') and hasattr(game, 'blind_index'):
+                blind_index = int(getattr(game, 'blind_index', 2))
+                if 0 <= blind_index < len(game.blinds):
+                    game.blinds[blind_index] = state.chips_needed
+
+        state.face_down_cards = []
+        state.force_draw_count = None
+        state.boss_disabled_joker_indexes = []
+        state.hidden_joker_indexes = []
+        state.disabled_joker_slots = 0
+        state.boss_forced_selected_card = None
+        state.boss_discard_random_count = 0
+        state.boss_played_hand_types = []
+        state.boss_round_ox_target_hand = None
+
+        for card_state in getattr(state, 'card_states', {}).values():
+            card_state.is_face_down = False
+            card_state.is_debuffed = False
+
+        state.boss_blind_active = False
+        state.active_boss_blind = blind_type if preserve_boss_round_identity else None
+        self.deactivate()
     
     def deactivate(self):
         """Clear boss blind effects"""

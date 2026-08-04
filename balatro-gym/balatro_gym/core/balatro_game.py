@@ -25,6 +25,9 @@ class BalatroGame:
         self.round_discards = 3
         self.round_score = 0
         self.hand_size = 8
+        self.forced_draw_count: Optional[int] = None
+        self.serpent_active = False
+        self.serpent_post_first_action_draw = False
         self.discards = 3
         self.state = GameState.PLAYING
         self.blinds = [300, 450, 600]  # Small, big, boss
@@ -99,8 +102,16 @@ class BalatroGame:
         """Draw cards to fill hand up to hand_size"""
         self._ensure_card_zones()
 
-        # Draw cards to fill hand
-        cards_to_draw = min(self.hand_size - len(self.hand_indexes), len(self.draw_pile_indexes))
+        forced_draw_count = self.forced_draw_count
+        self.forced_draw_count = None
+
+        # Draw cards to fill hand, or satisfy a boss-specific shared draw rule.
+        if forced_draw_count is not None:
+            cards_to_draw = min(int(forced_draw_count), len(self.draw_pile_indexes))
+        elif self.serpent_active and self.serpent_post_first_action_draw:
+            cards_to_draw = min(3, len(self.draw_pile_indexes))
+        else:
+            cards_to_draw = min(self.hand_size - len(self.hand_indexes), len(self.draw_pile_indexes))
         for _ in range(cards_to_draw):
             self.hand_indexes.append(self.draw_pile_indexes.pop(0))
 
@@ -154,6 +165,9 @@ class BalatroGame:
         self.highlighted_indexes = []
         self.round_discards -= 1
         self.discard_pile_indexes.extend(reversed(discarded_indexes))
+
+        if self.serpent_active:
+            self.serpent_post_first_action_draw = True
         
         # Draw new cards
         self._draw_cards()
@@ -198,6 +212,9 @@ class BalatroGame:
         self.play_area_indexes.extend(reversed(played_indexes))
         self.discard_pile_indexes.extend(self.play_area_indexes)
         self.play_area_indexes = []
+
+        if self.serpent_active:
+            self.serpent_post_first_action_draw = True
         
         # Draw new cards
         self._draw_cards()
@@ -214,6 +231,7 @@ class BalatroGame:
         self.play_area_indexes = []
         self.hand_indexes = []
         self.highlighted_indexes = []
+        self.serpent_post_first_action_draw = False
         self._draw_cards()
     
     def get_hand_cards(self) -> List[Card]:
