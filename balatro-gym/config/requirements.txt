@@ -1,6 +1,0 @@
-# Core RL env API
-gymnasium>=0.29.1,<1.0
-
-# Runtime dependencies for the Python game implementation and live adapter
-numpy>=1.26
-httpx>=0.28
