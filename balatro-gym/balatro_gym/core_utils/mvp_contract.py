@@ -1,0 +1,1201 @@
+from __future__ import annotations
+
+import zlib
+from typing import Any, Iterable, Mapping, TYPE_CHECKING
+
+import numpy as np
+from gymnasium import spaces
+
+from balatro_gym.core.constants import Action, ActionCounts, Phase, PLAY_SUBSET_SLOT_SETS
+from balatro_gym.core.balatro_game import BalatroGame
+from balatro_gym.core.cards import Enhancement
+from balatro_gym.core.consumables import is_planet_consumable_name, is_spectral_consumable_name, is_tarot_consumable_name
+from balatro_gym.core.boss_blinds import BossBlindType
+from balatro_gym.scoring.scoring_engine import HandType
+
+if TYPE_CHECKING:
+    from balatro_gym.core_utils.state import UnifiedGameState
+
+
+MVP_HAND_LEVEL_ORDER: tuple[HandType, ...] = (
+    HandType.HIGH_CARD,
+    HandType.ONE_PAIR,
+    HandType.TWO_PAIR,
+    HandType.THREE_KIND,
+    HandType.STRAIGHT,
+    HandType.FLUSH,
+    HandType.FULL_HOUSE,
+    HandType.FOUR_KIND,
+    HandType.STRAIGHT_FLUSH,
+    HandType.FIVE_KIND,
+    HandType.FLUSH_HOUSE,
+    HandType.FLUSH_FIVE,
+)
+
+MVP_HAND_LEVEL_LABELS: dict[HandType, str] = {
+    HandType.HIGH_CARD: "High Card",
+    HandType.ONE_PAIR: "Pair",
+    HandType.TWO_PAIR: "Two Pair",
+    HandType.THREE_KIND: "Three of a Kind",
+    HandType.STRAIGHT: "Straight",
+    HandType.FLUSH: "Flush",
+    HandType.FULL_HOUSE: "Full House",
+    HandType.FOUR_KIND: "Four of a Kind",
+    HandType.STRAIGHT_FLUSH: "Straight Flush",
+    HandType.FIVE_KIND: "Five of a Kind",
+    HandType.FLUSH_HOUSE: "Flush House",
+    HandType.FLUSH_FIVE: "Flush Five",
+}
+
+MVP_CONSUMABLE_ID_MAP: dict[str, int] = {
+    "The Fool": 1,
+    "The Magician": 2,
+    "The High Priestess": 3,
+    "The Empress": 4,
+    "The Emperor": 5,
+    "The Hierophant": 6,
+    "The Lovers": 7,
+    "The Chariot": 8,
+    "Strength": 9,
+    "The Hermit": 10,
+    "Wheel of Fortune": 11,
+    "Justice": 12,
+    "The Hanged Man": 13,
+    "Death": 14,
+    "Temperance": 15,
+    "The Devil": 16,
+    "The Tower": 17,
+    "The Star": 18,
+    "The Moon": 19,
+    "The Sun": 20,
+    "Judgement": 21,
+    "The World": 22,
+    "Mercury": 30,
+    "Venus": 31,
+    "Earth": 32,
+    "Mars": 33,
+    "Jupiter": 34,
+    "Saturn": 35,
+    "Uranus": 36,
+    "Neptune": 37,
+    "Pluto": 38,
+    "Planet X": 39,
+    "Ceres": 40,
+    "Eris": 41,
+    "Familiar": 50,
+    "Grim": 51,
+    "Incantation": 52,
+    "Talisman": 53,
+    "Aura": 54,
+    "Wraith": 55,
+    "Sigil": 56,
+    "Ouija": 57,
+    "Ectoplasm": 58,
+    "Immolate": 59,
+    "Ankh": 60,
+    "Deja Vu": 61,
+    "Hex": 62,
+    "Trance": 63,
+    "Medium": 64,
+    "Cryptid": 65,
+    "The Soul": 66,
+    "Black Hole": 67,
+}
+
+SHOP_ITEM_TYPE_IDS: dict[str, int] = {
+    "JOKER": 1,
+    "TAROT": 2,
+    "PLANET": 3,
+    "SPECTRAL": 4,
+    "VOUCHER": 5,
+    "BOOSTER": 6,
+    "PLAYING": 7,
+}
+
+DECK_ID_MAP: dict[str, int] = {
+    "RED": 1,
+    "BLUE": 2,
+    "YELLOW": 3,
+    "GREEN": 4,
+    "BLACK": 5,
+    "MAGIC": 6,
+    "NEBULA": 7,
+    "GHOST": 8,
+    "ABANDONED": 9,
+    "CHECKERED": 10,
+    "ZODIAC": 11,
+    "PAINTED": 12,
+    "ANAGLYPH": 13,
+    "PLASMA": 14,
+    "ERRATIC": 15,
+}
+
+STAKE_ID_MAP: dict[str, int] = {
+    "WHITE": 1,
+    "RED": 2,
+    "GREEN": 3,
+    "BLACK": 4,
+    "BLUE": 5,
+    "PURPLE": 6,
+    "ORANGE": 7,
+    "GOLD": 8,
+}
+
+PACK_IMMEDIATE_PLANETS: frozenset[str] = frozenset(
+    {
+        "Mercury",
+        "Venus",
+        "Earth",
+        "Mars",
+        "Jupiter",
+        "Saturn",
+        "Uranus",
+        "Neptune",
+        "Pluto",
+        "Planet X",
+        "Ceres",
+        "Eris",
+    }
+)
+
+PACK_IMMEDIATE_TAROTS: frozenset[str] = frozenset(
+    {
+        "The Fool",
+        "The High Priestess",
+        "The Emperor",
+        "The Hermit",
+        "Temperance",
+        "Judgement",
+    }
+)
+
+PACK_IMMEDIATE_SPECTRALS: frozenset[str] = frozenset(
+    {
+        "Wraith",
+        "Ectoplasm",
+        "Immolate",
+        "The Soul",
+        "Black Hole",
+    }
+)
+
+PACK_TARGETED_MIN_HAND_SIZE: dict[str, int] = {
+    "The Magician": 1,
+    "The Empress": 1,
+    "The Hierophant": 1,
+    "The Lovers": 1,
+    "The Chariot": 1,
+    "Strength": 1,
+    "Justice": 1,
+    "Death": 2,
+    "The Devil": 1,
+    "The Tower": 1,
+    "The Star": 1,
+    "The Moon": 1,
+    "The Sun": 1,
+    "The World": 1,
+    "Aura": 1,
+    "Talisman": 1,
+    "Deja Vu": 1,
+    "Trance": 1,
+    "Medium": 1,
+}
+
+PACK_TARGETED_DEFAULT_TARGET_COUNT: dict[str, int] = {
+    "The Magician": 2,
+    "The Empress": 2,
+    "The Hierophant": 2,
+    "The Lovers": 1,
+    "The Chariot": 1,
+    "Strength": 2,
+    "Justice": 1,
+    "Death": 2,
+    "The Devil": 1,
+    "The Tower": 1,
+    "The Star": 3,
+    "The Moon": 3,
+    "The Sun": 3,
+    "The World": 3,
+    "Aura": 1,
+    "Talisman": 1,
+    "Deja Vu": 1,
+    "Trance": 1,
+    "Medium": 1,
+}
+
+
+def create_mvp_observation_space() -> spaces.Dict:
+    return spaces.Dict(
+        {
+            "hand": spaces.Box(-1, 51, (8,), dtype=np.int8),
+            "hand_size": spaces.Box(0, 12, (), dtype=np.int8),
+            "deck_size": spaces.Box(0, 52, (), dtype=np.int8),
+            "deck_id": spaces.Box(0, 15, (), dtype=np.int8),
+            "stake_id": spaces.Box(0, 8, (), dtype=np.int8),
+            "draw_pile_size": spaces.Box(0, 52, (), dtype=np.int8),
+            "discard_pile_size": spaces.Box(0, 52, (), dtype=np.int8),
+            "play_area_size": spaces.Box(0, 8, (), dtype=np.int8),
+            "draw_pile_counts": spaces.Box(0, 52, (52,), dtype=np.int8),
+            "discard_pile_cards": spaces.Box(0, 52, (52,), dtype=np.int16),
+            "play_area_cards": spaces.Box(0, 52, (8,), dtype=np.int16),
+            "hand_enhancements": spaces.Box(0, 8, (8,), dtype=np.int8),
+            "hand_editions": spaces.Box(0, 4, (8,), dtype=np.int8),
+            "hand_seals": spaces.Box(0, 4, (8,), dtype=np.int8),
+            "hand_debuffed": spaces.MultiBinary(8),
+            "joker_editions": spaces.Box(0, 4, (10,), dtype=np.int8),
+            "joker_eternal": spaces.MultiBinary(10),
+            "joker_perishable": spaces.MultiBinary(10),
+            "joker_rental": spaces.MultiBinary(10),
+            "joker_perishable_rounds": spaces.Box(0, 99, (10,), dtype=np.int8),
+            "blind_tag_ids": spaces.Box(0, 500, (3,), dtype=np.int16),
+            "selected_cards": spaces.MultiBinary(8),
+            "chips_scored": spaces.Box(0, 10_000_000_000, (), dtype=np.int64),
+            "round_chips_scored": spaces.Box(0, 10_000_000, (), dtype=np.int32),
+            "progress_ratio": spaces.Box(0.0, 2.0, (), dtype=np.float32),
+            "mult": spaces.Box(0, 10_000, (), dtype=np.int32),
+            "chips_needed": spaces.Box(0, 10_000_000, (), dtype=np.int32),
+            "money": spaces.Box(-20, 999, (), dtype=np.int32),
+            "ante": spaces.Box(1, 1000, (), dtype=np.int16),
+            "round": spaces.Box(1, 3, (), dtype=np.int8),
+            "hands_left": spaces.Box(0, 12, (), dtype=np.int8),
+            "discards_left": spaces.Box(0, 10, (), dtype=np.int8),
+            "joker_count": spaces.Box(0, 10, (), dtype=np.int8),
+            "joker_ids": spaces.Box(0, 200, (10,), dtype=np.int16),
+            "joker_slots": spaces.Box(0, 10, (), dtype=np.int8),
+            "consumable_count": spaces.Box(0, 5, (), dtype=np.int8),
+            "consumables": spaces.Box(0, 100, (5,), dtype=np.int16),
+            "consumable_slots": spaces.Box(0, 5, (), dtype=np.int8),
+            "shop_items": spaces.Box(0, 300, (10,), dtype=np.int16),
+            "shop_costs": spaces.Box(0, 5000, (10,), dtype=np.int16),
+            "shop_rerolls": spaces.Box(0, 999, (), dtype=np.int16),
+            "pack_item_types": spaces.Box(0, 7, (ActionCounts.SELECT_FROM_PACK_COUNT,), dtype=np.int8),
+            "pack_item_ids": spaces.Box(0, 500, (ActionCounts.SELECT_FROM_PACK_COUNT,), dtype=np.int16),
+            "pack_item_selectable": spaces.MultiBinary(ActionCounts.SELECT_FROM_PACK_COUNT),
+            "pack_cards_to_select": spaces.Box(0, ActionCounts.SELECT_FROM_PACK_COUNT, (), dtype=np.int8),
+            "pack_choices_remaining": spaces.Box(0, ActionCounts.SELECT_FROM_PACK_COUNT, (), dtype=np.int8),
+            "fool_replayable_consumable": spaces.Box(0, 100, (), dtype=np.int16),
+            "hand_levels": spaces.Box(0, 15, (12,), dtype=np.int8),
+            "phase": spaces.Box(0, max(int(phase) for phase in Phase), (), dtype=np.int8),
+            "action_mask": spaces.MultiBinary(ActionCounts.ACTION_SPACE_SIZE),
+            "hands_played": spaces.Box(0, 10000, (), dtype=np.int32),
+            "best_hand_this_ante": spaces.Box(0, 10_000_000, (), dtype=np.int32),
+            "boss_blind_active": spaces.Box(0, 1, (), dtype=np.int8),
+            "boss_blind_type": spaces.Box(0, 30, (), dtype=np.int8),
+            "boss_blind_rerolls_used_ante": spaces.Box(0, 99, (), dtype=np.int8),
+            "discards_used_this_round": spaces.Box(0, 99, (), dtype=np.int8),
+            "hands_played_ante": spaces.Box(0, 10000, (), dtype=np.int32),
+            "rerolls_used": spaces.Box(0, 10000, (), dtype=np.int32),
+            "shop_visits": spaces.Box(0, 10000, (), dtype=np.int32),
+            "jokers_sold": spaces.Box(0, 10000, (), dtype=np.int32),
+            "cards_discarded_total": spaces.Box(0, 10000, (), dtype=np.int32),
+            "force_draw_count": spaces.Box(0, 52, (), dtype=np.int8),
+            "disabled_joker_slots": spaces.Box(0, 10, (), dtype=np.int8),
+            "face_down_cards": spaces.MultiBinary(8),
+            "rank_counts": spaces.Box(0, 4, (13,), dtype=np.int8),
+            "suit_counts": spaces.Box(0, 8, (4,), dtype=np.int8),
+            "straight_potential": spaces.Box(0, 1, (), dtype=np.float32),
+            "flush_potential": spaces.Box(0, 1, (), dtype=np.float32),
+        }
+    )
+
+
+def build_mvp_action_mask(state: UnifiedGameState, shop: Any = None) -> np.ndarray:
+    mask = np.zeros(ActionCounts.ACTION_SPACE_SIZE, dtype=np.int8)
+    phase = Phase(int(state.phase))
+
+    if phase == Phase.PLAY:
+        selected_count = len(state.selected_cards)
+        selected_indexes = set(int(i) for i in state.selected_cards)
+        visible_hand_size = min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))
+        if selected_count < 5:
+            for i in range(visible_hand_size):
+                if i not in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
+        else:
+            for i in range(visible_hand_size):
+                if i in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
+        forced_slot = getattr(state, "boss_forced_selected_card", None)
+        if forced_slot is not None and 0 <= int(forced_slot) < visible_hand_size:
+            mask[Action.SELECT_CARD_BASE + int(forced_slot)] = 0
+        _mark_direct_play_subset_actions(mask, visible_hand_size)
+        _clear_illegal_boss_subset_actions(mask, state, visible_hand_size)
+        if _can_play_selected_cards_against_boss(state, selected_count):
+            mask[Action.PLAY_HAND] = 1
+        if selected_count > 0 and state.discards_left > 0:
+            mask[Action.DISCARD] = 1
+        for i in range(min(ActionCounts.USE_CONSUMABLE_COUNT, len(state.consumables))):
+            if can_use_consumable_in_play(state, str(state.consumables[i])):
+                mask[Action.USE_CONSUMABLE_BASE + i] = 1
+        eternal_jokers = set(getattr(state, "eternal_jokers", []))
+        for i in range(min(ActionCounts.SELL_JOKER_COUNT, len(state.jokers))):
+            if i not in eternal_jokers:
+                mask[Action.SELL_JOKER_BASE + i] = 1
+        return mask
+
+    if phase == Phase.SHOP:
+        for i, item in enumerate(get_shop_inventory(state, shop)[: ActionCounts.SHOP_BUY_COUNT]):
+            cost = get_shop_item_cost(item)
+            if cost is not None and can_afford_shop_cost(state, cost) and is_shop_item_buyable(state, item):
+                mask[Action.SHOP_BUY_BASE + i] = 1
+
+        if can_afford_shop_cost(state, state.shop_reroll_cost):
+            mask[Action.SHOP_REROLL] = 1
+
+        mask[Action.SHOP_END] = 1
+
+        eternal_jokers = set(getattr(state, "eternal_jokers", []))
+        for i in range(min(ActionCounts.SELL_JOKER_COUNT, len(state.jokers))):
+            if i not in eternal_jokers:
+                mask[Action.SELL_JOKER_BASE + i] = 1
+
+        for i in range(min(ActionCounts.SELL_CONSUMABLE_COUNT, len(state.consumables))):
+            mask[Action.SELL_CONSUMABLE_BASE + i] = 1
+        return mask
+
+    if phase == Phase.ROUND_EVAL:
+        mask[Action.SHOP_END] = 1
+        return mask
+
+    if phase == Phase.BLIND_SELECT:
+        visible_slot = max(0, min(ActionCounts.SELECT_BLIND_COUNT - 1, int(state.round) - 1))
+        mask[Action.SELECT_BLIND_BASE + visible_slot] = 1
+        if visible_slot < ActionCounts.SELECT_BLIND_COUNT - 1:
+            mask[Action.SKIP_BLIND] = 1
+        if visible_slot == ActionCounts.SELECT_BLIND_COUNT - 1 and can_reroll_pending_boss_blind(state):
+            mask[Action.REROLL_BOSS_BLIND] = 1
+        return mask
+
+    if phase == Phase.PACK_OPEN:
+        pack_contents = get_pack_contents(state, shop)
+        selected_indexes = set(get_pack_selected_indexes(state, shop))
+        cards_to_select = get_pack_cards_to_select(state, shop)
+        pending_pack_index = get_pending_pack_index(state, shop)
+        pending_target_count = get_pending_pack_target_count(state, shop)
+        pending_target_valid = has_valid_pending_pack_targets(state, shop)
+
+        if pending_pack_index is not None:
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, len(state.hand_indexes))):
+                mask[Action.SELECT_CARD_BASE + i] = 1
+            if (
+                0 <= pending_pack_index < min(ActionCounts.SELECT_FROM_PACK_COUNT, len(pack_contents))
+                and pending_target_count > 0
+                and pending_target_valid
+            ):
+                mask[Action.SELECT_FROM_PACK_BASE + pending_pack_index] = 1
+        elif len(selected_indexes) < cards_to_select:
+            for i in range(min(ActionCounts.SELECT_FROM_PACK_COUNT, len(pack_contents))):
+                if i not in selected_indexes and is_pack_item_selectable(state, pack_contents[i], item_index=i):
+                    mask[Action.SELECT_FROM_PACK_BASE + i] = 1
+
+        if pack_contents:
+            mask[Action.SKIP_PACK] = 1
+        return mask
+
+    if phase == Phase.GAME_OVER:
+        return mask
+
+    return mask
+
+
+def get_visible_boss_blind(state: UnifiedGameState):
+    """Return the boss blind currently visible to the policy."""
+    if state.phase == Phase.PLAY and state.active_boss_blind is not None:
+        return state.active_boss_blind
+    if state.phase in {Phase.BLIND_SELECT, Phase.SHOP}:
+        return state.pending_boss_blind
+    return None
+
+
+def can_reroll_pending_boss_blind(state: UnifiedGameState) -> bool:
+    """Return whether a boss reroll action should be available."""
+    if state.phase != Phase.BLIND_SELECT or int(state.round) != 3:
+        return False
+    if state.pending_boss_blind is None or state.money < 10:
+        return False
+
+    has_directors_cut = "Director's Cut" in state.vouchers
+    has_retcon = "Retcon" in state.vouchers
+    if not has_directors_cut and not has_retcon:
+        return False
+    if has_retcon:
+        return True
+    return int(getattr(state, "boss_blind_rerolls_used_ante", 0) or 0) == 0
+
+
+def encode_joker_ids(jokers: Iterable[Any], slots: int = 10) -> np.ndarray:
+    ids = [encode_joker_id(joker) for joker in jokers]
+    return np.array((ids + [0] * max(0, slots - len(ids)))[:slots], dtype=np.int16)
+
+
+def encode_joker_id(joker: Any) -> int:
+    if joker is None:
+        return 0
+
+    if isinstance(joker, str) and joker:
+        return _stable_text_id(joker, modulus=200)
+
+    for key in ("key", "name", "label"):
+        value = _get_string_value(joker, key)
+        if value:
+            return _stable_text_id(value, modulus=200)
+
+    joker_id = getattr(joker, "id", None)
+    if joker_id is None and isinstance(joker, dict):
+        joker_id = joker.get("id")
+    if joker_id is not None:
+        try:
+            return max(0, min(200, int(joker_id)))
+        except (TypeError, ValueError):
+            pass
+
+    return 0
+
+
+def encode_consumable_ids(consumables: Iterable[Any], slots: int = 5) -> np.ndarray:
+    ids = [encode_consumable_id(consumable) for consumable in consumables]
+    return np.array((ids + [0] * max(0, slots - len(ids)))[:slots], dtype=np.int16)
+
+
+def encode_consumable_id(consumable: Any) -> int:
+    if consumable is None:
+        return 0
+
+    if isinstance(consumable, str):
+        return MVP_CONSUMABLE_ID_MAP.get(consumable, 0)
+
+    for key in ("label", "name", "consumable"):
+        value = _get_string_value(consumable, key)
+        if value:
+            return MVP_CONSUMABLE_ID_MAP.get(value, 0)
+
+    return 0
+
+
+def encode_hand_levels(levels: Mapping[Any, Any] | None, default_level: int = 1) -> np.ndarray:
+    hand_levels = levels or {}
+    ordered_levels: list[int] = []
+
+    for hand_type in MVP_HAND_LEVEL_ORDER:
+        raw_value = default_level
+        for key in (
+            hand_type,
+            hand_type.name,
+            MVP_HAND_LEVEL_LABELS[hand_type],
+            MVP_HAND_LEVEL_LABELS[hand_type].replace(" ", "_").upper(),
+        ):
+            if key in hand_levels:
+                raw_value = hand_levels[key]
+                break
+
+        try:
+            normalized_level = int(raw_value)
+        except (TypeError, ValueError):
+            normalized_level = default_level
+
+        ordered_levels.append(max(0, min(15, normalized_level)))
+
+    return np.array(ordered_levels, dtype=np.int8)
+
+
+def encode_pack_item_types(
+    pack_contents: Iterable[Any],
+    slots: int = ActionCounts.SELECT_FROM_PACK_COUNT,
+) -> np.ndarray:
+    ids = [get_pack_item_type_id(item) for item in pack_contents]
+    return np.array((ids + [0] * max(0, slots - len(ids)))[:slots], dtype=np.int8)
+
+
+def encode_pack_item_ids(
+    pack_contents: Iterable[Any],
+    slots: int = ActionCounts.SELECT_FROM_PACK_COUNT,
+) -> np.ndarray:
+    ids = [encode_pack_item_id(item) for item in pack_contents]
+    return np.array((ids + [0] * max(0, slots - len(ids)))[:slots], dtype=np.int16)
+
+
+def encode_fool_replayable_consumable(state: UnifiedGameState) -> np.int16:
+    remembered = getattr(state, "last_tarot_planet_consumable", None)
+    if not remembered or remembered == "The Fool":
+        return np.int16(0)
+    return np.int16(encode_consumable_id(remembered))
+
+
+def encode_deck_id(deck_name: Any) -> np.int8:
+    return np.int8(DECK_ID_MAP.get(str(deck_name or "").upper(), 0))
+
+
+def encode_stake_id(stake_name: Any) -> np.int8:
+    return np.int8(STAKE_ID_MAP.get(str(stake_name or "").upper(), 0))
+
+
+def encode_tag_id(tag: Any) -> int:
+    if tag is None:
+        return 0
+    if isinstance(tag, dict):
+        tag = tag.get("tag_name") or tag.get("name") or tag.get("key") or tag.get("tag")
+    if not isinstance(tag, str) or not tag:
+        return 0
+    return _stable_text_id(tag, modulus=499)
+
+
+def encode_standard_card_id(card: Any) -> int:
+    return _encode_standard_card_id(card)
+
+
+def encode_card_modifier_value(card_or_state: Any, name: str) -> int:
+    value = getattr(card_or_state, name, None)
+    if isinstance(card_or_state, dict):
+        modifier = card_or_state.get("modifier") or {}
+        state = card_or_state.get("state") or {}
+        value = modifier.get(name, state.get(name, value))
+    if value is None:
+        return 0
+    enum_value = getattr(value, "value", value)
+    if isinstance(enum_value, bool):
+        return int(enum_value)
+    if isinstance(enum_value, int):
+        return max(0, min(99, enum_value))
+    normalized = str(enum_value).upper()
+    lookup = {
+        "NONE": 0,
+        "BONUS": 1,
+        "MULT": 2,
+        "WILD": 3,
+        "GLASS": 4,
+        "STEEL": 5,
+        "STONE": 6,
+        "GOLD": 7 if name == "enhancement" else 1,
+        "LUCKY": 8,
+        "FOIL": 1,
+        "HOLOGRAPHIC": 2,
+        "POLYCHROME": 3,
+        "NEGATIVE": 4,
+        "RED": 2,
+        "BLUE": 3,
+        "PURPLE": 4,
+    }
+    return lookup.get(normalized, 0)
+
+
+def build_action_mask(
+    state: UnifiedGameState | None = None,
+    shop: Any = None,
+    **kwargs: Any,
+) -> np.ndarray:
+    if state is not None:
+        return build_mvp_action_mask(state, shop)
+
+    phase = Phase(int(kwargs["phase"]))
+    mask = np.zeros(ActionCounts.ACTION_SPACE_SIZE, dtype=np.int8)
+
+    if phase == Phase.PLAY:
+        hand_size = int(kwargs["hand_size"])
+        selected_cards = list(kwargs["selected_cards"])
+        selected_indexes = {int(idx) for idx in selected_cards}
+        discards_left = int(kwargs["discards_left"])
+        consumable_count = int(kwargs["consumable_count"])
+        visible_hand_size = min(ActionCounts.SELECT_CARD_COUNT, hand_size)
+        if len(selected_cards) < 5:
+            for i in range(visible_hand_size):
+                if i not in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
+        else:
+            for i in range(visible_hand_size):
+                if i in selected_indexes:
+                    mask[Action.SELECT_CARD_BASE + i] = 1
+        _mark_direct_play_subset_actions(mask, visible_hand_size)
+        if 0 < len(selected_cards) <= 5:
+            mask[Action.PLAY_HAND] = 1
+        if selected_cards and discards_left > 0:
+            mask[Action.DISCARD] = 1
+        for i in range(min(ActionCounts.USE_CONSUMABLE_COUNT, consumable_count)):
+            mask[Action.USE_CONSUMABLE_BASE + i] = 1
+        joker_sellable = kwargs.get("joker_sellable")
+        joker_count = int(kwargs.get("joker_count", 0))
+        for i in range(min(ActionCounts.SELL_JOKER_COUNT, joker_count)):
+            if joker_sellable is None or i >= len(joker_sellable) or bool(joker_sellable[i]):
+                mask[Action.SELL_JOKER_BASE + i] = 1
+        return mask
+
+    if phase == Phase.SHOP:
+        for i, (cost, can_buy) in enumerate(list(kwargs["shop_items"])[: ActionCounts.SHOP_BUY_COUNT]):
+            normalized_cost = 0 if cost is None else int(cost)
+            if can_buy and can_afford_shop_cost_kwargs(normalized_cost, **kwargs):
+                mask[Action.SHOP_BUY_BASE + i] = 1
+        if can_afford_shop_cost_kwargs(int(kwargs["shop_reroll_cost"]), **kwargs):
+            mask[Action.SHOP_REROLL] = 1
+        mask[Action.SHOP_END] = 1
+        joker_sellable = kwargs.get("joker_sellable")
+        for i in range(min(ActionCounts.SELL_JOKER_COUNT, int(kwargs["joker_count"]))):
+            if joker_sellable is None or i >= len(joker_sellable) or bool(joker_sellable[i]):
+                mask[Action.SELL_JOKER_BASE + i] = 1
+        for i in range(min(ActionCounts.SELL_CONSUMABLE_COUNT, int(kwargs["sellable_consumable_count"]))):
+            mask[Action.SELL_CONSUMABLE_BASE + i] = 1
+        return mask
+
+    if phase == Phase.ROUND_EVAL:
+        mask[Action.SHOP_END] = 1
+        return mask
+
+    if phase == Phase.BLIND_SELECT:
+        for slot in kwargs["blind_selectable_slots"]:
+            slot_index = int(slot)
+            if 0 <= slot_index < ActionCounts.SELECT_BLIND_COUNT:
+                mask[Action.SELECT_BLIND_BASE + slot_index] = 1
+        if kwargs["can_skip_blind"]:
+            mask[Action.SKIP_BLIND] = 1
+        if kwargs.get("can_reroll_boss_blind"):
+            mask[Action.REROLL_BOSS_BLIND] = 1
+        return mask
+
+    if phase == Phase.PACK_OPEN:
+        pack_size = int(kwargs["pack_size"])
+        selected_indexes = {int(idx) for idx in kwargs["pack_selected_indexes"]}
+        cards_to_select = int(kwargs["pack_cards_to_select"])
+        item_selectable = list(kwargs.get("pack_item_selectable", [True] * pack_size))
+        pending_pack_index = kwargs.get("pending_pack_index")
+        pending_target_count = int(kwargs.get("pending_target_count", 0) or 0)
+        pending_target_valid = bool(kwargs.get("pending_target_valid", False))
+        if pending_pack_index is not None:
+            hand_size = int(kwargs.get("hand_size", 0))
+            for i in range(min(ActionCounts.SELECT_CARD_COUNT, hand_size)):
+                mask[Action.SELECT_CARD_BASE + i] = 1
+            pending_pack_index = int(pending_pack_index)
+            if (
+                0 <= pending_pack_index < min(ActionCounts.SELECT_FROM_PACK_COUNT, pack_size)
+                and pending_target_count > 0
+                and pending_target_valid
+            ):
+                mask[Action.SELECT_FROM_PACK_BASE + pending_pack_index] = 1
+        elif len(selected_indexes) < cards_to_select:
+            for i in range(min(ActionCounts.SELECT_FROM_PACK_COUNT, pack_size)):
+                if i not in selected_indexes and (i >= len(item_selectable) or bool(item_selectable[i])):
+                    mask[Action.SELECT_FROM_PACK_BASE + i] = 1
+        if pack_size > 0:
+            mask[Action.SKIP_PACK] = 1
+        return mask
+
+    if phase == Phase.GAME_OVER:
+        return mask
+
+    return mask
+
+
+def encode_joker_tokens(jokers: Iterable[Any], slots: int = 10) -> np.ndarray:
+    return encode_joker_ids(jokers, slots=slots)
+
+
+def _mark_direct_play_subset_actions(mask: np.ndarray, visible_hand_size: int) -> None:
+    for subset_index, slot_subset in enumerate(PLAY_SUBSET_SLOT_SETS):
+        if slot_subset[-1] >= visible_hand_size:
+            continue
+        mask[Action.PLAY_SUBSET_BASE + subset_index] = 1
+
+
+def _clear_illegal_boss_subset_actions(
+    mask: np.ndarray,
+    state: UnifiedGameState,
+    visible_hand_size: int,
+) -> None:
+    if not getattr(state, "boss_blind_active", False):
+        return
+    forced_slot = getattr(state, "boss_forced_selected_card", None)
+    active_boss = getattr(state, "active_boss_blind", None)
+    for subset_index, slot_subset in enumerate(PLAY_SUBSET_SLOT_SETS):
+        action = Action.PLAY_SUBSET_BASE + subset_index
+        if not mask[action]:
+            continue
+        if forced_slot is not None and int(forced_slot) not in slot_subset:
+            mask[action] = 0
+            continue
+        if active_boss == BossBlindType.THE_PSYCHIC and len(slot_subset) != 5:
+            mask[action] = 0
+            continue
+        if not _is_play_allowed_for_slots(state, slot_subset):
+            mask[action] = 0
+
+
+def _can_play_selected_cards_against_boss(state: UnifiedGameState, selected_count: int) -> bool:
+    if not (0 < selected_count <= 5):
+        return False
+    if not getattr(state, "boss_blind_active", False):
+        return True
+    if getattr(state, "active_boss_blind", None) == BossBlindType.THE_PSYCHIC and selected_count != 5:
+        return False
+    forced_slot = getattr(state, "boss_forced_selected_card", None)
+    if forced_slot is not None and int(forced_slot) not in set(getattr(state, "selected_cards", [])):
+        return False
+    return _is_play_allowed_for_slots(state, tuple(int(slot) for slot in getattr(state, "selected_cards", [])))
+
+
+def _is_play_allowed_for_slots(state: UnifiedGameState, selected_slots: tuple[int, ...]) -> bool:
+    if not getattr(state, "boss_blind_active", False):
+        return True
+    active_boss = getattr(state, "active_boss_blind", None)
+    if active_boss not in {BossBlindType.THE_EYE, BossBlindType.THE_MOUTH}:
+        return True
+
+    hand_type_name = _classify_slot_hand_type_name(state, selected_slots)
+    if hand_type_name is None:
+        return False
+
+    if active_boss == BossBlindType.THE_EYE:
+        played_hand_types = set(getattr(state, "boss_played_hand_types", []) or [])
+        return hand_type_name not in played_hand_types
+
+    locked_hand_type = getattr(state, "last_hand_played", None)
+    return not locked_hand_type or hand_type_name == locked_hand_type
+
+
+def _classify_slot_hand_type_name(state: UnifiedGameState, selected_slots: tuple[int, ...]) -> str | None:
+    hand_cards = []
+    non_stone_cards = []
+    for slot in selected_slots:
+        if not (0 <= int(slot) < len(state.hand_indexes)):
+            return None
+        card_idx = state.hand_indexes[int(slot)]
+        if not (0 <= card_idx < len(state.deck)):
+            return None
+        card = state.deck[card_idx]
+        hand_cards.append(card)
+        card_state = state.get_card_state(card_idx)
+        if getattr(card_state, "enhancement", Enhancement.NONE) != Enhancement.STONE:
+            non_stone_cards.append(card)
+
+    cards_for_classification = non_stone_cards or hand_cards
+    if not cards_for_classification:
+        return None
+    hand_type, _ = BalatroGame()._classify_hand(cards_for_classification)
+    return MVP_HAND_LEVEL_LABELS.get(hand_type, hand_type.name.replace("_", " ").title())
+
+
+def encode_consumables(consumables: Iterable[Any], slots: int = 5) -> np.ndarray:
+    return encode_consumable_ids(consumables, slots=slots)
+
+
+def ordered_hand_levels(levels: Mapping[Any, Any] | None, default_level: int = 1) -> np.ndarray:
+    return encode_hand_levels(levels, default_level=default_level)
+
+
+def get_shop_inventory(state: UnifiedGameState, shop: Any = None) -> list[Any]:
+    inventory = getattr(state, "shop_inventory", None)
+    if inventory:
+        return list(inventory)
+
+    inventory = getattr(shop, "inventory", None)
+    if inventory:
+        return list(inventory)
+
+    return []
+
+
+def get_shop_item_cost(item: Any) -> int | None:
+    cost = getattr(item, "cost", None)
+    if cost is None and isinstance(item, dict):
+        cost = item.get("cost")
+    if cost is None:
+        return None
+
+    try:
+        return int(cost)
+    except (TypeError, ValueError):
+        return None
+
+
+def can_afford_shop_cost(state: Any, cost: int) -> bool:
+    if hasattr(state, "can_afford_shop_cost"):
+        return bool(state.can_afford_shop_cost(int(cost)))
+    return int(getattr(state, "money", 0) or 0) >= int(cost)
+
+
+def can_afford_shop_cost_kwargs(cost: int, **kwargs: Any) -> bool:
+    return int(cost) <= available_shop_money_kwargs(**kwargs)
+
+
+def available_shop_money_kwargs(**kwargs: Any) -> int:
+    if "available_shop_money" in kwargs and kwargs["available_shop_money"] is not None:
+        return int(kwargs["available_shop_money"])
+
+    money = int(kwargs.get("money", 0) or 0)
+    if "debt_floor" in kwargs and kwargs["debt_floor"] is not None:
+        return money - int(kwargs["debt_floor"])
+
+    credit_card_count = kwargs.get("credit_card_count")
+    if credit_card_count is None:
+        joker_names = kwargs.get("joker_names") or ()
+        debuffed_indexes = {
+            int(index)
+            for index in (kwargs.get("boss_disabled_joker_indexes") or ())
+        }
+        credit_card_count = sum(
+            1
+            for index, name in enumerate(joker_names)
+            if name == "Credit Card" and index not in debuffed_indexes
+        )
+
+    return money + (20 * int(credit_card_count or 0))
+
+
+def is_shop_item_buyable(state: UnifiedGameState, item: Any) -> bool:
+    item_type_name = getattr(getattr(item, "item_type", None), "name", None)
+    payload = getattr(item, "payload", {}) or {}
+
+    if isinstance(item, dict):
+        item_type_name = item.get("item_type", item_type_name)
+        payload = item.get("payload", payload) or {}
+
+    if item_type_name == "JOKER" and len(state.jokers) >= state.joker_slots:
+        return False
+    if item_type_name == "CARD" and isinstance(payload, dict) and payload.get("consumable"):
+        if _active_consumable_count(state) >= state.consumable_slots:
+            return False
+    return True
+
+
+def get_pack_contents(state: UnifiedGameState, shop: Any = None) -> list[Any]:
+    return _get_first_list_like(
+        (state, shop),
+        (
+            "pack_contents",
+            "current_pack_contents",
+            "pack_items",
+            "pack_cards",
+            "pack_choices",
+        ),
+    )
+
+
+def get_pack_selected_indexes(state: UnifiedGameState, shop: Any = None) -> list[int]:
+    return _get_first_list_like(
+        (state, shop),
+        (
+            "selected_indexes",
+            "pack_selected_indexes",
+            "selected_pack_indexes",
+        ),
+    )
+
+
+def get_pack_cards_to_select(state: UnifiedGameState, shop: Any = None) -> int:
+    for owner in (state, shop):
+        if owner is None:
+            continue
+        for attr in ("cards_to_select", "pack_cards_to_select", "pack_selection_limit"):
+            value = getattr(owner, attr, None)
+            if value is not None:
+                try:
+                    return max(0, int(value))
+                except (TypeError, ValueError):
+                    return 1
+    return 1
+
+
+def get_shop_item_type_id(item: Any) -> int:
+    item_type = getattr(item, "item_type", None)
+    payload = getattr(item, "payload", {}) or {}
+    if isinstance(item, dict):
+        item_type = item.get("item_type", item_type)
+        payload = item.get("payload", payload) or {}
+
+    item_type_name = getattr(item_type, "name", item_type)
+    if item_type_name == "PACK":
+        return SHOP_ITEM_TYPE_IDS["BOOSTER"]
+    if item_type_name == "JOKER":
+        return SHOP_ITEM_TYPE_IDS["JOKER"]
+    if item_type_name == "VOUCHER":
+        return SHOP_ITEM_TYPE_IDS["VOUCHER"]
+    if item_type_name == "CARD":
+        offer_set = payload.get("offer_set") or payload.get("consumable_type")
+        if offer_set == "Tarot":
+            return SHOP_ITEM_TYPE_IDS["TAROT"]
+        if offer_set == "Planet":
+            return SHOP_ITEM_TYPE_IDS["PLANET"]
+        if offer_set == "Spectral":
+            return SHOP_ITEM_TYPE_IDS["SPECTRAL"]
+        return SHOP_ITEM_TYPE_IDS["PLAYING"]
+    if isinstance(item_type_name, str):
+        return SHOP_ITEM_TYPE_IDS.get(item_type_name.upper(), 0)
+    return 0
+
+
+def get_pack_item_type_id(item: Any) -> int:
+    normalized_type, _, _ = _normalize_pack_item(item)
+    if normalized_type == "consumable":
+        consumable_name = _get_pack_consumable_name(item)
+        if consumable_name:
+            if is_tarot_consumable_name(consumable_name):
+                return SHOP_ITEM_TYPE_IDS["TAROT"]
+            if is_planet_consumable_name(consumable_name):
+                return SHOP_ITEM_TYPE_IDS["PLANET"]
+            if is_spectral_consumable_name(consumable_name):
+                return SHOP_ITEM_TYPE_IDS["SPECTRAL"]
+        return SHOP_ITEM_TYPE_IDS["PLAYING"]
+    if normalized_type == "joker":
+        return SHOP_ITEM_TYPE_IDS["JOKER"]
+    if normalized_type == "card":
+        return SHOP_ITEM_TYPE_IDS["PLAYING"]
+    return 0
+
+
+def encode_pack_item_id(item: Any) -> int:
+    normalized_type, primary_value, fallback_label = _normalize_pack_item(item)
+    if normalized_type == "consumable":
+        encoded = encode_consumable_id(primary_value)
+        if encoded:
+            return encoded
+    elif normalized_type == "joker":
+        encoded = encode_joker_id(primary_value)
+        if encoded:
+            return min(500, 200 + encoded)
+    elif normalized_type == "card":
+        encoded = _encode_standard_card_id(primary_value)
+        if encoded:
+            return min(500, 300 + encoded)
+
+    if fallback_label:
+        return min(500, _stable_text_id(fallback_label, modulus=499))
+    return 0
+
+
+def is_pack_item_selectable(state: UnifiedGameState, item: Any, item_index: int | None = None) -> bool:
+    pending_pack_index = get_pending_pack_index(state)
+    if pending_pack_index is not None:
+        return item_index is not None and item_index == pending_pack_index
+
+    normalized_type, primary_value, _ = _normalize_pack_item(item)
+    if normalized_type == "consumable" and primary_value:
+        return can_use_consumable_from_pack(state, str(primary_value))
+    if normalized_type == "joker":
+        return len(state.jokers) < state.joker_slots
+    return True
+
+
+def can_use_consumable_from_pack(state: UnifiedGameState, consumable_name: str) -> bool:
+    if is_planet_consumable_name(consumable_name):
+        return True
+
+    if consumable_name == "The Fool":
+        remembered = getattr(state, "last_tarot_planet_consumable", None)
+        return (
+            bool(remembered)
+            and remembered != "The Fool"
+            and _active_consumable_count(state) < state.consumable_slots
+        )
+
+    if consumable_name in {"The High Priestess", "The Emperor", "Judgement"}:
+        return _active_consumable_count(state) < state.consumable_slots
+
+    if consumable_name in {"The Hermit", "Temperance", "Immolate", "Black Hole"}:
+        return True
+
+    if consumable_name in {"Wraith", "The Soul"}:
+        return len(state.jokers) < state.joker_slots and state.hand_size > 1
+
+    if consumable_name == "Ectoplasm":
+        return bool(state.jokers) and state.hand_size > 1
+
+    required_targets = PACK_TARGETED_MIN_HAND_SIZE.get(consumable_name)
+    if required_targets is not None:
+        return _count_current_hand_cards(state) >= required_targets
+
+    if is_tarot_consumable_name(consumable_name) or is_spectral_consumable_name(consumable_name):
+        return False
+
+    return False
+
+
+def can_use_consumable_in_play(state: UnifiedGameState, consumable_name: str) -> bool:
+    required_targets = PACK_TARGETED_MIN_HAND_SIZE.get(consumable_name)
+    if required_targets is not None:
+        return len(state.selected_cards) == required_targets
+
+    return can_use_consumable_from_pack(state, consumable_name)
+
+
+def _active_consumable_count(state: Any) -> int:
+    counter = getattr(state, "active_consumable_count", None)
+    if callable(counter):
+        return int(counter())
+
+    consumables = list(getattr(state, "consumables", []) or [])
+    negative_indexes = {
+        int(idx)
+        for idx in getattr(state, "negative_consumables", []) or []
+        if isinstance(idx, int) or (isinstance(idx, str) and idx.isdigit())
+    }
+    return sum(1 for idx in range(len(consumables)) if idx not in negative_indexes)
+
+
+def get_pack_consumable_target_count(consumable_name: str) -> int:
+    return PACK_TARGETED_DEFAULT_TARGET_COUNT.get(consumable_name, 0)
+
+
+def get_pending_pack_consumable(state: Any, shop: Any = None) -> str | None:
+    for owner in (state, shop):
+        if owner is None:
+            continue
+        value = getattr(owner, "pending_pack_consumable", None)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def get_pending_pack_index(state: Any, shop: Any = None) -> int | None:
+    for owner in (state, shop):
+        if owner is None:
+            continue
+        value = getattr(owner, "pending_pack_index", None)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def get_pending_pack_target_count(state: Any, shop: Any = None) -> int:
+    pending_pack_consumable = get_pending_pack_consumable(state, shop)
+    if not pending_pack_consumable:
+        return 0
+    return get_pack_consumable_target_count(pending_pack_consumable)
+
+
+def has_valid_pending_pack_targets(state: Any, shop: Any = None) -> bool:
+    target_count = get_pending_pack_target_count(state, shop)
+    if target_count <= 0:
+        return False
+    selected_cards = getattr(state, "selected_cards", None)
+    if selected_cards is None and shop is not None:
+        selected_cards = getattr(shop, "selected_cards", None)
+    return len(selected_cards or []) == target_count
+
+
+def _count_current_hand_cards(state: UnifiedGameState) -> int:
+    count = 0
+    for idx in state.hand_indexes:
+        if 0 <= idx < len(state.deck):
+            count += 1
+    return count
+
+
+def _get_first_list_like(owners: tuple[Any, ...], attrs: tuple[str, ...]) -> list[Any]:
+    for owner in owners:
+        if owner is None:
+            continue
+        for attr in attrs:
+            value = getattr(owner, attr, None)
+            if value is not None:
+                return list(value)
+    return []
+
+
+def _get_string_value(item: Any, key: str) -> str | None:
+    value = getattr(item, key, None)
+    if value is None and isinstance(item, dict):
+        value = item.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _normalize_pack_item(item: Any) -> tuple[str | None, Any, str | None]:
+    if item is None:
+        return None, None, None
+
+    if isinstance(item, str):
+        return "consumable", item, item
+
+    if isinstance(item, dict):
+        if "consumable" in item:
+            consumable_name = item.get("consumable")
+            return "consumable", consumable_name, str(consumable_name) if consumable_name else None
+        if "joker" in item:
+            joker_value = item.get("joker")
+            return "joker", joker_value, _get_string_value(joker_value, "label") or _get_string_value(joker_value, "name")
+        if "card" in item:
+            card_value = item.get("card")
+            return "card", card_value, _get_string_value(item, "label")
+
+        item_set = item.get("set")
+        label = _get_string_value(item, "label")
+        if item_set == "JOKER":
+            return "joker", item, label
+        if item_set in {"Tarot", "Planet", "Spectral"}:
+            return "consumable", label, label
+        if item_set:
+            return "card", item, label
+
+    if _get_string_value(item, "label") or _get_string_value(item, "name"):
+        label = _get_string_value(item, "label") or _get_string_value(item, "name")
+        consumable_name = _get_pack_consumable_name(item)
+        if consumable_name:
+            return "consumable", consumable_name, label
+
+    if hasattr(item, "rank") and hasattr(item, "suit"):
+        return "card", item, None
+
+    return None, item, _get_string_value(item, "label") or _get_string_value(item, "name")
+
+
+def _get_pack_consumable_name(item: Any) -> str | None:
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        consumable_name = item.get("consumable")
+        if isinstance(consumable_name, str) and consumable_name:
+            return consumable_name
+        item_set = item.get("set")
+        label = item.get("label")
+        if item_set in {"Tarot", "Planet", "Spectral"} and isinstance(label, str) and label:
+            return label
+    for key in ("consumable", "label", "name"):
+        value = _get_string_value(item, key)
+        if value and (
+            value in MVP_CONSUMABLE_ID_MAP
+            or is_tarot_consumable_name(value)
+            or is_planet_consumable_name(value)
+            or is_spectral_consumable_name(value)
+        ):
+            return value
+    return None
+
+
+def _encode_standard_card_id(card: Any) -> int:
+    rank_value = None
+    suit_value = None
+
+    if isinstance(card, dict):
+        value = card.get("value") or {}
+        rank_value = value.get("rank")
+        suit_value = value.get("suit")
+    else:
+        rank = getattr(card, "rank", None)
+        suit = getattr(card, "suit", None)
+        rank_value = getattr(rank, "value", None)
+        suit_value = getattr(suit, "value", None)
+
+    suit_index = _normalize_suit_index(suit_value)
+    rank_index = _normalize_rank_index(rank_value)
+    if suit_index is None or rank_index is None:
+        return 0
+    return rank_index * 4 + suit_index + 1
+
+
+def _stable_text_id(value: str, modulus: int) -> int:
+    return (zlib.adler32(value.encode("utf-8")) % modulus) + 1
+
+
+def _normalize_suit_index(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value if 0 <= value <= 3 else None
+    if value in {"H", "D", "C", "S"}:
+        return {"H": 0, "D": 1, "C": 2, "S": 3}[value]
+    return None
+
+
+def _normalize_rank_index(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value - 2 if 2 <= value <= 14 else None
+    if value in {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}:
+        return {"2": 0, "3": 1, "4": 2, "5": 3, "6": 4, "7": 5, "8": 6, "9": 7, "T": 8, "J": 9, "Q": 10, "K": 11, "A": 12}[value]
+    return None
