@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Sequence
-from typing import Any
 
 from balatro_gym.environments.live import ActionKind, LegalAction, RoundTacticsObservation
 
+from .hand_evaluation import card_chips, card_rank, card_suit, poker_category
 from .policy import Policy
 
 
 DISCARD_SCORE_THRESHOLD = 20
-POKER_RANKS = {"A": 14, "K": 13, "Q": 12, "J": 11, "T": 10}
-# Balatro scoring gives face cards 10 chips, while poker matching still orders them.
-CARD_CHIPS = {"A": 11, "K": 10, "Q": 10, "J": 10, "T": 10}
-
-
 class DeterministicLegalHeuristic:
     """Choose immediate-scoring plays, or a settled deterministic discard."""
 
@@ -67,22 +61,22 @@ class DeterministicLegalHeuristic:
         self, observation: RoundTacticsObservation, action: LegalAction
     ) -> int:
         cards = tuple(observation.hand[index] for index in action.indices)
-        category = self._poker_category(cards)
+        category = poker_category(cards)
         hand_values = observation.poker_hands.get(category, {})
         chips = int(hand_values.get("chips", 0)) + sum(
-            self._card_chips(card) for card in cards
+            card_chips(card) for card in cards
         )
         return chips * int(hand_values.get("mult", 1))
 
     def _retained_indices(self, observation: RoundTacticsObservation) -> set[int]:
-        ranks = [self._rank(card) for card in observation.hand]
-        rank_counts = Counter(ranks)
+        ranks = [card_rank(card) for card in observation.hand]
+        rank_counts: dict[int, int] = {rank: ranks.count(rank) for rank in set(ranks)}
         made = {index for index, rank in enumerate(ranks) if rank_counts[rank] >= 2}
         if made:
             return made
 
-        suits = [self._suit(card) for card in observation.hand]
-        suit_counts = Counter(suit for suit in suits if suit is not None)
+        suits = [card_suit(card) for card in observation.hand]
+        suit_counts = {suit: suits.count(suit) for suit in set(suits) if suit is not None}
         largest_suit = max(suit_counts.values(), default=0)
         if largest_suit >= 2:
             candidates = [suit for suit, count in suit_counts.items() if count == largest_suit]
@@ -110,7 +104,7 @@ class DeterministicLegalHeuristic:
         ranked = sorted(
             (index for index in range(len(observation.hand)) if index not in retained),
             key=lambda index: (
-                DeterministicLegalHeuristic._rank(observation.hand[index]),
+                card_rank(observation.hand[index]),
                 index,
             ),
             reverse=True,
@@ -124,7 +118,7 @@ class DeterministicLegalHeuristic:
         ranked_cards = tuple(
             sorted(
                 (
-                    (DeterministicLegalHeuristic._rank(observation.hand[index]), index)
+                    (card_rank(observation.hand[index]), index)
                     for index in action.indices
                 ),
                 reverse=True,
@@ -149,50 +143,3 @@ class DeterministicLegalHeuristic:
                 best = tuple(current)
             previous = rank
         return set(best)
-
-    @staticmethod
-    def _poker_category(cards: Sequence[dict[str, Any] | Any]) -> str:
-        ranks = [DeterministicLegalHeuristic._rank(card) for card in cards]
-        suits = [DeterministicLegalHeuristic._suit(card) for card in cards]
-        counts = sorted(Counter(ranks).values(), reverse=True)
-        is_flush = len(cards) >= 5 and len(set(suits)) == 1 and suits[0] is not None
-        unique_ranks = sorted(set(ranks))
-        is_straight = len(cards) == 5 and (
-            unique_ranks == list(range(unique_ranks[0], unique_ranks[0] + 5))
-            or unique_ranks == [2, 3, 4, 5, 14]
-        )
-        if is_flush and is_straight:
-            return "Straight Flush"
-        if counts and counts[0] == 4:
-            return "Four of a Kind"
-        if counts and counts[0] == 3 and len(counts) > 1 and counts[1] == 2:
-            return "Full House"
-        if is_flush:
-            return "Flush"
-        if is_straight:
-            return "Straight"
-        if counts and counts[0] == 3:
-            return "Three of a Kind"
-        if sum(count == 2 for count in counts) >= 2:
-            return "Two Pair"
-        if counts and counts[0] == 2:
-            return "Pair"
-        return "High Card"
-
-    @staticmethod
-    def _card_chips(card: dict[str, Any] | Any) -> int:
-        value = card.get("value", {}) if isinstance(card, dict) else {}
-        rank = str(value.get("rank", card.get("rank", "0") if isinstance(card, dict) else "0"))
-        return int(value.get("chips", CARD_CHIPS.get(rank.upper(), int(rank) if rank.isdigit() else 0)))
-
-    @staticmethod
-    def _rank(card: dict[str, Any] | Any) -> int:
-        value = card.get("value", {}) if isinstance(card, dict) else {}
-        rank = str(value.get("rank", card.get("rank", "0") if isinstance(card, dict) else "0"))
-        return POKER_RANKS.get(rank.upper(), int(rank) if rank.isdigit() else 0)
-
-    @staticmethod
-    def _suit(card: dict[str, Any] | Any) -> str | None:
-        value = card.get("value", {}) if isinstance(card, dict) else {}
-        suit = value.get("suit", card.get("suit") if isinstance(card, dict) else None)
-        return str(suit) if suit is not None else None
