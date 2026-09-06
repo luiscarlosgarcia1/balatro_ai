@@ -2,6 +2,12 @@
 
 Issues and specifications for this repository live in Linear, in the `balatron` team.
 
+## Access method
+
+- Interact with Linear through its API or an authenticated Linear API integration available to the agent.
+- Do not ask the user to grant access to, operate, or authenticate through their local computer, browser, or Linear desktop application.
+- If the configured API integration is unavailable, report that limitation and continue with repository work where possible; do not substitute local-machine access.
+
 ## Workflow and authority
 
 - Use **Linear issues** for scoped work items.

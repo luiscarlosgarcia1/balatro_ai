@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are tracked in Linear under the `balatron` team. Agents have standing authority to manage the team's issues without human approval. See `docs/agents/issue-tracker.md`.
+Issues are tracked in Linear under the `balatron` team. Agents use the Linear API and have standing authority to manage the team's issues without human approval. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
