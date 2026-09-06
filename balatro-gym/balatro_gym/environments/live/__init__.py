@@ -6,6 +6,7 @@ from .round_tactics import (
     LegalAction,
     RoundTacticsEnvironment,
     RoundTacticsObservation,
+    StepResult,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "LegalAction",
     "RoundTacticsEnvironment",
     "RoundTacticsObservation",
+    "StepResult",
 ]

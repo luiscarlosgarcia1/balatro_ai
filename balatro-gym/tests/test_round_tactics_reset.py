@@ -1,45 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
-
 from balatro_gym.environments.live import (
     OBSERVATION_VERSION,
     ActionKind,
     RoundTacticsEnvironment,
 )
-
-
-class ScriptedBridge:
-    def __init__(self, states: list[dict[str, Any]]) -> None:
-        self.states = iter(states)
-        self.calls: list[tuple[str, Mapping[str, object] | None]] = []
-
-    def call(
-        self, method: str, params: Mapping[str, object] | None = None
-    ) -> Mapping[str, Any]:
-        self.calls.append((method, params))
-        return next(self.states)
-
-
-def selecting_hand_state(
-    *, discards_left: int = 3, hand_size: int = 2
-) -> dict[str, Any]:
-    return {
-        "state": "SELECTING_HAND",
-        "hand": {
-            "cards": [
-                {"id": index, "value": {"rank": str(index)}}
-                for index in range(hand_size)
-            ]
-        },
-        "cards": {"count": 44},
-        "round": {"chips": 12, "hands_left": 4, "discards_left": discards_left},
-        "blinds": {"small": {"score": 300}},
-        "hands": {"Pair": {"chips": 10, "mult": 2, "level": 1}},
-        "jokers": {"cards": [{"key": "j_joker", "modifier": {}}]},
-        "shop": {"cards": [{"key": "should_not_escape"}]},
-    }
+from round_tactics_support import ScriptedBridge, selecting_hand_state
 
 
 def test_reset_starts_seeded_red_white_run_selects_small_blind_and_projects_it() -> None:

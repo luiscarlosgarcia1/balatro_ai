@@ -56,11 +56,21 @@ class ResetResult:
     legal_action_mask: tuple[LegalAction, ...]
 
 
+@dataclass(frozen=True)
+class StepResult:
+    """The next settled observation and its canonical legal-action mask."""
+
+    state: str
+    observation: RoundTacticsObservation
+    legal_action_mask: tuple[LegalAction, ...]
+
+
 class RoundTacticsEnvironment:
     """Owns the live bridge sequence for a deterministic first Small Blind."""
 
     def __init__(self, bridge: BalatroBotBridge) -> None:
         self._bridge = bridge
+        self._legal_action_mask: tuple[LegalAction, ...] | None = None
 
     def reset(self, seed: str) -> ResetResult:
         """Start a seeded Red/White run and return its settled first hand."""
@@ -72,8 +82,42 @@ class RoundTacticsEnvironment:
         selected = self._bridge.call("select")
         self._require_state(selected, "SELECTING_HAND", "select")
 
-        observation = self._project(selected)
-        return ResetResult(observation, self._legal_actions(observation))
+        observation, legal_action_mask = self._settle(selected)
+        return ResetResult(observation, legal_action_mask)
+
+    def step(self, action: LegalAction) -> StepResult:
+        """Apply a current legal action and return the next settled hand."""
+        self._validate_action(action)
+        method = action.kind.lower()
+        settled = self._bridge.call(method, {"cards": list(action.indices)})
+        state = settled.get("state")
+        if state == "SELECTING_HAND":
+            observation, legal_action_mask = self._settle(settled)
+            return StepResult(state, observation, legal_action_mask)
+        if state in {"ROUND_EVAL", "GAME_OVER"}:
+            self._legal_action_mask = None
+            return StepResult(state, self._project(settled), ())
+        raise RuntimeError(
+            f"BalatroBot {method} did not settle at a Round Tactics state; got {state!r}"
+        )
+
+    def _settle(
+        self, gamestate: Mapping[str, Any]
+    ) -> tuple[RoundTacticsObservation, tuple[LegalAction, ...]]:
+        observation = self._project(gamestate)
+        legal_action_mask = self._legal_actions(observation)
+        self._legal_action_mask = legal_action_mask
+        return observation, legal_action_mask
+
+    def _validate_action(self, action: LegalAction) -> None:
+        if self._legal_action_mask is None:
+            raise ValueError("Round Tactics has no active hand; call reset() first")
+        if not isinstance(action, LegalAction):
+            raise ValueError("Round Tactics action must be a LegalAction")
+        if not self._is_canonical_indices(action.indices):
+            raise ValueError("Round Tactics action indices must be distinct ascending positions")
+        if not any(action is legal_action for legal_action in self._legal_action_mask):
+            raise ValueError("Round Tactics action is stale or not in the current mask")
 
     @staticmethod
     def _require_state(
@@ -107,14 +151,27 @@ class RoundTacticsEnvironment:
         )
 
     @staticmethod
+    def _is_canonical_indices(indices: tuple[int, ...]) -> bool:
+        return (
+            isinstance(indices, tuple)
+            and 1 <= len(indices) <= 5
+            and all(type(index) is int for index in indices)
+            and indices == tuple(sorted(set(indices)))
+        )
+
+    @staticmethod
     def _legal_actions(observation: RoundTacticsObservation) -> tuple[LegalAction, ...]:
         subsets = tuple(
             indices
             for size in range(1, min(5, len(observation.hand)) + 1)
             for indices in combinations(range(len(observation.hand)), size)
         )
-        plays = tuple(LegalAction(ActionKind.PLAY, indices) for indices in subsets)
+        plays = tuple(
+            LegalAction(ActionKind.PLAY, indices) for indices in subsets
+        )
         if observation.discards_left <= 0:
             return plays
-        discards = tuple(LegalAction(ActionKind.DISCARD, indices) for indices in subsets)
+        discards = tuple(
+            LegalAction(ActionKind.DISCARD, indices) for indices in subsets
+        )
         return plays + discards
