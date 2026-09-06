@@ -9,6 +9,12 @@ from typing import Any, Mapping, Protocol
 
 
 OBSERVATION_VERSION = "round-tactics/v1"
+EXTERNAL_LIMIT_STATE = "EXTERNAL_LIMIT"
+BRIDGE_FAULT_STATE = "BRIDGE_FAULT"
+NONTERMINAL_REWARD = 0.0
+FAILURE_REWARD = -1.0
+VICTORY_BASE_REWARD = 1.0
+VICTORY_HAND_EFFICIENCY_MULTIPLIER = 0.25
 
 
 class BalatroBotBridge(Protocol):
@@ -44,6 +50,9 @@ class RoundTacticsObservation:
     blind_target: int
     hands_left: int
     discards_left: int
+    hands_played: int
+    discards_used: int
+    money: int
     poker_hands: Mapping[str, Mapping[str, Any]]
     jokers: tuple[Mapping[str, Any], ...]
 
@@ -58,19 +67,28 @@ class ResetResult:
 
 @dataclass(frozen=True)
 class StepResult:
-    """The next settled observation and its canonical legal-action mask."""
+    """The outcome of one action at the Round Tactics boundary."""
 
     state: str
     observation: RoundTacticsObservation
     legal_action_mask: tuple[LegalAction, ...]
+    reward: float
+    terminated: bool
+    truncated: bool
 
 
 class RoundTacticsEnvironment:
     """Owns the live bridge sequence for a deterministic first Small Blind."""
 
-    def __init__(self, bridge: BalatroBotBridge) -> None:
+    def __init__(
+        self, bridge: BalatroBotBridge, *, max_steps: int | None = None
+    ) -> None:
         self._bridge = bridge
+        self._max_steps = max_steps
         self._legal_action_mask: tuple[LegalAction, ...] | None = None
+        self._last_observation: RoundTacticsObservation | None = None
+        self._starting_hands = 0
+        self._steps_taken = 0
 
     def reset(self, seed: str) -> ResetResult:
         """Start a seeded Red/White run and return its settled first hand."""
@@ -83,20 +101,40 @@ class RoundTacticsEnvironment:
         self._require_state(selected, "SELECTING_HAND", "select")
 
         observation, legal_action_mask = self._settle(selected)
+        self._starting_hands = observation.hands_left
+        self._steps_taken = 0
         return ResetResult(observation, legal_action_mask)
 
     def step(self, action: LegalAction) -> StepResult:
         """Apply a current legal action and return the next settled hand."""
         self._validate_action(action)
+        if self._max_steps is not None and self._steps_taken >= self._max_steps:
+            return self._truncate(EXTERNAL_LIMIT_STATE)
+
         method = action.kind.lower()
-        settled = self._bridge.call(method, {"cards": list(action.indices)})
+        try:
+            settled = self._bridge.call(method, {"cards": list(action.indices)})
+        except OSError:
+            return self._truncate(BRIDGE_FAULT_STATE)
+        self._steps_taken += 1
         state = settled.get("state")
         if state == "SELECTING_HAND":
             observation, legal_action_mask = self._settle(settled)
-            return StepResult(state, observation, legal_action_mask)
-        if state in {"ROUND_EVAL", "GAME_OVER"}:
+            return StepResult(
+                state, observation, legal_action_mask, NONTERMINAL_REWARD, False, False
+            )
+        if state == "ROUND_EVAL":
             self._legal_action_mask = None
-            return StepResult(state, self._project(settled), ())
+            observation = self._project(settled)
+            self._last_observation = observation
+            return StepResult(
+                state, observation, (), self._victory_reward(observation), True, False
+            )
+        if state == "GAME_OVER":
+            self._legal_action_mask = None
+            observation = self._project(settled)
+            self._last_observation = observation
+            return StepResult(state, observation, (), FAILURE_REWARD, True, False)
         raise RuntimeError(
             f"BalatroBot {method} did not settle at a Round Tactics state; got {state!r}"
         )
@@ -106,6 +144,7 @@ class RoundTacticsEnvironment:
     ) -> tuple[RoundTacticsObservation, tuple[LegalAction, ...]]:
         observation = self._project(gamestate)
         legal_action_mask = self._legal_actions(observation)
+        self._last_observation = observation
         self._legal_action_mask = legal_action_mask
         return observation, legal_action_mask
 
@@ -146,8 +185,26 @@ class RoundTacticsEnvironment:
             blind_target=int(small_blind.get("score", 0)),
             hands_left=int(round_info.get("hands_left", 0)),
             discards_left=int(round_info.get("discards_left", 0)),
+            hands_played=int(round_info.get("hands_played", 0)),
+            discards_used=int(round_info.get("discards_used", 0)),
+            money=int(gamestate.get("money", 0)),
             poker_hands=gamestate.get("hands") or {},
             jokers=jokers,
+        )
+
+    def _truncate(self, state: str) -> StepResult:
+        self._legal_action_mask = None
+        if self._last_observation is None:
+            raise RuntimeError("Round Tactics has no observation to truncate")
+        return StepResult(
+            state, self._last_observation, (), NONTERMINAL_REWARD, False, True
+        )
+
+    def _victory_reward(self, observation: RoundTacticsObservation) -> float:
+        if self._starting_hands <= 0:
+            return VICTORY_BASE_REWARD
+        return VICTORY_BASE_REWARD + VICTORY_HAND_EFFICIENCY_MULTIPLIER * (
+            observation.hands_left / self._starting_hands
         )
 
     @staticmethod
