@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 
+import pytest
+
 
 def test_watch_forwards_seed_and_inspection_mode_while_preserving_output_streams(
     monkeypatch,
@@ -58,3 +60,17 @@ def test_watch_returns_the_runner_failure_exit_code(monkeypatch) -> None:
     assert calls == [("BAL9SEED", False)]
     assert stdout.getvalue() == ""
     assert stderr.getvalue() == "Watchable session failed during launch.\n"
+
+
+def test_watch_help_keeps_standard_output_jsonl_safe() -> None:
+    from balatro_gym import cli
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    with pytest.raises(SystemExit) as exit_error:
+        cli.main(["watch", "--help"], stdout=stdout, stderr=stderr)
+
+    assert exit_error.value.code == 0
+    assert stdout.getvalue() == ""
+    assert "usage: balatro-gym watch" in stderr.getvalue()

@@ -11,6 +11,13 @@ from typing import TextIO
 from .watchable_session import run_watchable_session
 
 
+class _DiagnosticArgumentParser(argparse.ArgumentParser):
+    """Send parser help and errors to the diagnostics stream."""
+
+    def _print_message(self, message: str | None, file: TextIO | None = None) -> None:
+        super()._print_message(message, file=sys.stderr)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -34,11 +41,10 @@ def main(
         return result.exit_code
 
     parser.error(f"Unknown command: {arguments.command}")
-    return 2
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="balatro-gym")
+    parser = _DiagnosticArgumentParser(prog="balatro-gym")
     commands = parser.add_subparsers(dest="command", required=True)
     watch = commands.add_parser("watch", help="run one visible seeded session")
     watch.add_argument("--seed", required=True, help="seed for the Red Deck / White Stake run")
