@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "A live Round Tactics environment for Balatro"
 requires-python = ">=3.13"
 
+[project.scripts]
+balatro-gym = "balatro_gym.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
