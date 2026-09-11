@@ -11,6 +11,9 @@ from typing import Any, Mapping, Protocol
 OBSERVATION_VERSION = "round-tactics/v1"
 EXTERNAL_LIMIT_STATE = "EXTERNAL_LIMIT"
 BRIDGE_FAULT_STATE = "BRIDGE_FAULT"
+ROUND_EVAL_STATE = "ROUND_EVAL"
+GAME_OVER_STATE = "GAME_OVER"
+TERMINAL_STATES = frozenset((ROUND_EVAL_STATE, GAME_OVER_STATE))
 NONTERMINAL_REWARD = 0.0
 FAILURE_REWARD = -1.0
 VICTORY_BASE_REWARD = 1.0
@@ -123,14 +126,14 @@ class RoundTacticsEnvironment:
             return StepResult(
                 state, observation, legal_action_mask, NONTERMINAL_REWARD, False, False
             )
-        if state == "ROUND_EVAL":
+        if state == ROUND_EVAL_STATE:
             self._legal_action_mask = None
             observation = self._project(settled)
             self._last_observation = observation
             return StepResult(
                 state, observation, (), self._victory_reward(observation), True, False
             )
-        if state == "GAME_OVER":
+        if state == GAME_OVER_STATE:
             self._legal_action_mask = None
             observation = self._project(settled)
             self._last_observation = observation

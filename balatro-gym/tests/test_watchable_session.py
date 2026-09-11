@@ -65,8 +65,9 @@ class FakeEnvironment:
         self.steps += 1
         return SimpleNamespace(
             state=self.terminal_state,
-            observation="final",
+            observation=SimpleNamespace(hands_left=2),
             legal_action_mask=(),
+            reward=1.0 if self.terminal_state == "ROUND_EVAL" else -1.0,
             terminated=True,
             truncated=False,
         )
@@ -161,6 +162,12 @@ def test_runner_reports_lifecycle_failures_with_phase_cause_and_log_path(monkeyp
         assert terminal["phase"] == phase
         assert terminal["error"]
         assert terminal["log_path"] == "/tmp/balatrobot.log"
+        if phase == "reset":
+            assert [json.loads(line)["event"] for line in output.getvalue().splitlines()] == [
+                "launching",
+                "bridge_ready",
+                "failed",
+            ]
 
     FakeEnvironment.reset_error = None
     FakeEnvironment.step_error = None

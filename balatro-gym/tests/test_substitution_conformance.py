@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from balatro_gym.benchmark import Benchmark
+from balatro_gym.episode_runner import RoundTacticsEpisodeRunner
 from balatro_gym.evaluation import EpisodeOutcome, EpisodeRunner, SeedManifest
 from balatro_gym.environments.live import (
     LegalAction,
@@ -99,21 +100,9 @@ def test_substitute_policy_and_optimizer_preserve_environment_and_benchmark_cont
 
     def episode_runner(policy: Policy, seed: str) -> EpisodeOutcome:
         observed_calls.append((policy.revision, seed))
-        environment = RoundTacticsEnvironment(ActionSensitiveBridge())
-        reset = environment.reset(seed)
-        action = policy.select_action(reset.observation, reset.legal_action_mask)
-
-        assert action in reset.legal_action_mask
-
-        result = environment.step(action)
-        assert result.terminated
-        assert not result.truncated
-        return EpisodeOutcome(
-            seed=seed,
-            terminal_reward=result.reward,
-            won=result.reward > 0,
-            hands_left=result.observation.hands_left,
-        )
+        return RoundTacticsEpisodeRunner(
+            RoundTacticsEnvironment(ActionSensitiveBridge())
+        )(policy, seed)
 
     candidate = DevelopmentOnlyOptimizer().train(episode_runner, manifest)
 

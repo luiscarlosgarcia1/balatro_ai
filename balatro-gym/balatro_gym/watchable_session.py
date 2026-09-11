@@ -15,6 +15,11 @@ from threading import Event
 from typing import Any, Protocol, TextIO
 
 from balatro_gym.environments.live import LegalAction, RoundTacticsEnvironment
+from balatro_gym.episode_runner import (
+    EpisodeExecutionError,
+    RoundTacticsEpisodeRunner,
+    settlement_state,
+)
 from balatro_gym.policies import DeterministicLegalHeuristic
 
 
@@ -83,35 +88,23 @@ def run_watchable_session(
 
         phase = "reset"
         environment = RoundTacticsEnvironment(bridge)
-        reset_result = environment.reset(seed)
-        observation = reset_result.observation
-        actions = reset_result.legal_action_mask
-        if not actions:
-            raise _UnexpectedState("Round Tactics reset produced no legal action")
-        emit("session_ready")
 
         policy = DeterministicLegalHeuristic()
-        while True:
-            phase = "step"
-            action = policy.select_action(observation, actions)
-            _require_current_action(action, actions)
-            step_result = environment.step(action)
-            emit("action_applied", action=_action_payload(action))
-            if step_result.terminated:
-                if step_result.state not in {"ROUND_EVAL", "GAME_OVER"}:
-                    raise _UnexpectedState(
-                        f"Round Tactics terminated at {step_result.state!r}"
-                    )
-                outcome = step_result.state
-                break
-            if step_result.truncated:
-                raise _UnexpectedState(
-                    f"Round Tactics was truncated at {step_result.state!r}"
-                )
-            if not step_result.legal_action_mask:
-                raise _UnexpectedState("Round Tactics step produced no legal action")
-            observation = step_result.observation
-            actions = step_result.legal_action_mask
+        phase = "step"
+        try:
+            episode = RoundTacticsEpisodeRunner(
+                environment,
+                action_observer=lambda action: emit(
+                    "action_applied", action=_action_payload(action)
+                ),
+                ready_observer=lambda: emit("session_ready"),
+            )(policy, seed)
+        except EpisodeExecutionError as error:
+            phase = error.phase
+            if error.unexpected:
+                raise _UnexpectedState(str(error)) from error
+            raise
+        outcome = settlement_state(episode)
 
         if keep_open:
             print("Session settled; keeping Balatro open until interrupted.", file=diagnostics)
@@ -220,11 +213,6 @@ def _wait_for_interruption() -> None:
     finally:
         for signum, handler in previous.items():
             signal.signal(signum, handler)
-
-
-def _require_current_action(action: LegalAction, actions: tuple[LegalAction, ...]) -> None:
-    if not any(action is current for current in actions):
-        raise _UnexpectedState("deterministic policy selected an action outside the legal mask")
 
 
 def _action_payload(action: LegalAction) -> dict[str, object]:

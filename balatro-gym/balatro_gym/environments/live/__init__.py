@@ -2,6 +2,9 @@
 
 from .round_tactics import (
     OBSERVATION_VERSION,
+    GAME_OVER_STATE,
+    ROUND_EVAL_STATE,
+    TERMINAL_STATES,
     ActionKind,
     LegalAction,
     RoundTacticsEnvironment,
@@ -11,6 +14,9 @@ from .round_tactics import (
 
 __all__ = [
     "OBSERVATION_VERSION",
+    "GAME_OVER_STATE",
+    "ROUND_EVAL_STATE",
+    "TERMINAL_STATES",
     "ActionKind",
     "LegalAction",
     "RoundTacticsEnvironment",
