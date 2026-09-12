@@ -41,6 +41,7 @@ site/
 # Logs and temporary files
 logs/
 log/
+.local/acceptance-traces/
 *.log
 tmp/
 temp/
